@@ -5,9 +5,23 @@ import axios, { AxiosRequestConfig, AxiosResponse } from "axios";
 
 export class ZonoEndpoint<T extends ZonoEndpointDefinition> {
     readonly definition: T;
+    readonly path: `/${string}`;
 
     constructor(definition: T) {
         this.definition = definition;
+        this.path = this.createPath(definition);
+    }
+
+    private createPath(definition: T): `/${string}` {
+        let path = definition.path;
+
+        if (definition.additionalPaths) {
+            const pathParts = definition.additionalPaths?._zod.def.items ?? [];
+            for (let i = 0; i < pathParts.length; i++) {
+                path += `/:${i}`;
+            }
+        }
+        return path;
     }
 
     createHandler(
@@ -15,6 +29,22 @@ export class ZonoEndpoint<T extends ZonoEndpointDefinition> {
         options?: ZonoEndpointHandlerOptions
     ): Handler {
         return async (ctx) => {
+            let parsedPath: any;
+            if (this.definition.additionalPaths) {
+                const additionalParts = ctx.req.path.split("/").slice(this.definition.path.split("/").length);
+                const parsed = await this.definition.additionalPaths.safeParseAsync(additionalParts);
+                if (!parsed.success) {
+                    const error = options?.obfuscate
+                        ? { error: "Invalid path" }
+                        : {
+                            error: "Invalid path",
+                            zodError: JSON.parse(parsed.error.message),
+                        }
+                    return ctx.json(error, 400);
+                }
+                parsedPath = parsed.data as any;
+            }
+
             let parsedBody: any;
             if (this.definition.body) {
                 const body = await ctx.req.json();
@@ -67,6 +97,7 @@ export class ZonoEndpoint<T extends ZonoEndpointDefinition> {
                 body: parsedBody,
                 query: parsedQuery,
                 headers: parsedHeaders,
+                additionalPaths: parsedPath,
             } as any);
 
             return ctx.json(response as any);
@@ -90,7 +121,7 @@ export class ZonoEndpoint<T extends ZonoEndpointDefinition> {
         axiosConfig?: CompatibleAxiosRequestConfig
     ): AxiosRequestConfig {
         return {
-            url: `${options.baseUrl}${this.definition.path}`,
+            url: `${options.baseUrl}${this.definition.path}${"additionalPaths" in callData ? `/${callData.additionalPaths.join("/")}` : ""}`,
             method: this.definition.method,
             data: "body" in callData ? callData.body : undefined,
             params: "query" in callData ? callData.query : undefined,
@@ -104,10 +135,11 @@ export type ZonoEndpointAny = ZonoEndpoint<ZonoEndpointDefinition>;
 
 export type ZonoEndpointDefinition = {
     method: "get" | "post" | "put" | "delete" | "patch";
-    path: string;
+    path: `/${string}`;
     body?: z.ZodType;
     query?: ZonoQueryDefinition;
     headers?: ZonoHeadersDefinition;
+    additionalPaths?: z.ZodTuple<Array<ZodStringLike>>;
     response: z.ZodType;
 }
 
@@ -120,11 +152,13 @@ export type ZonoEndpointHandlerOptions = {
 }
 
 export type ZonoEndpointHandlerPassIn<T extends ZonoEndpointDefinition> = (
-    T["body"] extends z.ZodType ? { body: z.infer<T["body"]> } : Record<string, never>
+    T["body"] extends z.ZodType ? { body: z.infer<T["body"]> } : {}
 ) & (
-    T["query"] extends z.ZodType ? { query: z.infer<T["query"]> } : Record<string, never>
+    T["query"] extends z.ZodType ? { query: z.infer<T["query"]> } : {}
 ) & (
-    T["headers"] extends z.ZodType ? { headers: z.infer<T["headers"]> } : Record<string, never>
+    T["headers"] extends z.ZodType ? { headers: z.infer<T["headers"]> } : {}
+) & (
+    T["additionalPaths"] extends z.ZodTuple<Array<ZodStringLike>> ? { additionalPaths: z.infer<T["additionalPaths"]> } : {}
 );
 
 type CompatibleAxiosRequestConfig = Omit<
@@ -176,6 +210,10 @@ export type ZonoEndpointClientCallData<
         : T["headers"] extends z.ZodType
             ? { headers: z.infer<T["headers"]> }
             : {}
+) & (
+    T["additionalPaths"] extends z.ZodTuple<Array<ZodStringLike>>
+        ? { additionalPaths: z.infer<T["additionalPaths"]> }
+        : {}
 );
 
 export type ZonoEndpointClientResponse<T extends ZonoEndpointDefinition> = AxiosResponse<z.infer<T["response"]>>;

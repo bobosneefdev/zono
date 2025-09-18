@@ -24,7 +24,7 @@ export class ZonoServer<
         const app = new Hono();
 
         for (const [endpointName, endpoint] of Util.typeSafeObjectEntries(this.endpoints)) {
-            const method = app[Util.typeSafeLowerCase(endpoint.definition.method)];
+            const instantiator = app[Util.typeSafeLowerCase(endpoint.definition.method)];
             const handler = endpoint.createHandler(
                 this.options.handlers[endpointName],
                 {
@@ -32,7 +32,7 @@ export class ZonoServer<
                     ...this.options.specificHandlerOptions?.[endpointName],
                 },
             );
-            method(endpoint.definition.path, handler);
+            instantiator(endpoint.path, handler);
         }
 
         if (this.options.openApiOptions) {
@@ -83,6 +83,7 @@ export class ZonoServer<
                     },
                 },
             },
+            requestParams: {},
         };
 
         if (endpointDefinition.body) {
@@ -95,11 +96,12 @@ export class ZonoServer<
             };
         }
 
-        if (endpointDefinition.query || endpointDefinition.headers) {
-            data.requestParams = {
-                query: endpointDefinition.query,
-                header: endpointDefinition.headers,
-            };
+        if (endpointDefinition.query) {
+            data.requestParams!.query = endpointDefinition.query;
+        }
+
+        if (endpointDefinition.headers) {
+            data.requestParams!.header = endpointDefinition.headers;
         }
 
         return data;
@@ -113,7 +115,7 @@ export class ZonoServer<
             <!DOCTYPE html>
             <html>
                 <head>
-                    <title>Zono API Docs</title>
+                    <title>${this.options.openApiOptions.title} Docs</title>
                     <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist/swagger-ui.css" />
                 </head>
                 <body>

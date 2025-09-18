@@ -1,4 +1,4 @@
-import { ZonoEndpointAny, ZonoEndpointClient, ZonoEndpointClientOptions } from "./endpoint";
+import { ZonoEndpointAny, ZonoEndpointClient, ZonoEndpointClientOptions, ZonoEndpointDefinition } from "./endpoint";
 
 export class ZonoClient<
     T extends Record<string, ZonoEndpointAny>,
@@ -15,7 +15,7 @@ export class ZonoClient<
     build(): {
         [K in keyof T]: ZonoEndpointClient<T[K]["definition"], U>;
     } {
-        const result = {};
+        const result: Record<string, ZonoEndpointClient<ZonoEndpointDefinition, U>> = {};
         for (const [key, endpoint] of Object.entries(this.endpoints)) {
             result[key] = endpoint.createClient(this.options);
         }
