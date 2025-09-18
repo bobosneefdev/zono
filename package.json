@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "prepublishOnly": "npm run build",
+    "build": "tsc --noEmit && tsup",
+    "test": "bun test"
   },
   "repository": {
     "type": "git",
@@ -25,6 +27,8 @@
     "zod-openapi": "^5.4.1"
   },
   "devDependencies": {
-    "tsup": "^8.5.0"
+    "@types/jest": "^30.0.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.2"
   }
 }

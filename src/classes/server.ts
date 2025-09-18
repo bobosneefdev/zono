@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { ZonoHeadersDefinition } from "../types";
 import { ZonoEndpointAny, ZonoEndpointDefinition, ZonoEndpointHandler, ZonoEndpointHandlerOptions } from "./endpoint";
 import { Util } from "../string_util";
-import { serve } from "bun";
+import { serve, Server } from "bun";
 import { createDocument, ZodOpenApiOperationObject, ZodOpenApiParameters, ZodOpenApiPathItemObject, ZodOpenApiPathsObject } from "zod-openapi";
 
 export class ZonoServer<
@@ -11,6 +11,7 @@ export class ZonoServer<
 > {
     readonly endpoints: T;
     readonly options: U;
+    private _server: Server | null = null;
 
     constructor(
         endpoints: T,
@@ -28,8 +29,10 @@ export class ZonoServer<
             const handler = endpoint.createHandler(
                 this.options.handlers[endpointName],
                 {
-                    ...this.options.handlerOptions,
-                    ...this.options.specificHandlerOptions?.[endpointName],
+                    globalHeaders: this.options.globalHeaders,
+                    obfuscate:
+                        this.options.handlerOptions?.obfuscate ||
+                        this.options.specificHandlerOptions?.[endpointName]?.obfuscate,
                 },
             );
             instantiator(endpoint.path, handler);
@@ -40,11 +43,23 @@ export class ZonoServer<
             app.get(this.options.openApiOptions.path, (c) => c.html(this.getOpenApiHtml()));
         }
 
-        serve({
+        this._server = serve({
             fetch: app.fetch,
             port: this.options.port,
             hostname: this.options.bind,
         });
+    }
+
+    get server() {
+        return this._server;
+    }
+
+    async stop() {
+        if (!this._server) {
+            return;
+        }
+        await this._server.stop();
+        this._server = null;
     }
 
     private getOpenApiJson() {

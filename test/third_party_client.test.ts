@@ -1,10 +1,10 @@
 import z from "zod";
-import { ZonoEndpoint, ZonoEndpointClient } from "../src/classes/endpoint";
+import { ZonoEndpoint, ZonoEndpointAny, ZonoEndpointClient } from "../src/classes/endpoint";
 import { ZonoClient } from "../src/classes/client";
 
 const BASE_URL = "https://web.pirateswap.com";
 
-export const thirdPartyApi = {
+export const THIRD_PARTY_API = {
     getInventory: new ZonoEndpoint({
         method: "get",
         path: "/inventory/ExchangerInventory",
@@ -44,26 +44,24 @@ export const thirdPartyApi = {
             onlyTradeLocked: z.boolean().optional(),
         }),
     }),
-};
+} satisfies Record<string, ZonoEndpointAny>;
 
-const client = new ZonoClient(thirdPartyApi, {
-    baseUrl: BASE_URL,
-    globalHeaders: z.object({
-        Authorization: z.string(),
-    }),
-}).build();
+const CLIENT = new ZonoClient(THIRD_PARTY_API, { baseUrl: BASE_URL }).build();
 
-client.getInventory(
-    {
-        headers: {
-            Authorization: "",
-        },
-        query: {
-            orderBy: "price",
-            sortOrder: "DESC",
-            page: 1,
-            results: 100,
-            onlyTradeLocked: false,
-        },
+describe(
+    "Third Party Client",
+    () => {
+        it("GET /inventory/ExchangerInventory", async () => {
+            const response = await CLIENT.getInventory({
+                query: {
+                    page: 1,
+                    orderBy: "price",
+                    results: 100,
+                    sortOrder: "DESC",
+                    onlyTradeLocked: false,
+                },
+            });
+            expect(response.data.items.length).toBe(100);
+        })
     },
-);
+)

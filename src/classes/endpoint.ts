@@ -77,20 +77,29 @@ export class ZonoEndpoint<T extends ZonoEndpointDefinition> {
                 parsedQuery = parsed.data as any;
             }
 
+            const combinedHeadersSchema = this.definition.headers || options?.globalHeaders ? z.object({
+                ...this.definition.headers?.shape,
+                ...options?.globalHeaders?.shape,
+            }) : undefined;
+            
             let parsedHeaders: any;
-            if (this.definition.headers) {
-                const headers = ctx.req.header();
-                const parsed = await this.definition.headers.safeParseAsync(headers);
-                if (!parsed.success) {
-                    const error = options?.obfuscate
-                        ? { error: "Invalid headers" }
-                        : {
-                            error: "Invalid headers",
-                            zodError: JSON.parse(parsed.error.message),
-                        }
-                    return ctx.json(error, 400);
+            if (combinedHeadersSchema) {
+                const headers: Record<string, string> = {};
+                for (const [key, schema] of Object.entries(combinedHeadersSchema.shape)) {
+                    const header = ctx.req.header(key);
+                    const parsed = await schema.safeParseAsync(header);
+                    if (!parsed.success) {
+                        const error = options?.obfuscate
+                            ? { error: "Invalid header" }
+                            : {
+                                error: "Invalid header",
+                                zodError: JSON.parse(parsed.error.message),
+                            }
+                        return ctx.json(error, 400);
+                    }
+                    headers[key] = parsed.data as any;
                 }
-                parsedHeaders = parsed.data as any;
+                parsedHeaders = headers;
             }
 
             const response = await fn({
@@ -149,6 +158,7 @@ export type ZonoEndpointHandlerAny = ZonoEndpointHandler<ZonoEndpointDefinition>
 
 export type ZonoEndpointHandlerOptions = {
     obfuscate?: boolean;
+    globalHeaders?: ZonoHeadersDefinition;
 }
 
 export type ZonoEndpointHandlerPassIn<T extends ZonoEndpointDefinition> = (
@@ -199,17 +209,13 @@ export type ZonoEndpointClientCallData<
         ? { query: z.infer<T["query"]> }
         : {}
 ) & (
-    U extends ZonoEndpointClientOptions
-        ? T["headers"] extends z.ZodType
-            ? U["globalHeaders"] extends z.ZodType
-                ? { headers: z.infer<T["headers"]> & z.infer<U["globalHeaders"]> }
-                : { headers: z.infer<T["headers"]> }
-            : U["globalHeaders"] extends z.ZodType
-                ? { headers: z.infer<U["globalHeaders"]> }
-                : {}
-        : T["headers"] extends z.ZodType
-            ? { headers: z.infer<T["headers"]> }
-            : {}
+    U["globalHeaders"] extends z.ZodType
+        ? { headers: z.infer<U["globalHeaders"]> }
+        : {}
+) & (
+    T["headers"] extends z.ZodType
+        ? { headers: z.infer<T["headers"]> }
+        : {}
 ) & (
     T["additionalPaths"] extends z.ZodTuple<Array<ZodStringLike>>
         ? { additionalPaths: z.infer<T["additionalPaths"]> }
