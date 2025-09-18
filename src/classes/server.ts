@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, MiddlewareHandler } from "hono";
 import { ZonoHeadersDefinition } from "../types";
 import { ZonoEndpointAny, ZonoEndpointHandler, ZonoEndpointHandlerOptions } from "./endpoint";
 import { serve, Server } from "bun";
@@ -41,6 +41,12 @@ export class ZonoServer<
         if (this.options.openApiOptions) {
             app.get(`${this.options.openApiOptions.path}.json`, (c) => c.json(this.getOpenApiJson()));
             app.get(this.options.openApiOptions.path, (c) => c.html(this.getOpenApiHtml()));
+        }
+
+        if (this.options.middleware) {
+            for (const middleware of this.options.middleware) {
+                app.use(middleware);
+            }
         }
 
         this._server = serve({
@@ -162,6 +168,7 @@ export type ZonoServerOptions<T extends Record<string, ZonoEndpointAny>> = {
     };
     globalHeaders?: ZonoHeadersDefinition;
     openApiOptions?: ZonoOpenApiOptions<T>;
+    middleware?: Array<MiddlewareHandler>;
 }
 
 export type ZonoOpenApiOptions<T extends Record<string, ZonoEndpointAny>> = {
