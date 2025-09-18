@@ -101,7 +101,10 @@ describe("Server and Client", () => {
                 Authorization: KEY,
             },
         });
-        expect(response.data.success).toBe(true);
+        expect(response.parsed).toBe(true);
+        if (response.parsed) {
+            expect(response.response.data.success).toBe(true);
+        }
     });
 
 
@@ -116,6 +119,9 @@ describe("Server and Client", () => {
                 "X-Api-Key": KEY,
             },
         });
-        expect(response.data.success).toBe(true);
-    })
+        expect(response.parsed).toBe(true);
+        if (response.parsed) {
+            expect(response.response.data.success).toBe(true);
+        }
+    });
 })

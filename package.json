@@ -1,34 +1,43 @@
 {
-  "name": "zono",
-  "version": "1.0.0",
-  "main": "index.js",
-  "scripts": {
-    "prepublishOnly": "npm run build",
-    "build": "tsc --noEmit && tsup",
-    "test": "bun test"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/bobosneefdev/zono.git"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/bobosneefdev/zono/issues"
-  },
-  "homepage": "https://github.com/bobosneefdev/zono#readme",
-  "description": "",
-  "dependencies": {
-    "@types/bun": "^1.2.22",
-    "axios": "^1.12.2",
-    "hono": "^4.9.7",
-    "zod": "^4.1.9",
-    "zod-openapi": "^5.4.1"
-  },
-  "devDependencies": {
-    "@types/jest": "^30.0.0",
-    "tsup": "^8.5.0",
-    "typescript": "^5.9.2"
-  }
+    "name": "@bobosneefdev/zono",
+    "version": "1.0.0",
+    "main": "./dist/index.js",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "scripts": {
+        "prepublishOnly": "npm run build",
+        "build": "tsc --noEmit && tsup",
+        "test": "bun test"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/bobosneefdev/zono.git"
+    },
+    "keywords": [
+        "zod",
+        "hono",
+        "zono"
+    ],
+    "author": "@bobosneefdev",
+    "license": "MIT",
+    "bugs": {
+        "url": "https://github.com/bobosneefdev/zono/issues"
+    },
+    "homepage": "https://github.com/bobosneefdev/zono#readme",
+    "description": "Easily create type-safe APIs, clients, and servers with Zod and Hono.",
+    "dependencies": {
+        "@types/bun": "^1.2.22",
+        "axios": "^1.12.2",
+        "hono": "^4.9.7",
+        "zod": "^4.1.9",
+        "zod-openapi": "^5.4.1"
+    },
+    "devDependencies": {
+        "@types/jest": "^30.0.0",
+        "tsup": "^8.5.0",
+        "typescript": "^5.9.2"
+    },
+    "publishConfig": {
+        "registry": "https://registry.npmjs.org"
+    }
 }

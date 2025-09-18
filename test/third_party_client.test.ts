@@ -1,5 +1,5 @@
 import z from "zod";
-import { ZonoEndpoint, ZonoEndpointAny, ZonoEndpointClient } from "../src/classes/endpoint";
+import { ZonoEndpoint, ZonoEndpointAny } from "../src/classes/endpoint";
 import { ZonoClient } from "../src/classes/client";
 
 const BASE_URL = "https://web.pirateswap.com";
@@ -33,7 +33,7 @@ export const THIRD_PARTY_API = {
                     }),
                 ),
                 paintIndex: z.number().int().nullable(),
-                tradeableAfter: z.iso.datetime(),
+                tradeableAfter: z.iso.datetime().optional(),
             })),
         }),
         query: z.object({
@@ -61,7 +61,10 @@ describe(
                     onlyTradeLocked: false,
                 },
             });
-            expect(response.data.items.length).toBe(100);
-        })
+            expect(response.parsed).toBe(true);
+            if (response.parsed) {
+                expect(response.response.data.items.length).toBe(100);
+            }
+        });
     },
 )

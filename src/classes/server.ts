@@ -1,9 +1,9 @@
 import { Hono } from "hono";
 import { ZonoHeadersDefinition } from "../types";
-import { ZonoEndpointAny, ZonoEndpointDefinition, ZonoEndpointHandler, ZonoEndpointHandlerOptions } from "./endpoint";
-import { Util } from "../string_util";
+import { ZonoEndpointAny, ZonoEndpointHandler, ZonoEndpointHandlerOptions } from "./endpoint";
 import { serve, Server } from "bun";
-import { createDocument, ZodOpenApiOperationObject, ZodOpenApiParameters, ZodOpenApiPathItemObject, ZodOpenApiPathsObject } from "zod-openapi";
+import { createDocument, ZodOpenApiOperationObject, ZodOpenApiPathsObject } from "zod-openapi";
+import { typeSafeObjectEntries } from "../util";
 
 export class ZonoServer<
     T extends Record<string, ZonoEndpointAny>,
@@ -24,8 +24,8 @@ export class ZonoServer<
     start() {
         const app = new Hono();
 
-        for (const [endpointName, endpoint] of Util.typeSafeObjectEntries(this.endpoints)) {
-            const instantiator = app[Util.typeSafeLowerCase(endpoint.definition.method)];
+        for (const [endpointName, endpoint] of typeSafeObjectEntries(this.endpoints)) {
+            const instantiator = app[endpoint.definition.method];
             const handler = endpoint.createHandler(
                 this.options.handlers[endpointName],
                 {
@@ -72,7 +72,7 @@ export class ZonoServer<
                 title: this.options.openApiOptions.title,
                 version: this.options.openApiOptions.version,
             },
-            paths: Util.typeSafeObjectEntries(this.endpoints).reduce((p, [name, { definition }]) => {
+            paths: typeSafeObjectEntries(this.endpoints).reduce((p, [name, { definition }]) => {
                 p[definition.path] = {
                     [definition.method]: this.getOpenApiOperationData(name),
                 };

@@ -120,7 +120,19 @@ export class ZonoEndpoint<T extends ZonoEndpointDefinition> {
         ) => {
             const config = this.getAxiosConfig(options, callData, axiosConfig);
             const response = await axios(config);
-            return response;
+            const parsedData = await this.definition.response.safeParseAsync(response.data);
+            if (!parsedData.success) {
+                return {
+                    parsed: false,
+                    response,
+                    error: parsedData.error,
+                }
+            }
+            response.data = parsedData.data;
+            return {
+                parsed: true,
+                response,
+            }
         }
     }
 
@@ -222,4 +234,11 @@ export type ZonoEndpointClientCallData<
         : {}
 );
 
-export type ZonoEndpointClientResponse<T extends ZonoEndpointDefinition> = AxiosResponse<z.infer<T["response"]>>;
+export type ZonoEndpointClientResponse<T extends ZonoEndpointDefinition> = {
+    parsed: true;
+    response: AxiosResponse<z.infer<T["response"]>>;
+} | {
+    parsed: false;
+    response: AxiosResponse<any>;
+    error: z.ZodError;
+};
