@@ -1,6 +1,6 @@
 import z from "zod";
-import { ZonoEndpoint, ZonoEndpointAny } from "../src/classes/endpoint";
-import { ZonoClient } from "../src/classes/client";
+import { ZonoEndpoint, ZonoEndpointRecord } from "../src/classes/endpoint";
+import { createZonoClient } from "../src/classes/client";
 
 const BASE_URL = "https://web.pirateswap.com";
 
@@ -17,7 +17,7 @@ export const THIRD_PARTY_API = {
                 pattern: z.number().int().nullable(),
                 /** Balance dollars */
                 price: z.number(),
-                inspectInGameLink: z.string(),
+                inspectInGameLink: z.string().nullable(),
                 keyChains: z
                     .array(
                         z.object({
@@ -44,9 +44,9 @@ export const THIRD_PARTY_API = {
             onlyTradeLocked: z.boolean().optional(),
         }),
     }),
-} satisfies Record<string, ZonoEndpointAny>;
+} satisfies ZonoEndpointRecord;
 
-const CLIENT = new ZonoClient(THIRD_PARTY_API, { baseUrl: BASE_URL }).build();
+const CLIENT = createZonoClient(THIRD_PARTY_API, { baseUrl: BASE_URL });
 
 describe(
     "Third Party Client",
@@ -61,10 +61,13 @@ describe(
                     onlyTradeLocked: false,
                 },
             });
-            expect(response.parsed).toBe(true);
             if (response.parsed) {
                 expect(response.response.data.items.length).toBe(100);
             }
+            else {
+                console.error(response.error);
+            }
+            expect(response.parsed).toBe(true);
         });
     },
 )

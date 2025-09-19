@@ -1,8 +1,8 @@
 import z from "zod";
-import { ZonoEndpoint, ZonoEndpointAny } from "../src/classes/endpoint";
+import { ZonoEndpoint, ZonoEndpointRecord } from "../src/classes/endpoint";
 import { ZonoServer } from "../src/classes/server";
-import { ZonoClient } from "../src/classes/client";
 import { ZonoHeadersDefinition } from "../src/types";
+import { createZonoClient } from "../src/classes/client";
 
 const PORT = 3000;
 
@@ -38,7 +38,7 @@ const ENDPOINTS = {
             "X-Api-Key": z.literal(KEY),
         }),
     }),
-} satisfies Record<string, ZonoEndpointAny>;
+} satisfies ZonoEndpointRecord;
 
 const SERVER = new ZonoServer(
     ENDPOINTS,
@@ -74,13 +74,13 @@ const SERVER = new ZonoServer(
     },
 );
 
-const CLIENT = new ZonoClient(
+const CLIENT = createZonoClient(
     ENDPOINTS,
     {
         baseUrl: `http://localhost:${PORT}`,
         globalHeaders: GLOBAL_HEADERS,
     },
-).build();
+);
 
 describe("Server and Client", () => {
     beforeAll(() => {

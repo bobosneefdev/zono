@@ -1,12 +1,13 @@
-import { Hono, MiddlewareHandler } from "hono";
-import { ZonoHeadersDefinition } from "../types";
-import { ZonoEndpointAny, ZonoEndpointHandler, ZonoEndpointHandlerOptions } from "./endpoint";
+import { Handler, Hono, MiddlewareHandler } from "hono";
+import { OptionalPromise, ZodStringLike, ZonoHeadersDefinition } from "../types";
+import { ZonoEndpoint, ZonoEndpointRecord } from "./endpoint";
 import { serve, Server } from "bun";
 import { createDocument, ZodOpenApiOperationObject, ZodOpenApiPathsObject } from "zod-openapi";
-import { typeSafeObjectEntries } from "../util";
+import { typedObjectEntries } from "../util";
+import z from "zod";
 
 export class ZonoServer<
-    T extends Record<string, ZonoEndpointAny>,
+    T extends ZonoEndpointRecord,
     U extends ZonoServerOptions<T>,
 > {
     readonly endpoints: T;
@@ -21,12 +22,13 @@ export class ZonoServer<
         this.options = options;
     }
 
-    start() {
+    start(): Server {
         const app = new Hono();
 
-        for (const [endpointName, endpoint] of typeSafeObjectEntries(this.endpoints)) {
+        for (const [endpointName, endpoint] of typedObjectEntries(this.endpoints)) {
             const instantiator = app[endpoint.definition.method];
-            const handler = endpoint.createHandler(
+            const handler = this.createHandler(
+                endpoint,
                 this.options.handlers[endpointName],
                 {
                     globalHeaders: this.options.globalHeaders,
@@ -54,6 +56,7 @@ export class ZonoServer<
             port: this.options.port,
             hostname: this.options.bind,
         });
+        return this._server;
     }
 
     get server() {
@@ -68,6 +71,96 @@ export class ZonoServer<
         this._server = null;
     }
 
+    private createHandler<T extends ZonoEndpoint>(
+        endpoint: ZonoEndpoint,
+        fn: ZonoEndpointHandler<T>,
+        options?: ZonoEndpointHandlerOptions
+    ): Handler {
+        return async (ctx) => {
+            let parsedPath: any;
+            if (endpoint.definition.additionalPaths) {
+                const additionalParts = ctx.req.path.split("/").slice(endpoint.definition.path.split("/").length);
+                const parsed = await endpoint.definition.additionalPaths.safeParseAsync(additionalParts);
+                if (!parsed.success) {
+                    const error = options?.obfuscate
+                        ? { error: "Invalid path" }
+                        : {
+                            error: "Invalid path",
+                            zodError: JSON.parse(parsed.error.message),
+                        }
+                    return ctx.json(error, 400);
+                }
+                parsedPath = parsed.data as any;
+            }
+
+            let parsedBody: any;
+            if (endpoint.definition.body) {
+                const body = await ctx.req.json();
+                const parsed = await endpoint.definition.body.safeParseAsync(body);
+                if (!parsed.success) {
+                    const error = options?.obfuscate
+                        ? { error: "Invalid body" }
+                        : {
+                            error: "Invalid body",
+                            zodError: JSON.parse(parsed.error.message),
+                        }
+                    return ctx.json(error, 400);
+                }
+                parsedBody = parsed.data as any;
+            }
+
+            let parsedQuery: any;
+            if (endpoint.definition.query) {
+                const query = ctx.req.query();
+                const parsed = await endpoint.definition.query.safeParseAsync(query);
+                if (!parsed.success) {
+                    const error = options?.obfuscate
+                        ? { error: "Invalid query" }
+                        : {
+                            error: "Invalid query",
+                            zodError: JSON.parse(parsed.error.message),
+                        }
+                    return ctx.json(error, 400);
+                }
+                parsedQuery = parsed.data as any;
+            }
+
+            const combinedHeadersSchema = endpoint.definition.headers || options?.globalHeaders ? z.object({
+                ...endpoint.definition.headers?.shape,
+                ...options?.globalHeaders?.shape,
+            }) : undefined;
+            
+            let parsedHeaders: any;
+            if (combinedHeadersSchema) {
+                const headers: Record<string, string> = {};
+                for (const [key, schema] of Object.entries(combinedHeadersSchema.shape)) {
+                    const header = ctx.req.header(key);
+                    const parsed = await schema.safeParseAsync(header);
+                    if (!parsed.success) {
+                        const error = options?.obfuscate
+                            ? { error: "Invalid header" }
+                            : {
+                                error: "Invalid header",
+                                zodError: JSON.parse(parsed.error.message),
+                            }
+                        return ctx.json(error, 400);
+                    }
+                    headers[key] = parsed.data as any;
+                }
+                parsedHeaders = headers;
+            }
+
+            const response = await fn({
+                body: parsedBody,
+                query: parsedQuery,
+                headers: parsedHeaders,
+                additionalPaths: parsedPath,
+            } as any);
+
+            return ctx.json(response as any);
+        }
+    }
+
     private getOpenApiJson() {
         if (!this.options.openApiOptions) {
             throw new Error("OpenAPI options are not set");
@@ -78,7 +171,7 @@ export class ZonoServer<
                 title: this.options.openApiOptions.title,
                 version: this.options.openApiOptions.version,
             },
-            paths: typeSafeObjectEntries(this.endpoints).reduce((p, [name, { definition }]) => {
+            paths: typedObjectEntries(this.endpoints).reduce((p, [name, { definition }]) => {
                 p[definition.path] = {
                     [definition.method]: this.getOpenApiOperationData(name),
                 };
@@ -158,20 +251,20 @@ export class ZonoServer<
     }
 }
 
-export type ZonoServerOptions<T extends Record<string, ZonoEndpointAny>> = {
+export type ZonoServerOptions<T extends ZonoEndpointRecord> = {
     bind: string;
     port: number;
     handlerOptions?: ZonoEndpointHandlerOptions;
     specificHandlerOptions?: Partial<Record<keyof T, ZonoEndpointHandlerOptions>>;
     handlers: {
-        [K in keyof T]: ZonoEndpointHandler<T[K]["definition"]>;
+        [K in keyof T]: ZonoEndpointHandler<T[K]>;
     };
     globalHeaders?: ZonoHeadersDefinition;
     openApiOptions?: ZonoOpenApiOptions<T>;
     middleware?: Array<MiddlewareHandler>;
 }
 
-export type ZonoOpenApiOptions<T extends Record<string, ZonoEndpointAny>> = {
+export type ZonoOpenApiOptions<T extends ZonoEndpointRecord> = {
     title: string;
     version: string;
     path: string;
@@ -185,3 +278,20 @@ export type ZonoOpenApiOptions<T extends Record<string, ZonoEndpointAny>> = {
         >;
     }
 }
+
+export type ZonoEndpointHandler<T extends ZonoEndpoint = ZonoEndpoint> = (options: ZonoEndpointHandlerPassIn<T>) => OptionalPromise<z.infer<T["definition"]["response"]>>;
+
+export type ZonoEndpointHandlerOptions = {
+    obfuscate?: boolean;
+    globalHeaders?: ZonoHeadersDefinition;
+}
+
+export type ZonoEndpointHandlerPassIn<T extends ZonoEndpoint> = (
+    T["definition"]["body"] extends z.ZodType ? { body: z.infer<T["definition"]["body"]> } : {}
+) & (
+    T["definition"]["query"] extends z.ZodType ? { query: z.infer<T["definition"]["query"]> } : {}
+) & (
+    T["definition"]["headers"] extends z.ZodType ? { headers: z.infer<T["definition"]["headers"]> } : {}
+) & (
+    T["definition"]["additionalPaths"] extends z.ZodTuple<Array<ZodStringLike>> ? { additionalPaths: z.infer<T["definition"]["additionalPaths"]> } : {}
+);
