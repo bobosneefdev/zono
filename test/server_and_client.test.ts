@@ -2,7 +2,7 @@ import z from "zod";
 import { ZonoEndpoint, ZonoEndpointRecord } from "../src/classes/endpoint";
 import { ZonoServer } from "../src/classes/server";
 import { ZonoHeadersDefinition } from "../src/types";
-import { createZonoClient } from "../src/classes/client";
+import { createZonoClientSuite } from "../src/util/endpoint_client_suite";
 
 const PORT = 3000;
 
@@ -74,7 +74,7 @@ const SERVER = new ZonoServer(
     },
 );
 
-const CLIENT = createZonoClient(
+const CLIENT = createZonoClientSuite(
     ENDPOINTS,
     {
         baseUrl: `http://localhost:${PORT}`,

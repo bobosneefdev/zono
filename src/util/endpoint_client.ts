@@ -1,36 +1,18 @@
 import axios, { AxiosRequestConfig, AxiosResponse } from "axios";
-import { ZonoEndpoint, ZonoEndpointRecord } from "./endpoint";
+import { ZonoEndpoint } from "../classes/endpoint";
 import z from "zod";
 import { ZodStringLike, ZonoHeadersDefinition } from "../types";
-import { typedObjectEntries } from "../util";
 
 export function createZonoClient<
-    T extends ZonoEndpointRecord,
-    U extends ZonoEndpointClientOptions
->(
-    endpoints: T,
-    options: U
-): { [K in keyof T]: ZonoEndpointClient<T[K], U> } {
-    const result = typedObjectEntries(endpoints).reduce(
-        (prev, [key, endpoint]) => {
-            prev[key] = createEndpointClient(endpoint, options);
-            return prev;
-        },
-        {} as { [K in keyof T]: ZonoEndpointClient<T[K], U> }
-    );
-    return result;
-}
-
-function createEndpointClient<
     T extends ZonoEndpoint,
-    U extends ZonoEndpointClientOptions
+    U extends ZonoClientOptions
 >(
     endpoint: T,
     options: U
-): ZonoEndpointClient<T, U> {
+): ZonoClient<T, U> {
     return async (
-        callData: ZonoEndpointClientCallData<T, U>,
-        axiosConfig?: CompatibleAxiosRequestConfig
+        callData: ZonoClientCallData<T, U>,
+        axiosConfig?: ZonoClientAxiosConfig
     ) => {
         const config = getAxiosConfig(endpoint, options, callData, axiosConfig);
         const response = await axios(config);
@@ -52,12 +34,12 @@ function createEndpointClient<
 
 function getAxiosConfig<
     T extends ZonoEndpoint,
-    U extends ZonoEndpointClientOptions
+    U extends ZonoClientOptions
 >(
     endpoint: T,
     options: U,
-    callData: ZonoEndpointClientCallData<T, U>,
-    axiosConfig?: CompatibleAxiosRequestConfig
+    callData: ZonoClientCallData<T, U>,
+    axiosConfig?: ZonoClientAxiosConfig
 ): AxiosRequestConfig {
     return {
         url: `${options.baseUrl}${endpoint.definition.path}${"additionalPaths" in callData ? `/${callData.additionalPaths.join("/")}` : ""}`,
@@ -69,24 +51,24 @@ function getAxiosConfig<
     }
 }
 
-export type ZonoEndpointClient<
-    T extends ZonoEndpoint,
-    U extends ZonoEndpointClientOptions
+export type ZonoClient<
+    T extends ZonoEndpoint = ZonoEndpoint,
+    U extends ZonoClientOptions = ZonoClientOptions
 > = (
-    options: ZonoEndpointClientCallData<T, U>,
-    axiosConfig?: CompatibleAxiosRequestConfig,
-) => Promise<ZonoEndpointClientResponse<T>>;
+    options: ZonoClientCallData<T, U>,
+    axiosConfig?: ZonoClientAxiosConfig,
+) => Promise<ZonoClientResponse<T>>;
 
-export type ZonoEndpointClientAny = ZonoEndpointClient<any, any>;
+export type ZonoClientRecord<T extends Record<string, ZonoClient> = Record<string, ZonoClient>> = T;
 
-export type ZonoEndpointClientOptions = {
+export type ZonoClientOptions = {
     baseUrl: string;
     globalHeaders?: ZonoHeadersDefinition;
 }
 
-export type ZonoEndpointClientCallData<
+export type ZonoClientCallData<
     T extends ZonoEndpoint,
-    U extends ZonoEndpointClientOptions
+    U extends ZonoClientOptions
 > = (
     T["definition"]["body"] extends z.ZodType
         ? { body: z.infer<T["definition"]["body"]> }
@@ -109,7 +91,7 @@ export type ZonoEndpointClientCallData<
         : {}
 );
 
-export type ZonoEndpointClientResponse<T extends ZonoEndpoint> = {
+export type ZonoClientResponse<T extends ZonoEndpoint> = {
     parsed: true;
     response: AxiosResponse<z.infer<T["definition"]["response"]>>;
 } | {
@@ -118,7 +100,7 @@ export type ZonoEndpointClientResponse<T extends ZonoEndpoint> = {
     error: z.ZodError;
 };
 
-type CompatibleAxiosRequestConfig = Omit<
+type ZonoClientAxiosConfig = Omit<
     AxiosRequestConfig,
     "url" |
     "method" |

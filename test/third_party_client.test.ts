@@ -1,6 +1,6 @@
 import z from "zod";
 import { ZonoEndpoint, ZonoEndpointRecord } from "../src/classes/endpoint";
-import { createZonoClient } from "../src/classes/client";
+import { createZonoClientSuite } from "../src/util/endpoint_client_suite";
 
 const BASE_URL = "https://web.pirateswap.com";
 
@@ -46,7 +46,7 @@ export const THIRD_PARTY_API = {
     }),
 } satisfies ZonoEndpointRecord;
 
-const CLIENT = createZonoClient(THIRD_PARTY_API, { baseUrl: BASE_URL });
+const CLIENT = createZonoClientSuite(THIRD_PARTY_API, { baseUrl: BASE_URL });
 
 describe(
     "Third Party Client",
