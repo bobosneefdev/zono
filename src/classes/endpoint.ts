@@ -1,5 +1,5 @@
 import z from "zod";
-import { OptionalPromise, ZodStringLike, ZonoHeadersDefinition, ZonoQueryDefinition } from "../types";
+import { ZodStringLike, ZonoHeadersDefinition, ZonoQueryDefinition } from "../types";
 import { Handler } from "hono";
 
 export class ZonoEndpoint<T extends ZonoEndpointDefinition = ZonoEndpointDefinition> {

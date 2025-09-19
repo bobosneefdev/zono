@@ -11,3 +11,10 @@ export type ZonoHeadersDefinition = z.ZodObject<Record<string, ZodPossiblyOption
 export type ZonoQueryDefinition = z.ZodObject<Record<string, ZodPossiblyOptional<ZodStringLike | ZodNumberLike | z.ZodBoolean>>>;
 
 export type OptionalPromise<T> = T | Promise<T>;
+
+export type ZonoSocketDefinition = {
+    /** Schemas of events that are emitted from the server */
+    serverEvents: Record<string, z.ZodType>;
+    /** Schemas of events that are emitted from the client */
+    clientEvents: Record<string, z.ZodType>;
+};

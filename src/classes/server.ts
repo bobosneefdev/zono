@@ -5,6 +5,7 @@ import { serve, Server } from "bun";
 import { createDocument, ZodOpenApiOperationObject, ZodOpenApiPathsObject } from "zod-openapi";
 import { typedObjectEntries } from "../util";
 import z from "zod";
+import { ZonoSocketServer } from "./socket_server";
 
 export class ZonoServer<
     T extends ZonoEndpointRecord,
@@ -13,6 +14,7 @@ export class ZonoServer<
     readonly endpoints: T;
     readonly options: U;
     private _server: Server | null = null;
+    private coveredPaths: Set<string> = new Set();
 
     constructor(
         endpoints: T,
@@ -26,6 +28,12 @@ export class ZonoServer<
         const app = new Hono();
 
         for (const [endpointName, endpoint] of typedObjectEntries(this.endpoints)) {
+            const coveredPath = this.getCoveredPath(endpoint.definition.method, endpoint.path);
+            if (this.coveredPaths.has(coveredPath)) {
+                throw new Error(`Path ${coveredPath} is already covered`);
+            }
+            this.coveredPaths.add(coveredPath);
+
             const instantiator = app[endpoint.definition.method];
             const handler = this.createHandler(
                 endpoint,
@@ -51,10 +59,24 @@ export class ZonoServer<
             }
         }
 
+        const socket = this.options.socketServer;
+        const { websocket } = socket?.engine.handler() ?? {};
+
         this._server = serve({
-            fetch: app.fetch,
+            fetch(req, server) {
+                if (socket) {
+                    const url = new URL(req.url);
+                    const socketStart = socket.serverOpts.path ?? "/socket.io";
+                    if (url.pathname.startsWith(socketStart)) {
+                        return socket.engine.handleRequest(req, server);
+                    }
+                }
+                return app.fetch(req, server);
+            },
             port: this.options.port,
             hostname: this.options.bind,
+            websocket,
+            idleTimeout: 30,
         });
         return this._server;
     }
@@ -171,8 +193,8 @@ export class ZonoServer<
                 title: this.options.openApiOptions.title,
                 version: this.options.openApiOptions.version,
             },
-            paths: typedObjectEntries(this.endpoints).reduce((p, [name, { definition }]) => {
-                p[definition.path] = {
+            paths: typedObjectEntries(this.endpoints).reduce((p, [name, { path, definition }]) => {
+                p[path] = {
                     [definition.method]: this.getOpenApiOperationData(name),
                 };
                 return p;
@@ -249,16 +271,30 @@ export class ZonoServer<
 
         return str;
     }
+
+    private getCoveredPath(method: string, path: string) {
+        const parts = path.split("/");
+        const formattedParts = [];
+        for (const part of parts) {
+            if (part.startsWith(":")) {
+                formattedParts.push(`[${part.slice(1)}]`);
+            } else {
+                formattedParts.push(part);
+            }
+        }
+        return `${method} ${formattedParts.join("/")}`;
+    }
 }
 
 export type ZonoServerOptions<T extends ZonoEndpointRecord> = {
     bind: string;
     port: number;
-    handlerOptions?: ZonoEndpointHandlerOptions;
-    specificHandlerOptions?: Partial<Record<keyof T, ZonoEndpointHandlerOptions>>;
     handlers: {
         [K in keyof T]: ZonoEndpointHandler<T[K]>;
     };
+    socketServer?: ZonoSocketServer;
+    handlerOptions?: ZonoEndpointHandlerOptions;
+    specificHandlerOptions?: Partial<Record<keyof T, ZonoEndpointHandlerOptions>>;
     globalHeaders?: ZonoHeadersDefinition;
     openApiOptions?: ZonoOpenApiOptions<T>;
     middleware?: Array<MiddlewareHandler>;
