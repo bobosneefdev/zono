@@ -1,6 +1,11 @@
 import z from "zod";
 
-export type ZodStringLike = z.ZodString | z.ZodEnum<Record<string, string>> | z.ZodLiteral<string>;
+export type ZodStringLike =
+    z.ZodString |
+    z.ZodEnum<Record<string, string>> |
+    z.ZodLiteral<string> |
+    z.coerce.ZodCoercedNumber |
+    z.coerce.ZodCoercedBoolean;
 
 export type ZodNumberLike = z.ZodNumber | z.ZodEnum<Record<string, number>> | z.ZodLiteral<number>;
 
