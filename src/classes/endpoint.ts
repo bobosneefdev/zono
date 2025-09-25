@@ -1,6 +1,5 @@
 import z from "zod";
-import { ZodStringLike, ZonoHeadersDefinition, ZonoQueryDefinition } from "../types";
-import { Handler } from "hono";
+import { ZonoEndpointAdditionalPathsDefinition, ZonoEndpointHeadersDefinition, ZonoEndpointQueryDefinition } from "../lib_types";
 
 export class ZonoEndpoint<T extends ZonoEndpointDefinition = ZonoEndpointDefinition> {
     readonly definition: T;
@@ -31,8 +30,8 @@ export type ZonoEndpointDefinition = {
     method: "get" | "post" | "put" | "delete" | "patch";
     path: `/${string}`;
     body?: z.ZodType;
-    query?: ZonoQueryDefinition;
-    headers?: ZonoHeadersDefinition;
-    additionalPaths?: z.ZodTuple<Array<ZodStringLike>>;
+    query?: ZonoEndpointQueryDefinition;
+    headers?: ZonoEndpointHeadersDefinition;
+    additionalPaths?: ZonoEndpointAdditionalPathsDefinition;
     response: z.ZodType;
 }

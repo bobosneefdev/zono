@@ -4,7 +4,7 @@ import {
 } from "socket.io";
 import { Server as Engine } from "@socket.io/bun-engine";
 import z from "zod";
-import { ZonoSocketDefinition } from "../types";
+import { ZonoSocketDefinition } from "../lib_types";
 
 export class ZonoSocketServer<T extends ZonoSocketDefinition = ZonoSocketDefinition> {
     readonly definition: T;

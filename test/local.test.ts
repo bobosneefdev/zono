@@ -1,10 +1,10 @@
 import z from "zod";
 import { ZonoEndpoint, ZonoEndpointRecord } from "../src/classes/endpoint";
 import { ZonoServer } from "../src/classes/server";
-import { ZonoHeadersDefinition, ZonoSocketDefinition } from "../src/types";
-import { createZonoClientSuite } from "../src/util/endpoint_client_suite";
 import { ZonoSocketServer } from "../src/classes/socket_server";
 import { ZonoSocketClient } from "../src/classes/socket_client";
+import { ZonoEndpointHeadersDefinition, ZonoSocketDefinition } from "../src/lib_types";
+import { createZonoEndpointAxiosClientSuite } from "../src/lib_util/create_endpoint_client_suite";
 
 const PORT = 3000;
 
@@ -12,7 +12,7 @@ const KEY = "1234567890";
 
 const GLOBAL_HEADERS = z.object({
     "Authorization": z.literal(KEY),
-}) satisfies ZonoHeadersDefinition;
+}) satisfies ZonoEndpointHeadersDefinition;
 
 const ENDPOINTS = {
     getPeople: new ZonoEndpoint({
@@ -91,12 +91,18 @@ const SERVER = new ZonoServer(
         handlers: {
             getPeople: () => {
                 return {
-                    success: true,
+                    status: 200,
+                    data: {
+                        success: true,
+                    }
                 }
             },
             postPeople: () => {
                 return {
-                    success: true,
+                    status: 200,
+                    data: {
+                        success: true,
+                    }
                 }
             }
         },
@@ -119,7 +125,7 @@ const SERVER = new ZonoServer(
     },
 );
 
-const CLIENT = createZonoClientSuite(
+const CLIENT = createZonoEndpointAxiosClientSuite(
     ENDPOINTS,
     {
         baseUrl: `http://localhost:${PORT}`,
@@ -149,7 +155,7 @@ describe("Server and Client", () => {
     });
 
     it("GET /people", async () => {
-        const response = await CLIENT.getPeople({
+        const response = await CLIENT.getPeople.call({
             additionalPaths: [
                 "Bob",
                 "Williams",
@@ -160,13 +166,13 @@ describe("Server and Client", () => {
         });
         expect(response.parsed).toBe(true);
         if (response.parsed) {
-            expect(response.response.data.success).toBe(true);
+            expect(response.data.success).toBe(true);
         }
     });
 
 
     it("POST /people", async () => {
-        const response = await CLIENT.postPeople({
+        const response = await CLIENT.postPeople.call({
             body: {
                 firstName: "Bob",
                 lastName: "Williams",
@@ -234,4 +240,4 @@ describe("Server and Client", () => {
             });
         });
     });
-})
+});

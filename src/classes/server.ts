@@ -1,11 +1,13 @@
 import { Handler, Hono, MiddlewareHandler } from "hono";
-import { OptionalPromise, ZodStringLike, ZonoHeadersDefinition } from "../types";
+import { ZonoEndpointHeadersDefinition } from "../lib_types";
 import { ZonoEndpoint, ZonoEndpointRecord } from "./endpoint";
 import { serve, Server } from "bun";
 import { createDocument, ZodOpenApiOperationObject, ZodOpenApiPathsObject } from "zod-openapi";
-import { typedObjectEntries } from "../util";
 import z from "zod";
 import { ZonoSocketServer } from "./socket_server";
+import { ContentfulStatusCode, SuccessStatusCode } from "hono/utils/http-status";
+import { typedObjectEntries } from "../internal_util/typed_helpers";
+import { OptionalPromise } from "../internal_types";
 
 export class ZonoServer<
     T extends ZonoEndpointRecord,
@@ -59,7 +61,7 @@ export class ZonoServer<
             }
         }
 
-        const socket = this.options.socketServer;
+        const socket = this.options.socket;
         const { websocket } = socket?.engine.handler() ?? {};
 
         this._server = serve({
@@ -179,7 +181,11 @@ export class ZonoServer<
                 additionalPaths: parsedPath,
             } as any);
 
-            return ctx.json(response as any);
+            if (response.status !== 200) {
+                return ctx.json({ error: response.error }, response.status);
+            }
+
+            return ctx.json(response.data as any, 200);
         }
     }
 
@@ -292,10 +298,10 @@ export type ZonoServerOptions<T extends ZonoEndpointRecord> = {
     handlers: {
         [K in keyof T]: ZonoEndpointHandler<T[K]>;
     };
-    socketServer?: ZonoSocketServer;
+    socket?: ZonoSocketServer;
     handlerOptions?: ZonoEndpointHandlerOptions;
     specificHandlerOptions?: Partial<Record<keyof T, ZonoEndpointHandlerOptions>>;
-    globalHeaders?: ZonoHeadersDefinition;
+    globalHeaders?: ZonoEndpointHeadersDefinition;
     openApiOptions?: ZonoOpenApiOptions<T>;
     middleware?: Array<MiddlewareHandler>;
 }
@@ -315,11 +321,20 @@ export type ZonoOpenApiOptions<T extends ZonoEndpointRecord> = {
     }
 }
 
-export type ZonoEndpointHandler<T extends ZonoEndpoint = ZonoEndpoint> = (options: ZonoEndpointHandlerPassIn<T>) => OptionalPromise<z.infer<T["definition"]["response"]>>;
+export type ZonoEndpointHandler<T extends ZonoEndpoint = ZonoEndpoint> = (options: ZonoEndpointHandlerPassIn<T>) => OptionalPromise<
+    {
+        status: 200,
+        data: z.infer<T["definition"]["response"]>,
+    } |
+    {
+        status: Exclude<ContentfulStatusCode, SuccessStatusCode>,
+        error: string,
+    }
+>;
 
 export type ZonoEndpointHandlerOptions = {
     obfuscate?: boolean;
-    globalHeaders?: ZonoHeadersDefinition;
+    globalHeaders?: ZonoEndpointHeadersDefinition;
 }
 
 export type ZonoEndpointHandlerPassIn<T extends ZonoEndpoint> = (
@@ -329,5 +344,5 @@ export type ZonoEndpointHandlerPassIn<T extends ZonoEndpoint> = (
 ) & (
     T["definition"]["headers"] extends z.ZodType ? { headers: z.infer<T["definition"]["headers"]> } : {}
 ) & (
-    T["definition"]["additionalPaths"] extends z.ZodTuple<Array<ZodStringLike>> ? { additionalPaths: z.infer<T["definition"]["additionalPaths"]> } : {}
+    T["definition"]["additionalPaths"] extends z.ZodType ? { additionalPaths: z.infer<T["definition"]["additionalPaths"]> } : {}
 );
