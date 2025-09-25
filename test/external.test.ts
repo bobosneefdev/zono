@@ -1,6 +1,6 @@
 import z from "zod";
 import { ZonoEndpoint, ZonoEndpointRecord } from "../src/classes/endpoint";
-import { createZonoEndpointAxiosClientSuite } from "../src/lib_util/create_endpoint_client_suite";
+import { createZonoEndpointClientSuite } from "../src/lib_util/create_endpoint_client_suite";
 
 const BASE_URL = "https://web.pirateswap.com";
 
@@ -46,13 +46,13 @@ export const THIRD_PARTY_API = {
     }),
 } satisfies ZonoEndpointRecord;
 
-const CLIENT = createZonoEndpointAxiosClientSuite(THIRD_PARTY_API, { baseUrl: BASE_URL });
+const CLIENT = createZonoEndpointClientSuite(THIRD_PARTY_API, { baseUrl: BASE_URL });
 
 describe(
     "Third Party Client",
     () => {
         it("GET /inventory/ExchangerInventory", async () => {
-            const response = await CLIENT.getInventory.call({
+            const response = await CLIENT.getInventory.axios({
                 query: {
                     page: 1,
                     orderBy: "price",
@@ -61,13 +61,13 @@ describe(
                     onlyTradeLocked: false,
                 },
             });
-            if (response.parsed) {
-                expect(response.response.data.items.length).toBe(100);
+            if (response.success) {
+                expect(response.data.items.length).toBe(100);
             }
             else {
-                console.error(response.error);
+                console.error(response);
             }
-            expect(response.parsed).toBe(true);
+            expect(response.success).toBe(true);
         });
     },
 )

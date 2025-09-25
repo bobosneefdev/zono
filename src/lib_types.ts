@@ -1,6 +1,6 @@
 import z from "zod";
-import { ZonoEndpoint } from "./classes/endpoint";
-import { PossiblyOptionalStringOrNumberSchema, StringNumberBooleanSchema } from "./internal_types";
+import { ZonoEndpoint } from "./classes/endpoint.js";
+import { PossiblyOptionalStringOrNumberSchema, StringNumberBooleanSchema } from "./internal_types.js";
 
 export type ZonoEndpointHeadersDefinition = z.ZodObject<Record<string, PossiblyOptionalStringOrNumberSchema>>;
 

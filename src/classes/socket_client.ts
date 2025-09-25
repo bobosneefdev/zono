@@ -1,5 +1,5 @@
 import z from "zod";
-import { ZonoSocketDefinition } from "../lib_types";
+import { ZonoSocketDefinition } from "../lib_types.js";
 import { Socket, io, SocketOptions } from "socket.io-client";
 
 export class ZonoSocketClient<T extends ZonoSocketDefinition = ZonoSocketDefinition> {

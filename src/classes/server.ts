@@ -1,13 +1,13 @@
 import { Handler, Hono, MiddlewareHandler } from "hono";
-import { ZonoEndpointHeadersDefinition } from "../lib_types";
-import { ZonoEndpoint, ZonoEndpointRecord } from "./endpoint";
+import { ZonoEndpointHeadersDefinition } from "../lib_types.js";
+import { ZonoEndpoint, ZonoEndpointRecord } from "./endpoint.js";
 import { serve, Server } from "bun";
 import { createDocument, ZodOpenApiOperationObject, ZodOpenApiPathsObject } from "zod-openapi";
 import z from "zod";
-import { ZonoSocketServer } from "./socket_server";
+import { ZonoSocketServer } from "./socket_server.js";
 import { ContentfulStatusCode, SuccessStatusCode } from "hono/utils/http-status";
-import { typedObjectEntries } from "../internal_util/typed_helpers";
-import { OptionalPromise } from "../internal_types";
+import { typedObjectEntries } from "../internal_util/typed_helpers.js";
+import { OptionalPromise } from "../internal_types.js";
 
 export class ZonoServer<
     T extends ZonoEndpointRecord,
@@ -87,11 +87,9 @@ export class ZonoServer<
         return this._server;
     }
 
-    async stop() {
-        if (!this._server) {
-            return;
-        }
-        await this._server.stop();
+    async stop(closeActiveConnections: boolean = false) {
+        if (!this._server) return;
+        await this._server.stop(closeActiveConnections);
         this._server = null;
     }
 

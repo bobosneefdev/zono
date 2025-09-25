@@ -1,10 +1,9 @@
-import { ZonoEndpointRecord } from "../classes/endpoint";
-import { ZonoEndpointAxiosClient } from "../classes/endpoint_axios_client";
-import { ZonoEndpointFetchClient } from "../classes/endpoint_fetch_client";
-import { typedObjectEntries } from "../internal_util/typed_helpers";
-import { ZonoEndpointClientOptions } from "../lib_types";
+import { ZonoEndpointRecord } from "../classes/endpoint.js";
+import { ZonoEndpointClient } from "../classes/endpoint_client.js";
+import { typedObjectEntries } from "../internal_util/typed_helpers.js";
+import { ZonoEndpointClientOptions } from "../lib_types.js";
 
-export function createZonoEndpointAxiosClientSuite<
+export function createZonoEndpointClientSuite<
     T extends ZonoEndpointRecord,
     U extends ZonoEndpointClientSuiteOptions<T>
 >(
@@ -13,32 +12,13 @@ export function createZonoEndpointAxiosClientSuite<
 ) {
     return typedObjectEntries(endpoints).reduce(
         (prev, [key, value]) => {
-            prev[key] = new ZonoEndpointAxiosClient(value, {
+            prev[key] = new ZonoEndpointClient(value, {
                 ...options,
                 ...options.overwriteSpecificOptions?.[key],
             }) as any;
             return prev;
         },
-        {} as { [K in keyof T]: ZonoEndpointAxiosClient<T[K], GetCombinedOptions<T, K, U>> }
-    );
-}
-
-export function createZonoEndpointFetchClientSuite<
-    T extends ZonoEndpointRecord,
-    U extends ZonoEndpointClientSuiteOptions<T>
->(
-    endpoints: T,
-    options: U,
-) {
-    return typedObjectEntries(endpoints).reduce(
-        (prev, [key, value]) => {
-            prev[key] = new ZonoEndpointFetchClient(value, {
-                ...options,
-                ...options.overwriteSpecificOptions?.[key],
-            }) as any;
-            return prev;
-        },
-        {} as { [K in keyof T]: ZonoEndpointFetchClient<T[K], GetCombinedOptions<T, K, U>> }
+        {} as { [K in keyof T]: ZonoEndpointClient<T[K], GetCombinedOptions<T, K, U>> }
     );
 }
 

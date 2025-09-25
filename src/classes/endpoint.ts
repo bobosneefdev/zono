@@ -1,5 +1,5 @@
 import z from "zod";
-import { ZonoEndpointAdditionalPathsDefinition, ZonoEndpointHeadersDefinition, ZonoEndpointQueryDefinition } from "../lib_types";
+import { ZonoEndpointAdditionalPathsDefinition, ZonoEndpointHeadersDefinition, ZonoEndpointQueryDefinition } from "../lib_types.js";
 
 export class ZonoEndpoint<T extends ZonoEndpointDefinition = ZonoEndpointDefinition> {
     readonly definition: T;

@@ -1,6 +1,6 @@
 import z from "zod";
-import { ZonoEndpointHeadersDefinition } from "../lib_types";
-import { PossiblyOptionalStringOrNumberSchema } from "../internal_types";
+import { ZonoEndpointHeadersDefinition } from "../lib_types.js";
+import { PossiblyOptionalStringOrNumberSchema } from "../internal_types.js";
 
 /**
  * @param schemas Array of schemas. Higher index schemas will override lower index schemas.

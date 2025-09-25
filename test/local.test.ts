@@ -4,7 +4,7 @@ import { ZonoServer } from "../src/classes/server";
 import { ZonoSocketServer } from "../src/classes/socket_server";
 import { ZonoSocketClient } from "../src/classes/socket_client";
 import { ZonoEndpointHeadersDefinition, ZonoSocketDefinition } from "../src/lib_types";
-import { createZonoEndpointAxiosClientSuite } from "../src/lib_util/create_endpoint_client_suite";
+import { createZonoEndpointClientSuite } from "../src/lib_util/create_endpoint_client_suite";
 
 const PORT = 3000;
 
@@ -125,7 +125,7 @@ const SERVER = new ZonoServer(
     },
 );
 
-const CLIENT = createZonoEndpointAxiosClientSuite(
+const CLIENT = createZonoEndpointClientSuite(
     ENDPOINTS,
     {
         baseUrl: `http://localhost:${PORT}`,
@@ -150,12 +150,13 @@ describe("Server and Client", () => {
     });
 
     afterAll(async () => {
-        await SERVER.stop();
         SOCKET_CLIENT.socket.disconnect();
+        await SERVER.stop(true);
+        process.exit(0);
     });
 
     it("GET /people", async () => {
-        const response = await CLIENT.getPeople.call({
+        const response = await CLIENT.getPeople.axios({
             additionalPaths: [
                 "Bob",
                 "Williams",
@@ -164,15 +165,18 @@ describe("Server and Client", () => {
                 Authorization: KEY,
             },
         });
-        expect(response.parsed).toBe(true);
-        if (response.parsed) {
+        if (response.success) {
             expect(response.data.success).toBe(true);
         }
+        else {
+            console.error(response);
+        }
+        expect(response.success).toBe(true);
     });
 
 
     it("POST /people", async () => {
-        const response = await CLIENT.postPeople.call({
+        const response = await CLIENT.postPeople.fetch({
             body: {
                 firstName: "Bob",
                 lastName: "Williams",
@@ -182,13 +186,16 @@ describe("Server and Client", () => {
                 "X-Api-Key": KEY,
             },
         });
-        expect(response.parsed).toBe(true);
-        if (response.parsed) {
-            expect(response.response.data.success).toBe(true);
+        if (response.success) {
+            expect(response.data.success).toBe(true);
         }
+        else {
+            console.error(response);
+        }
+        expect(response.success).toBe(true);
     });
 
-    it("Socket: Client sends message, server echoes back", async () => {
+    it("Socket: Client sends message, server echoes back", () => {
         return new Promise<void>((res, rej) => {
             const timeout = setTimeout(() => {
                 rej(new Error("Test timeout - no message received"));
@@ -215,7 +222,7 @@ describe("Server and Client", () => {
         });
     });
 
-    it("Socket: Client joins room, server notifies", async () => {
+    it("Socket: Client joins room, server notifies", () => {
         return new Promise<void>((res, rej) => {
             const timeout = setTimeout(() => {
                 rej(new Error("Test timeout - no userJoined event received"));
