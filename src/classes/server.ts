@@ -243,7 +243,9 @@ export class ZonoServer<
         }
 
         if (endpointDefinition.query) {
-            data.requestParams!.query = endpointDefinition.query;
+            data.requestParams!.query = endpointDefinition.query.type === "optional"
+                ? endpointDefinition.query.unwrap()
+                : endpointDefinition.query;
         }
 
         if (endpointDefinition.headers) {

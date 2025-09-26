@@ -77,8 +77,10 @@ export class ZonoEndpointClient<
         const url = new URL(urlStr);
         if ("query" in callData && this.endpoint.definition.query) {
             const parsed = this.endpoint.definition.query.parse(callData.query);
-            for (const [key, value] of Object.entries(parsed)) {
-                url.searchParams.set(key, String(value));
+            if (parsed) {
+                for (const [key, value] of Object.entries(parsed)) {
+                    url.searchParams.set(key, String(value));
+                }
             }
         }
 

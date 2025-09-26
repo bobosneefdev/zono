@@ -1,13 +1,13 @@
 import z from "zod";
 import { ZonoEndpointHeadersDefinition } from "../lib_types.js";
-import { PossiblyOptionalPathHeadersQuerySchema } from "../internal_types.js";
+import { PathHeadersQuerySchema, PossibleZodOptional } from "../internal_types.js";
 
 /**
  * @param schemas Array of schemas. Higher index schemas will override lower index schemas.
  * @returns Combined schema
  */
 export function combineHeadersSchema(schemas: Array<ZonoEndpointHeadersDefinition | undefined>): ZonoEndpointHeadersDefinition | undefined {
-    const shape: Record<string, PossiblyOptionalPathHeadersQuerySchema> = {};
+    const shape: Record<string, PossibleZodOptional<PathHeadersQuerySchema>> = {};
     let anyPopulated = false;
     for (const schema of schemas) {
         if (!schema) continue;

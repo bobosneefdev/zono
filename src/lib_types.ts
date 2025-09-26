@@ -1,10 +1,10 @@
 import z from "zod";
 import { ZonoEndpoint } from "./classes/endpoint.js";
-import { PathHeadersQuerySchema, PossiblyOptionalPathHeadersQuerySchema } from "./internal_types.js";
+import { PathHeadersQuerySchema, PossibleZodOptional } from "./internal_types.js";
 
-export type ZonoEndpointHeadersDefinition = z.ZodObject<Record<string, PossiblyOptionalPathHeadersQuerySchema>>;
+export type ZonoEndpointHeadersDefinition = z.ZodObject<Record<string, PossibleZodOptional<PathHeadersQuerySchema>>>;
 
-export type ZonoEndpointQueryDefinition = z.ZodObject<Record<string, PossiblyOptionalPathHeadersQuerySchema>>;
+export type ZonoEndpointQueryDefinition = PossibleZodOptional<z.ZodObject<Record<string, PossibleZodOptional<PathHeadersQuerySchema>>>>;
 
 export type ZonoEndpointAdditionalPathsDefinition = z.ZodTuple<Array<PathHeadersQuerySchema>>;
 
