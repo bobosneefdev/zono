@@ -99,91 +99,97 @@ export class ZonoServer<
         options?: ZonoEndpointHandlerOptions
     ): Handler {
         return async (ctx) => {
-            let parsedPath: any;
-            if (endpoint.definition.additionalPaths) {
-                const additionalParts = ctx.req.path.split("/").slice(endpoint.definition.path.split("/").length);
-                const parsed = await endpoint.definition.additionalPaths.safeParseAsync(additionalParts);
-                if (!parsed.success) {
-                    const error = options?.obfuscate
-                        ? { error: "Invalid path" }
-                        : {
-                            error: "Invalid path",
-                            zodError: JSON.parse(parsed.error.message),
-                        }
-                    return ctx.json(error, 400);
-                }
-                parsedPath = parsed.data as any;
-            }
-
-            let parsedBody: any;
-            if (endpoint.definition.body) {
-                const body = await ctx.req.json();
-                const parsed = await endpoint.definition.body.safeParseAsync(body);
-                if (!parsed.success) {
-                    const error = options?.obfuscate
-                        ? { error: "Invalid body" }
-                        : {
-                            error: "Invalid body",
-                            zodError: JSON.parse(parsed.error.message),
-                        }
-                    return ctx.json(error, 400);
-                }
-                parsedBody = parsed.data as any;
-            }
-
-            let parsedQuery: any;
-            if (endpoint.definition.query) {
-                const query = ctx.req.query();
-                const parsed = await endpoint.definition.query.safeParseAsync(query);
-                if (!parsed.success) {
-                    const error = options?.obfuscate
-                        ? { error: "Invalid query" }
-                        : {
-                            error: "Invalid query",
-                            zodError: JSON.parse(parsed.error.message),
-                        }
-                    return ctx.json(error, 400);
-                }
-                parsedQuery = parsed.data as any;
-            }
-
-            const combinedHeadersSchema = endpoint.definition.headers || options?.globalHeaders ? z.object({
-                ...endpoint.definition.headers?.shape,
-                ...options?.globalHeaders?.shape,
-            }) : undefined;
-            
-            let parsedHeaders: any;
-            if (combinedHeadersSchema) {
-                const headers: Record<string, string> = {};
-                for (const [key, schema] of Object.entries(combinedHeadersSchema.shape)) {
-                    const header = ctx.req.header(key);
-                    const parsed = await schema.safeParseAsync(header);
+            try {
+                let parsedPath: any;
+                if (endpoint.definition.additionalPaths) {
+                    const additionalParts = ctx.req.path.split("/").slice(endpoint.definition.path.split("/").length);
+                    const parsed = await endpoint.definition.additionalPaths.safeParseAsync(additionalParts);
                     if (!parsed.success) {
                         const error = options?.obfuscate
-                            ? { error: "Invalid header" }
+                            ? { error: "Invalid path" }
                             : {
-                                error: "Invalid header",
+                                error: "Invalid path",
                                 zodError: JSON.parse(parsed.error.message),
                             }
                         return ctx.json(error, 400);
                     }
-                    headers[key] = parsed.data as any;
+                    parsedPath = parsed.data as any;
                 }
-                parsedHeaders = headers;
+
+                let parsedBody: any;
+                if (endpoint.definition.body) {
+                    const body = await ctx.req.json();
+                    const parsed = await endpoint.definition.body.safeParseAsync(body);
+                    if (!parsed.success) {
+                        const error = options?.obfuscate
+                            ? { error: "Invalid body" }
+                            : {
+                                error: "Invalid body",
+                                zodError: JSON.parse(parsed.error.message),
+                            }
+                        return ctx.json(error, 400);
+                    }
+                    parsedBody = parsed.data as any;
+                }
+
+                let parsedQuery: any;
+                if (endpoint.definition.query) {
+                    const query = ctx.req.query();
+                    const parsed = await endpoint.definition.query.safeParseAsync(query);
+                    if (!parsed.success) {
+                        const error = options?.obfuscate
+                            ? { error: "Invalid query" }
+                            : {
+                                error: "Invalid query",
+                                zodError: JSON.parse(parsed.error.message),
+                            }
+                        return ctx.json(error, 400);
+                    }
+                    parsedQuery = parsed.data as any;
+                }
+
+                const combinedHeadersSchema = endpoint.definition.headers || options?.globalHeaders ? z.object({
+                    ...endpoint.definition.headers?.shape,
+                    ...options?.globalHeaders?.shape,
+                }) : undefined;
+                
+                let parsedHeaders: any;
+                if (combinedHeadersSchema) {
+                    const headers: Record<string, string> = {};
+                    for (const [key, schema] of Object.entries(combinedHeadersSchema.shape)) {
+                        const header = ctx.req.header(key);
+                        const parsed = await schema.safeParseAsync(header);
+                        if (!parsed.success) {
+                            const error = options?.obfuscate
+                                ? { error: "Invalid header" }
+                                : {
+                                    error: "Invalid header",
+                                    zodError: JSON.parse(parsed.error.message),
+                                }
+                            return ctx.json(error, 400);
+                        }
+                        headers[key] = parsed.data as any;
+                    }
+                    parsedHeaders = headers;
+                }
+
+                const response = await fn({
+                    body: parsedBody,
+                    query: parsedQuery,
+                    headers: parsedHeaders,
+                    additionalPaths: parsedPath,
+                } as any);
+
+                if (response.status !== 200) {
+                    return ctx.json({ error: response.error }, response.status);
+                }
+
+                return ctx.json(response.data as any, 200);
             }
-
-            const response = await fn({
-                body: parsedBody,
-                query: parsedQuery,
-                headers: parsedHeaders,
-                additionalPaths: parsedPath,
-            } as any);
-
-            if (response.status !== 200) {
-                return ctx.json({ error: response.error }, response.status);
+            catch (error) {
+                console.debug(error);
+                return ctx.json({ error: "Internal server error" }, 500);
             }
-
-            return ctx.json(response.data as any, 200);
         }
     }
 
