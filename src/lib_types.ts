@@ -1,12 +1,12 @@
 import z from "zod";
 import { ZonoEndpoint } from "./classes/endpoint.js";
-import { PossiblyOptionalStringOrNumberSchema, StringNumberBooleanSchema } from "./internal_types.js";
+import { PathHeadersQuerySchema, PossiblyOptionalPathHeadersQuerySchema } from "./internal_types.js";
 
-export type ZonoEndpointHeadersDefinition = z.ZodObject<Record<string, PossiblyOptionalStringOrNumberSchema>>;
+export type ZonoEndpointHeadersDefinition = z.ZodObject<Record<string, PossiblyOptionalPathHeadersQuerySchema>>;
 
-export type ZonoEndpointQueryDefinition = z.ZodObject<Record<string, PossiblyOptionalStringOrNumberSchema>>;
+export type ZonoEndpointQueryDefinition = z.ZodObject<Record<string, PossiblyOptionalPathHeadersQuerySchema>>;
 
-export type ZonoEndpointAdditionalPathsDefinition = z.ZodTuple<Array<StringNumberBooleanSchema>>;
+export type ZonoEndpointAdditionalPathsDefinition = z.ZodTuple<Array<PathHeadersQuerySchema>>;
 
 export type ZonoEndpointClientOptions = {
     baseUrl: string;

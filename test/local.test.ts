@@ -23,7 +23,9 @@ const ENDPOINTS = {
         }),
         additionalPaths: z.tuple([
             z.enum(["Bob", "Douglas", "Jeremy"]),
-            z.enum(["Smith", "Jones", "Williams"]),
+            z.coerce.number().pipe(z.enum({
+                "Value1": 1,
+            })),
         ]),
     }),
     postPeople: new ZonoEndpoint({
@@ -159,7 +161,7 @@ describe("Server and Client", () => {
         const response = await CLIENT.getPeople.axios({
             additionalPaths: [
                 "Bob",
-                "Williams",
+                1,
             ],
             headers: {
                 Authorization: KEY,

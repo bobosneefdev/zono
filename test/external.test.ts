@@ -40,8 +40,8 @@ export const THIRD_PARTY_API = {
             orderBy: z.enum(["price"]),
             sortOrder: z.enum(["DESC", "ASC"]),
             page: z.number().int().min(1),
-            results: z.literal(100),
-            onlyTradeLocked: z.boolean().optional(),
+            results: z.coerce.number().pipe(z.literal(100)),
+            onlyTradeLocked: z.coerce.boolean().optional(),
         }),
     }),
 } satisfies ZonoEndpointRecord;
