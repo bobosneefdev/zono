@@ -134,8 +134,14 @@ export class ZonoServer<
 
                 let parsedQuery: any;
                 if (endpoint.definition.query) {
-                    const query = ctx.req.query();
-                    const parsed = await endpoint.definition.query.safeParseAsync(query);
+                    const formatted: Record<string, Array<string> | string> = {};
+                    for (const [key, fullSchema] of Object.entries(endpoint.definition.query.shape)) {
+                        const schema = "unwrap" in fullSchema ? fullSchema.unwrap() : fullSchema;
+                        const value = schema.type === "array" ? ctx.req.queries(key) : ctx.req.query(key);
+                        if (!value) continue;
+                        formatted[key] = value;
+                    }
+                    const parsed = await endpoint.definition.query.safeParseAsync(formatted);
                     if (!parsed.success) {
                         const error = options?.obfuscate
                             ? { error: "Invalid query" }
@@ -243,9 +249,7 @@ export class ZonoServer<
         }
 
         if (endpointDefinition.query) {
-            data.requestParams!.query = endpointDefinition.query.type === "optional"
-                ? endpointDefinition.query.unwrap()
-                : endpointDefinition.query;
+            data.requestParams!.query = endpointDefinition.query;
         }
 
         if (endpointDefinition.headers) {

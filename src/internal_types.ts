@@ -4,6 +4,8 @@ export type PossibleZodPipe<T extends z.ZodType> = T | z.ZodPipe<T, any>;
 
 export type PossibleZodOptional<T extends z.ZodType> = T | z.ZodOptional<T>;
 
+export type PossibleZodArray<T extends z.ZodType> = T | z.ZodArray<T>;
+
 export type PathHeadersQuerySchema =
     z.ZodType<any, string, z.core.$ZodTypeInternals<any, string>> |
     PossibleZodPipe<z.coerce.ZodCoercedNumber> |

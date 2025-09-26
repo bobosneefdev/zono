@@ -56,35 +56,13 @@ export class ZonoEndpointClient<
             }
             : this.buildFetchHeaders(callData);
         return [
-            this.buildFetchUrl(callData),
+            this.buildUrl(callData),
             {
                 method: this.endpoint.definition.method,
                 headers,
                 body,
             }
         ]
-    }
-
-    private buildFetchUrl(callData: ZonoEndpointClientCallData<T, U>): URL {
-        let urlStr = `${this.options.baseUrl}${this.endpoint.definition.path}`;
-        if (this.endpoint.definition.additionalPaths) {
-            const parsed = this.endpoint.definition.additionalPaths.parse("additionalPaths" in callData ? callData.additionalPaths : undefined);
-            for (const path of parsed) {
-                urlStr += `/${path}`;
-            }
-        }
-
-        const url = new URL(urlStr);
-        if ("query" in callData && this.endpoint.definition.query) {
-            const parsed = this.endpoint.definition.query.parse(callData.query);
-            if (parsed) {
-                for (const [key, value] of Object.entries(parsed)) {
-                    url.searchParams.set(key, String(value));
-                }
-            }
-        }
-
-        return url;
     }
 
     private buildFetchHeaders(callData: ZonoEndpointClientCallData<T, U>): HeadersInit | undefined {
@@ -138,25 +116,13 @@ export class ZonoEndpointClient<
         additionalConfig?: CompatibleAxiosConfig
     ): AxiosRequestConfig {
         return {
-            url: this.buildAxiosUrl(callData),
+            url: this.buildUrl(callData).toString(),
             method: this.endpoint.definition.method,
             data: this.buildAxiosData(callData),
-            params: this.buildAxiosParams(callData),
             headers: this.buildAxiosHeaders(callData),
             ...this.defaultAxiosConfig,
             ...additionalConfig,
         }
-    }
-
-    private buildAxiosUrl(callData: ZonoEndpointClientCallData<T, U>): string {
-        let urlStr = `${this.options.baseUrl}${this.endpoint.definition.path}`;
-        if (this.endpoint.definition.additionalPaths) {
-            const parsed = this.endpoint.definition.additionalPaths.parse("additionalPaths" in callData ? callData.additionalPaths : undefined);
-            for (const path of parsed) {
-                urlStr += `/${path}`;
-            }
-        }
-        return urlStr;
     }
 
     private buildAxiosHeaders(callData: ZonoEndpointClientCallData<T, U>): RawAxiosRequestHeaders | undefined {
@@ -173,9 +139,33 @@ export class ZonoEndpointClient<
         return this.endpoint.definition.body.parse("body" in callData ? callData.body : undefined);
     }
 
-    private buildAxiosParams(callData: ZonoEndpointClientCallData<T, U>): AxiosRequestConfig["params"] | undefined {
-        if (!this.endpoint.definition.query) return undefined;
-        return this.endpoint.definition.query.parse("query" in callData ? callData.query : undefined);
+    private buildUrl(callData: ZonoEndpointClientCallData<T, U>): URL {
+        let urlStr = `${this.options.baseUrl}${this.endpoint.definition.path}`;
+        if (this.endpoint.definition.additionalPaths) {
+            const parsed = this.endpoint.definition.additionalPaths.parse("additionalPaths" in callData ? callData.additionalPaths : undefined);
+            for (const path of parsed) {
+                urlStr += `/${path}`;
+            }
+        }
+
+        const url = new URL(urlStr);
+        if ("query" in callData && this.endpoint.definition.query) {
+            const parsed = this.endpoint.definition.query.parse(callData.query);
+            if (parsed) {
+                for (const [key, value] of Object.entries(parsed)) {
+                    if (Array.isArray(value)) {
+                        for (const item of value) {
+                            url.searchParams.append(key, String(item));
+                        }
+                    }
+                    else {
+                        url.searchParams.set(key, String(value));
+                    }
+                }
+            }
+        }
+
+        return url;
     }
 }
 
