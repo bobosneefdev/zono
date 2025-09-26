@@ -42,6 +42,16 @@ const ENDPOINTS = {
             "X-Api-Key": z.literal(KEY),
         }),
     }),
+    coercedDateQuery: new ZonoEndpoint({
+        method: "get",
+        path: "/coercedDateQuery",
+        response: z.object({
+            success: z.boolean(),
+        }),
+        query: z.object({
+            date: z.coerce.date(),
+        }),
+    }),
 } satisfies ZonoEndpointRecord;
 
 const SOCKET_DEFINITION = {
@@ -106,7 +116,15 @@ const SERVER = new ZonoServer(
                         success: true,
                     }
                 }
-            }
+            },
+            coercedDateQuery: (request) => {
+                return {
+                    status: 200,
+                    data: {
+                        success: request.query.date instanceof Date,
+                    }
+                }
+            },
         },
         port: PORT,
         socket: SOCKET_SERVER,
@@ -157,7 +175,7 @@ describe("Server and Client", () => {
         process.exit(0);
     });
 
-    it("GET /people", async () => {
+    it("Simple GET endpoint, has coerced path", async () => {
         const response = await CLIENT.getPeople.axios({
             additionalPaths: [
                 "Bob",
@@ -177,7 +195,7 @@ describe("Server and Client", () => {
     });
 
 
-    it("POST /people", async () => {
+    it("Simple POST endpoint, nothing special", async () => {
         const response = await CLIENT.postPeople.fetch({
             body: {
                 firstName: "Bob",
@@ -194,6 +212,23 @@ describe("Server and Client", () => {
         else {
             console.error(response);
         }
+        expect(response.success).toBe(true);
+    });
+
+    it("GET endpoint with a coerced date query", async () => {
+        const response = await CLIENT.coercedDateQuery.fetch({
+            query: {
+                date: new Date(),
+            },
+            headers: {
+                Authorization: KEY,
+            }
+        });
+
+        if (response.success) {
+            expect(response.data.success).toBe(true);
+        }
+
         expect(response.success).toBe(true);
     });
 
