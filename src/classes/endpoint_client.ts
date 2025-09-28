@@ -169,7 +169,7 @@ export class ZonoEndpointClient<
     }
 }
 
-export type ZonoEndpointClientRecord<T extends Record<string, ZonoEndpoint> = Record<string, ZonoEndpoint>> = T;
+export type ZonoEndpointClientRecord<T extends Record<string, ZonoEndpointClient> = Record<string, ZonoEndpointClient>> = T;
 
 export type ZonoEndpointClientFetchResponse<T extends ZonoEndpoint> = ({
     success: true;
