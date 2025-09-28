@@ -31,20 +31,7 @@ export class ZonoEndpointClient<
                 response,
             }
         }
-        const data = await response.json();
-        const parsed = await this.endpoint.definition.response.safeParseAsync(data);
-        if (!parsed.success) {
-            return {
-                success: false,
-                zodError: parsed.error,
-                response,
-            }
-        }
-        return {
-            success: true,
-            data: parsed.data as z.infer<T["definition"]["response"]>,
-            response,
-        }
+        return this.parseFetchResponse(response);
     }
 
     getFetchConfig(callData: ZonoEndpointClientCallData<T, U>): [URL, RequestInit] {
@@ -63,6 +50,23 @@ export class ZonoEndpointClient<
                 body,
             }
         ]
+    }
+
+    async parseFetchResponse(response: Response): Promise<ZonoEndpointClientFetchResponse<T>> {
+        const data = await response.json();
+        const parsed = await this.endpoint.definition.response.safeParseAsync(data);
+        if (!parsed.success) {
+            return {
+                success: false,
+                zodError: parsed.error,
+                response,
+            }
+        }
+        return {
+            success: true,
+            data: parsed.data as z.infer<T["definition"]["response"]>,
+            response,
+        }
     }
 
     private buildFetchHeaders(callData: ZonoEndpointClientCallData<T, U>): HeadersInit | undefined {
@@ -94,21 +98,9 @@ export class ZonoEndpointClient<
             return {
                 success: false,
                 response,
-            }
+            };
         }
-        const parsedData = await this.endpoint.definition.response.safeParseAsync(response.data);
-        if (!parsedData.success) {
-            return {
-                success: false,
-                response,
-                zodError: parsedData.error,
-            }
-        }
-        return {
-            success: true,
-            response,
-            data: parsedData.data as z.infer<T["definition"]["response"]>,
-        }
+        return this.parseAxiosResponse(response);
     }
 
     getAxiosConfig(
@@ -122,6 +114,22 @@ export class ZonoEndpointClient<
             headers: this.buildAxiosHeaders(callData),
             ...this.defaultAxiosConfig,
             ...additionalConfig,
+        }
+    }
+
+    async parseAxiosResponse(response: AxiosResponse<any>): Promise<ZonoEndpointClientAxiosResponse<T>> {
+        const parsed = await this.endpoint.definition.response.safeParseAsync(response.data);
+        if (!parsed.success) {
+            return {
+                success: false,
+                response,
+                zodError: parsed.error,
+            }
+        }
+        return {
+            success: true,
+            response,
+            data: parsed.data as z.infer<T["definition"]["response"]>,
         }
     }
 
