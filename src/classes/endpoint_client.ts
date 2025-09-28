@@ -5,8 +5,8 @@ import { combineHeadersSchema } from "../internal_util/combine_headers_schema.js
 import axios, { AxiosRequestConfig, AxiosResponse, RawAxiosRequestHeaders } from "axios";
 
 export class ZonoEndpointClient<
-    T extends ZonoEndpoint,
-    U extends ZonoEndpointClientOptions
+    T extends ZonoEndpoint = ZonoEndpoint,
+    U extends ZonoEndpointClientOptions = ZonoEndpointClientOptions
 > {
     readonly endpoint: T;
     readonly options: U;
@@ -168,6 +168,8 @@ export class ZonoEndpointClient<
         return url;
     }
 }
+
+export type ZonoEndpointClientRecord<T extends Record<string, ZonoEndpoint> = Record<string, ZonoEndpoint>> = T;
 
 export type ZonoEndpointClientFetchResponse<T extends ZonoEndpoint> = ({
     success: true;
