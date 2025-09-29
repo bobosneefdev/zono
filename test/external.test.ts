@@ -39,9 +39,9 @@ export const THIRD_PARTY_API = {
         query: z.object({
             orderBy: z.enum(["price"]),
             sortOrder: z.enum(["DESC", "ASC"]),
-            page: z.number().int().min(1),
-            results: z.coerce.number().pipe(z.literal(100)),
-            onlyTradeLocked: z.coerce.boolean().optional(),
+            page: z.coerce.number<string>().int().min(1),
+            results: z.coerce.number<string>().pipe(z.literal(100)),
+            onlyTradeLocked: z.coerce.boolean<string>().optional(),
         }),
     }),
 } satisfies ZonoEndpointRecord;

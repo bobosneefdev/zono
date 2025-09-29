@@ -23,7 +23,7 @@ const ENDPOINTS = {
         }),
         additionalPaths: z.tuple([
             z.enum(["Bob", "Douglas", "Jeremy"]),
-            z.coerce.number().pipe(z.enum({
+            z.coerce.number<string>().pipe(z.enum({
                 "Value1": 1,
             })),
         ]),
@@ -49,7 +49,7 @@ const ENDPOINTS = {
             success: z.boolean(),
         }),
         query: z.object({
-            date: z.coerce.date(),
+            date: z.coerce.date<string>(),
         }),
     }),
 } satisfies ZonoEndpointRecord;

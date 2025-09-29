@@ -139,7 +139,11 @@ export class ZonoEndpointClient<
             this.options.globalHeaders,
         ]);
         if (!combinedHeaders) return undefined;
-        return combinedHeaders.parse("headers" in callData ? callData.headers : undefined);
+        const parsed = combinedHeaders.parse("headers" in callData ? callData.headers : undefined);
+        return Object.entries(parsed).reduce((prev, [key, value]) => {
+            prev[key] = String(value);
+            return prev;
+        }, {} as Record<string, string>);
     }
 
     private buildAxiosData(callData: ZonoEndpointClientCallData<T, U>): any | undefined {
