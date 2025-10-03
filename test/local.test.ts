@@ -142,13 +142,14 @@ const SERVER = new ZonoServer(
             },
         },
         globalHeaders: GLOBAL_HEADERS,
+        basePath: "/v1",
     },
 );
 
 const CLIENT = createZonoEndpointClientSuite(
     ENDPOINTS,
     {
-        baseUrl: `http://localhost:${PORT}`,
+        baseUrl: `http://localhost:${PORT}/v1`,
         globalHeaders: GLOBAL_HEADERS,
     },
 );

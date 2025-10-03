@@ -27,10 +27,14 @@ export class ZonoServer<
     }
 
     start(): Server {
+        if (this._server) throw new Error("Server already started");
+
         const app = new Hono();
 
         for (const [endpointName, endpoint] of typedObjectEntries(this.endpoints)) {
-            const coveredPath = this.getCoveredPath(endpoint.definition.method, endpoint.path);
+            const path = `${this.options.basePath ?? ""}${endpoint.path}`;
+
+            const coveredPath = this.getCoveredPath(endpoint.definition.method, path);
             if (this.coveredPaths.has(coveredPath)) {
                 throw new Error(`Path ${coveredPath} is already covered`);
             }
@@ -47,7 +51,7 @@ export class ZonoServer<
                         this.options.specificHandlerOptions?.[endpointName]?.obfuscate,
                 },
             );
-            instantiator(endpoint.path, handler);
+            instantiator(path, handler);
         }
 
         if (this.options.openApiOptions) {
@@ -90,6 +94,7 @@ export class ZonoServer<
     async stop(closeActiveConnections: boolean = false) {
         if (!this._server) return;
         await this._server.stop(closeActiveConnections);
+        this.coveredPaths.clear();
         this._server = null;
     }
 
@@ -102,8 +107,12 @@ export class ZonoServer<
             try {
                 let parsedPath: any;
                 if (endpoint.definition.additionalPaths) {
-                    const additionalParts = ctx.req.path.split("/").slice(endpoint.definition.path.split("/").length);
-                    const parsed = await endpoint.definition.additionalPaths.safeParseAsync(additionalParts);
+                    const additionalPathCount = endpoint.definition.path.split("/").length;
+                    const additionalPaths = ctx.req.path
+                        .replace(this.options.basePath ?? "", "")
+                        .split("/")
+                        .slice(additionalPathCount);
+                    const parsed = await endpoint.definition.additionalPaths.safeParseAsync(additionalPaths);
                     if (!parsed.success) {
                         const error = options?.obfuscate
                             ? { error: "Invalid path" }
@@ -308,6 +317,7 @@ export type ZonoServerOptions<T extends ZonoEndpointRecord> = {
     handlers: {
         [K in keyof T]: ZonoEndpointHandler<T[K]>;
     };
+    basePath?: string;
     socket?: ZonoSocketServer;
     handlerOptions?: ZonoEndpointHandlerOptions;
     specificHandlerOptions?: Partial<Record<keyof T, ZonoEndpointHandlerOptions>>;
