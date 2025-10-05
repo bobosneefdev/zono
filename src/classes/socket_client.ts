@@ -37,16 +37,24 @@ export class ZonoSocketClient<T extends ZonoSocketDefinition = ZonoSocketDefinit
      * Add a listener for an event from the server
      * @returns ID of the listener
      */
-    listen<K extends keyof T["serverEvents"] & string>(
+    listen<
+        U extends "once" | "on",
+        K extends keyof T["serverEvents"] & string
+    >(
+        type: U,
         ev: K,
         fn: (data: z.infer<T["serverEvents"][K]>) => void,
-    ) {
+    ): U extends "once" ? void : string {
+        if (type === "once") {
+            this.socket.once(ev, fn as any);
+            return undefined as any;
+        }
         if (!this.handlers[ev]) {
             this.handlers[ev] = new Map();
         }
         const id = crypto.randomUUID();
         this.handlers[ev].set(id, fn);
-        return id;
+        return id as any;
     }
 
     /**

@@ -233,56 +233,39 @@ describe("Server and Client", () => {
         expect(response.success).toBe(true);
     });
 
-    it("Socket: Client sends message, server echoes back", () => {
-        return new Promise<void>((res, rej) => {
-            const timeout = setTimeout(() => {
-                rej(new Error("Test timeout - no message received"));
-            }, 5000);
+    it("Socket: Client sends message, server echoes back", async () => {
+        let resolve: () => void;
+        const promise = new Promise<void>((res) => resolve = res);
 
-            const listenerId = SOCKET_CLIENT.listen("message", (data) => {
-                try {
-                    expect(data.content).toBe("Echo: Hello from client!");
-                    expect(typeof data.timestamp).toBe("number");
-                    expect(data.timestamp).toBeGreaterThan(0);
-                    
-                    SOCKET_CLIENT.removeHandler("message", listenerId);
-                    clearTimeout(timeout);
-                    res();
-                } catch (error) {
-                    clearTimeout(timeout);
-                    rej(error);
-                }
-            });
-
-            SOCKET_CLIENT.emit("sendMessage", {
-                content: "Hello from client!",
-            });
+        SOCKET_CLIENT.listen("once", "message", (data) => {
+            expect(data.content).toBe("Echo: Hello from client!");
+            expect(typeof data.timestamp).toBe("number");
+            expect(data.timestamp).toBeGreaterThan(0);
+            resolve();
         });
+
+        SOCKET_CLIENT.emit("sendMessage", {
+            content: "Hello from client!",
+        });
+
+        await promise;
     });
 
-    it("Socket: Client joins room, server notifies", () => {
-        return new Promise<void>((res, rej) => {
-            const timeout = setTimeout(() => {
-                rej(new Error("Test timeout - no userJoined event received"));
-            }, 5000);
+    it("Socket: Client joins room, server notifies", async () => {
+        let resolve: () => void;
+        const promise = new Promise<void>((res) => resolve = res);
 
-            const listenerId = SOCKET_CLIENT.listen("userJoined", (data) => {
-                try {
-                    expect(data.username).toBe("testuser");
-                    
-                    SOCKET_CLIENT.removeHandler("userJoined", listenerId);
-                    clearTimeout(timeout);
-                    res();
-                } catch (error) {
-                    clearTimeout(timeout);
-                    rej(error);
-                }
-            });
-
-            SOCKET_CLIENT.emit("joinRoom", {
-                username: "testuser",
-                room: "general",
-            });
+        const listenerId = SOCKET_CLIENT.listen("on", "userJoined", (data) => {
+            expect(data.username).toBe("testuser");
+            SOCKET_CLIENT.removeHandler("userJoined", listenerId);
+            resolve();
         });
+
+        SOCKET_CLIENT.emit("joinRoom", {
+            username: "testuser",
+            room: "general",
+        });
+
+        await promise;
     });
 });
