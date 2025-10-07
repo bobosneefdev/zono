@@ -112,6 +112,7 @@ export class ZonoEndpointClient<
             method: this.endpoint.definition.method,
             data: this.buildAxiosData(callData),
             headers: this.buildAxiosHeaders(callData),
+            validateStatus: () => true,
             ...this.defaultAxiosConfig,
             ...additionalConfig,
         }
