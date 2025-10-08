@@ -341,16 +341,15 @@ export type ZonoOpenApiOptions<T extends ZonoEndpointRecord> = {
     }
 }
 
-export type ZonoEndpointHandler<T extends ZonoEndpoint = ZonoEndpoint> = (options: ZonoEndpointHandlerPassIn<T>) => OptionalPromise<
-    {
-        status: 200,
-        data: z.infer<T["definition"]["response"]>,
-    } |
-    {
-        status: Exclude<ContentfulStatusCode, SuccessStatusCode>,
-        error: string,
-    }
->;
+export type ZonoEndpointHandler<T extends ZonoEndpoint = ZonoEndpoint> = (options: ZonoEndpointHandlerPassIn<T>) => ZonoEndpointHandlerReturn<T>;
+
+export type ZonoEndpointHandlerReturn<T extends ZonoEndpoint = ZonoEndpoint> = OptionalPromise<{
+    status: 200,
+    data: z.infer<T["definition"]["response"]>,
+} | {
+    status: Exclude<ContentfulStatusCode, SuccessStatusCode>,
+    error: string,
+}>;
 
 export type ZonoEndpointHandlerOptions = {
     obfuscate?: boolean;
