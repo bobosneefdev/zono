@@ -5,6 +5,7 @@ import { ZonoSocketServer } from "../src/classes/socket_server";
 import { ZonoSocketClient } from "../src/classes/socket_client";
 import { ZonoEndpointHeadersDefinition, ZonoSocketDefinition } from "../src/lib_types";
 import { createZonoEndpointClientSuite } from "../src/lib_util/create_endpoint_client_suite";
+import { Context, Next } from "hono";
 
 const PORT = 3000;
 
@@ -13,6 +14,24 @@ const KEY = "1234567890";
 const GLOBAL_HEADERS = z.object({
     "Authorization": z.literal(KEY),
 }) satisfies ZonoEndpointHeadersDefinition;
+
+// Middleware definitions
+const requestLoggerMiddleware = async (c: Context, next: Next) => {
+    console.log(`[${new Date().toISOString()}] ${c.req.method} ${c.req.url}`);
+    await next();
+};
+
+const customHeaderMiddleware = async (c: Context, next: Next) => {
+    await next();
+    c.res.headers.set("X-Custom-Middleware", "true");
+    c.res.headers.set("X-Request-ID", Math.random().toString(36).substring(7));
+};
+
+const contextModifierMiddleware = async (c: Context, next: Next) => {
+    // Add custom data to context that can be accessed by handlers
+    c.set("middlewareData", { timestamp: Date.now(), processed: true });
+    await next();
+};
 
 const ENDPOINTS = {
     getPeople: new ZonoEndpoint({
@@ -50,6 +69,14 @@ const ENDPOINTS = {
         }),
         query: z.object({
             date: z.coerce.date<string>(),
+        }),
+    }),
+    middlewareTest: new ZonoEndpoint({
+        method: "get",
+        path: "/middleware-test",
+        response: z.object({
+            success: z.boolean(),
+            middlewareProcessed: z.boolean(),
         }),
     }),
 } satisfies ZonoEndpointRecord;
@@ -125,6 +152,15 @@ const SERVER = new ZonoServer(
                     }
                 }
             },
+            middlewareTest: () => {
+                return {
+                    status: 200,
+                    data: {
+                        success: true,
+                        middlewareProcessed: true,
+                    }
+                }
+            },
         },
         port: PORT,
         socket: SOCKET_SERVER,
@@ -143,6 +179,11 @@ const SERVER = new ZonoServer(
         },
         globalHeaders: GLOBAL_HEADERS,
         basePath: "/v1",
+        middleware: [
+            requestLoggerMiddleware,
+            customHeaderMiddleware,
+            contextModifierMiddleware,
+        ],
     },
 );
 
@@ -267,5 +308,75 @@ describe("Server and Client", () => {
         });
 
         await promise;
+    });
+
+    it("Middleware: Custom headers are added to responses", async () => {
+        const response = await CLIENT.middlewareTest.fetch({
+            headers: {
+                Authorization: KEY,
+            },
+        });
+
+        expect(response.success).toBe(true);
+        if (response.success) {
+            expect(response.data.success).toBe(true);
+            expect(response.data.middlewareProcessed).toBe(true);
+        }
+
+        // Check that custom headers were added by middleware
+        expect(response.response.headers.get("X-Custom-Middleware")).toBe("true");
+        expect(response.response.headers.get("X-Request-ID")).toBeDefined();
+        expect(response.response.headers.get("X-Request-ID")).toMatch(/^[a-z0-9]+$/);
+    });
+
+    it("Middleware: Request logging works", async () => {
+        // Capture console.log to verify middleware logging
+        const originalLog = console.log;
+        const logMessages: string[] = [];
+        console.log = (...args: any[]) => {
+            logMessages.push(args.join(" "));
+        };
+
+        try {
+            const response = await CLIENT.middlewareTest.fetch({
+                headers: {
+                    Authorization: KEY,
+                },
+            });
+
+            expect(response.success).toBe(true);
+            
+            // Verify that the request was logged
+            const logMessage = logMessages.find(msg => 
+                msg.includes("GET") && 
+                msg.includes("/v1/middleware-test")
+            );
+            expect(logMessage).toBeDefined();
+            expect(logMessage).toMatch(/\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\] GET/);
+        } finally {
+            console.log = originalLog;
+        }
+    });
+
+    it("Middleware: All endpoints receive middleware", async () => {
+        // Test that middleware applies to all endpoints, not just the middleware test endpoint
+        const response = await CLIENT.getPeople.axios({
+            additionalPaths: [
+                "Bob",
+                1,
+            ],
+            headers: {
+                Authorization: KEY,
+            },
+        });
+
+        expect(response.success).toBe(true);
+        if (response.success) {
+            expect(response.data.success).toBe(true);
+        }
+
+        // Verify middleware headers are present on all endpoints
+        expect(response.response.headers["x-custom-middleware"]).toBe("true");
+        expect(response.response.headers["x-request-id"]).toBeDefined();
     });
 });
