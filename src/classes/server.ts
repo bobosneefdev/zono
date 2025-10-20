@@ -345,7 +345,7 @@ export type ZonoEndpointHandler<T extends ZonoEndpoint = ZonoEndpoint> = (option
 
 export type ZonoEndpointHandlerReturn<T extends ZonoEndpoint = ZonoEndpoint> = OptionalPromise<{
     status: 200,
-    data: z.infer<T["definition"]["response"]>,
+    data: z.input<T["definition"]["response"]>,
 } | {
     status: Exclude<ContentfulStatusCode, SuccessStatusCode>,
     error: string,
@@ -357,11 +357,11 @@ export type ZonoEndpointHandlerOptions = {
 }
 
 export type ZonoEndpointHandlerPassIn<T extends ZonoEndpoint> = (
-    T["definition"]["body"] extends z.ZodType ? { body: z.infer<T["definition"]["body"]> } : {}
+    T["definition"]["body"] extends z.ZodType ? { body: z.output<T["definition"]["body"]> } : {}
 ) & (
-    T["definition"]["query"] extends z.ZodType ? { query: z.infer<T["definition"]["query"]> } : {}
+    T["definition"]["query"] extends z.ZodType ? { query: z.output<T["definition"]["query"]> } : {}
 ) & (
-    T["definition"]["headers"] extends z.ZodType ? { headers: z.infer<T["definition"]["headers"]> } : {}
+    T["definition"]["headers"] extends z.ZodType ? { headers: z.output<T["definition"]["headers"]> } : {}
 ) & (
-    T["definition"]["additionalPaths"] extends z.ZodType ? { additionalPaths: z.infer<T["definition"]["additionalPaths"]> } : {}
+    T["definition"]["additionalPaths"] extends z.ZodType ? { additionalPaths: z.output<T["definition"]["additionalPaths"]> } : {}
 );

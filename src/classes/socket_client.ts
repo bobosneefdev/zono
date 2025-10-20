@@ -28,7 +28,7 @@ export class ZonoSocketClient<T extends ZonoSocketDefinition = ZonoSocketDefinit
 
     emit<K extends keyof T["clientEvents"] & string>(
         ev: K,
-        data: z.infer<T["clientEvents"][K]>,
+        data: z.input<T["clientEvents"][K]>,
     ) {
         this.socket.emit(ev, data);
     }
@@ -43,7 +43,7 @@ export class ZonoSocketClient<T extends ZonoSocketDefinition = ZonoSocketDefinit
     >(
         type: U,
         ev: K,
-        fn: (data: z.infer<T["serverEvents"][K]>) => void,
+        fn: (data: z.output<T["serverEvents"][K]>) => void,
     ): U extends "once" ? void : string {
         if (type === "once") {
             this.socket.once(ev, fn as any);
