@@ -64,7 +64,7 @@ export class ZonoEndpointClient<
         }
         return {
             success: true,
-            data: parsed.data as z.infer<T["definition"]["response"]>,
+            data: parsed.data as z.output<T["definition"]["response"]>,
             response,
         }
     }
@@ -130,7 +130,7 @@ export class ZonoEndpointClient<
         return {
             success: true,
             response,
-            data: parsed.data as z.infer<T["definition"]["response"]>,
+            data: parsed.data as z.output<T["definition"]["response"]>,
         }
     }
 
@@ -186,7 +186,7 @@ export type ZonoEndpointClientRecord<T extends Record<string, ZonoEndpointClient
 
 export type ZonoEndpointClientFetchResponse<T extends ZonoEndpoint> = ({
     success: true;
-    data: z.infer<T["definition"]["response"]>;
+    data: z.output<T["definition"]["response"]>;
 } | {
     success: false;
     zodError?: z.ZodError;
@@ -207,8 +207,8 @@ type CompatibleAxiosConfig = Omit<
 
 export type ZonoEndpointClientAxiosResponse<T extends ZonoEndpoint> = {
     success: true;
-    response: AxiosResponse<z.infer<T["definition"]["response"]>>;
-    data: z.infer<T["definition"]["response"]>;
+    response: AxiosResponse<z.input<T["definition"]["response"]>>;
+    data: z.output<T["definition"]["response"]>;
 } | {
     success: false;
     response: AxiosResponse<any>;

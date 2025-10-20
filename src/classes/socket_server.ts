@@ -44,7 +44,7 @@ export class ZonoSocketServer<T extends ZonoSocketDefinition = ZonoSocketDefinit
     /** Broadcast an event to all connected clients */
     emit<K extends keyof T["serverEvents"] & string>(
         event: K,
-        data: z.infer<T["serverEvents"][K]>,
+        data: z.input<T["serverEvents"][K]>,
     ) {
         this.io.emit(event, data);
     }
@@ -54,6 +54,6 @@ export class ZonoSocketServer<T extends ZonoSocketDefinition = ZonoSocketDefinit
 export type ZonoSocketServerOptions<T extends ZonoSocketDefinition = ZonoSocketDefinition> = Partial<SocketIOServerOptions> & {
     middleware?: Array<Parameters<SocketIOServer["use"]>[0]>;
     handlers: {
-        [K in keyof T["clientEvents"]]: (data: z.infer<T["clientEvents"][K]>) => void;
+        [K in keyof T["clientEvents"]]: (data: z.output<T["clientEvents"][K]>) => void;
     }
 };

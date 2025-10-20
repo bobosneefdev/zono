@@ -18,23 +18,23 @@ export type ZonoEndpointClientCallData<
     U extends ZonoEndpointClientOptions
 > = (
     T["definition"]["body"] extends z.ZodType
-        ? { body: z.infer<T["definition"]["body"]> }
+        ? { body: z.input<T["definition"]["body"]> }
         : {}
 ) & (
     T["definition"]["query"] extends z.ZodType
-        ? { query: z.infer<T["definition"]["query"]> }
+        ? { query: z.output<T["definition"]["query"]> }
         : {}
 ) & (
     U["globalHeaders"] extends z.ZodType
-        ? { headers: z.infer<U["globalHeaders"]> }
+        ? { headers: z.output<U["globalHeaders"]> }
         : {}
 ) & (
     T["definition"]["headers"] extends z.ZodType
-        ? { headers: z.infer<T["definition"]["headers"]> }
+        ? { headers: z.output<T["definition"]["headers"]> }
         : {}
 ) & (
     T["definition"]["additionalPaths"] extends z.ZodType
-        ? { additionalPaths: z.infer<T["definition"]["additionalPaths"]> }
+        ? { additionalPaths: z.output<T["definition"]["additionalPaths"]> }
         : {}
 );
 
