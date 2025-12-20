@@ -1,6 +1,6 @@
 {
     "name": "@bobosneefdev/zono",
-    "version": "5.0.0",
+    "version": "5.0.1",
     "exports": {
         "./shared": {
             "types": "./dist/shared.d.ts",
@@ -40,19 +40,20 @@
     "homepage": "https://github.com/bobosneefdev/zono#readme",
     "description": "Easily create type-safe APIs, clients, and servers with Zod and Hono.",
     "dependencies": {
-        "@socket.io/bun-engine": "^0.0.2",
-        "@types/bun": "^1.2.22",
-        "axios": "^1.12.2",
-        "hono": "^4.9.7",
+        "@socket.io/bun-engine": "^0.1.0",
+        "@types/bun": "^1.3.5",
+        "axios": "^1.13.2",
+        "hono": "^4.11.1",
         "socket.io": "^4.8.1",
-        "zod": "^4.1.9",
-        "zod-openapi": "^5.4.1"
+        "zod": "^4.2.1",
+        "zod-openapi": "^5.4.5"
     },
     "devDependencies": {
         "@types/jest": "^30.0.0",
+        "@types/node": "^25.0.3",
         "socket.io-client": "^4.8.1",
-        "tsup": "^8.5.0",
-        "typescript": "^5.9.2"
+        "tsup": "^8.5.1",
+        "typescript": "^5.9.3"
     },
     "publishConfig": {
         "registry": "https://registry.npmjs.org"

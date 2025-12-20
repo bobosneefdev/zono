@@ -15,7 +15,7 @@ export class ZonoServer<
 > {
     readonly endpoints: T;
     readonly options: U;
-    private _server: Server | null = null;
+    private _server: Server<any> | null = null;
     private coveredPaths: Set<string> = new Set();
 
     constructor(
@@ -26,7 +26,7 @@ export class ZonoServer<
         this.options = options;
     }
 
-    start(): Server {
+    start(): Server<any> {
         if (this._server) throw new Error("Server already started");
 
         const app = new Hono();
@@ -68,8 +68,8 @@ export class ZonoServer<
         const socket = this.options.socket;
         const { websocket } = socket?.engine.handler() ?? {};
 
-        this._server = serve({
-            fetch(req, server) {
+        const baseOptions = {
+            fetch(req: Request, server: Server<any>) {
                 if (socket) {
                     const url = new URL(req.url);
                     const socketStart = socket.serverOpts.path ?? "/socket.io";
@@ -81,9 +81,12 @@ export class ZonoServer<
             },
             port: this.options.port,
             hostname: this.options.bind,
-            websocket,
             idleTimeout: 30,
-        });
+        };
+
+        this._server = websocket 
+            ? serve({ ...baseOptions, websocket })
+            : serve(baseOptions);
         return this._server;
     }
 
