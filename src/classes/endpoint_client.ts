@@ -25,12 +25,13 @@ export class ZonoEndpointClient<
     async fetch(callData: ZonoEndpointClientCallData<T, U>): Promise<ZonoEndpointClientFetchResponse<T>> {
         const fetchConfig = this.getFetchConfig(callData);
         const response = await fetch(...fetchConfig);
-        if (response.status !== 200) {
+        if (!response.ok) {
             return {
                 success: false,
                 response,
-            }
+            };
         }
+
         return this.parseFetchResponse(response);
     }
 
@@ -94,7 +95,7 @@ export class ZonoEndpointClient<
     ): Promise<ZonoEndpointClientAxiosResponse<T>> {
         const config = this.getAxiosConfig(callData, additionalConfig);
         const response = await axios(config);
-        if (response.status !== 200) {
+        if (response.status < 200 || response.status >= 300) {
             return {
                 success: false,
                 response,
