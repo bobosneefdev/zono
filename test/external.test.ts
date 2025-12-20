@@ -13,7 +13,7 @@ export const THIRD_PARTY_API = {
                 /** Identical format to our uniformName */
                 marketHashName: z.string(),
                 marketNameHashCode: z.number().int(),
-                float: z.number().positive().lt(1).nullable(),
+                float: z.number().min(0).lt(1).nullable(),
                 pattern: z.number().int().nullable(),
                 /** Balance dollars */
                 price: z.number(),
