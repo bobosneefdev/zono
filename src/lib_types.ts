@@ -13,6 +13,12 @@ export type ZonoEndpointClientOptions = {
     globalHeaders?: ZonoEndpointHeadersDefinition;
 }
 
+export type ZonoEndpointClientHeadersInput<T extends ZonoEndpointHeadersDefinition> = {
+    [K in keyof T["shape"] as T["shape"][K] extends z.ZodOptional<any> ? never : K]: z.output<T["shape"][K]> | undefined
+} & {
+    [K in keyof T["shape"] as T["shape"][K] extends z.ZodOptional<any> ? K : never]?: z.output<T["shape"][K]>
+}
+
 export type ZonoEndpointClientCallData<
     T extends ZonoEndpoint,
     U extends ZonoEndpointClientOptions
@@ -26,11 +32,11 @@ export type ZonoEndpointClientCallData<
         : {}
 ) & (
     U["globalHeaders"] extends z.ZodType
-        ? { headers: z.output<U["globalHeaders"]> }
+        ? { headers: ZonoEndpointClientHeadersInput<U["globalHeaders"]> }
         : {}
 ) & (
     T["definition"]["headers"] extends z.ZodType
-        ? { headers: z.output<T["definition"]["headers"]> }
+        ? { headers: ZonoEndpointClientHeadersInput<T["definition"]["headers"]> }
         : {}
 ) & (
     T["definition"]["additionalPaths"] extends z.ZodType
