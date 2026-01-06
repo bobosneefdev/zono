@@ -12,7 +12,7 @@ const PORT = 3000;
 const KEY = "1234567890";
 
 const GLOBAL_HEADERS = z.object({
-    "Authorization": z.literal(KEY),
+    "Authorization": z.literal(KEY).default(KEY),
 }) satisfies ZonoEndpointHeadersDefinition;
 
 // Middleware definitions
@@ -224,7 +224,7 @@ describe("Server and Client", () => {
                 1,
             ],
             headers: {
-                Authorization: KEY,
+                Authorization: undefined,
             },
         });
         if (response.success) {
