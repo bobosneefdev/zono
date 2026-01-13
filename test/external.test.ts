@@ -1,73 +1,88 @@
 import z from "zod";
-import { ZonoEndpoint, ZonoEndpointRecord } from "../src/classes/endpoint";
-import { createZonoEndpointClientSuite } from "../src/lib_util/create_endpoint_client_suite";
+import { createZonoEndpointClientSuite } from "../src/client/endpoint_client_suite.js";
+import { ZonoEndpointRecord } from "../src/shared/endpoint.js";
 
-const BASE_URL = "https://web.pirateswap.com";
+const BASE_URL = "https://api.chucknorris.io/jokes";
 
-export const THIRD_PARTY_API = {
-    getInventory: new ZonoEndpoint({
-        method: "get",
-        path: "/inventory/ExchangerInventory",
-        response: z.object({
-            items: z.array(z.object({
-                /** Identical format to our uniformName */
-                marketHashName: z.string(),
-                marketNameHashCode: z.number().int(),
-                float: z.number().min(0).lt(1).nullable(),
-                pattern: z.number().int().nullable(),
-                /** Balance dollars */
-                price: z.number(),
-                inspectInGameLink: z.string().nullable(),
-                keyChains: z
-                    .array(
-                        z.object({
-                            /** missing prefix */
-                            name: z.string(),
-                        }),
-                    )
-                    .nullable(),
-                stickers: z.array(
-                    z.object({
-                        /** missing prefix */
-                        name: z.string(),
-                    }),
-                ),
-                paintIndex: z.number().int().nullable(),
-                tradeableAfter: z.iso.datetime().optional(),
-            })),
-        }),
-        query: z.object({
-            orderBy: z.enum(["price"]),
-            sortOrder: z.enum(["DESC", "ASC"]),
-            page: z.coerce.number<string>().int().min(1),
-            results: z.coerce.number<string>().pipe(z.literal(100)),
-            onlyTradeLocked: z.coerce.boolean<string>().optional(),
-        }),
-    }),
-} satisfies ZonoEndpointRecord;
+enum ChuckNorrisJokeCategory {
+	ANIMAL = "animal",
+	CAREER = "career",
+	CELEBRITY = "celebrity",
+	DEV = "dev",
+	EXPLICIT = "explicit",
+	FASHION = "fashion",
+	FOOD = "food",
+	HISTORY = "history",
+	MONEY = "money",
+	MOVIE = "movie",
+	MUSIC = "music",
+	POLITICAL = "political",
+	RELIGION = "religion",
+	SCIENCE = "science",
+	SPORT = "sport",
+	TRAVEL = "travel",
+}
 
-const CLIENT = createZonoEndpointClientSuite(THIRD_PARTY_API, { baseUrl: BASE_URL });
+const zChuckNorrisJoke = z.object({
+	id: z.string(),
+	created_at: z.coerce.date(),
+	updated_at: z.coerce.date(),
+	icon_url: z.url(),
+	url: z.url(),
+	value: z.string(),
+	categories: z.array(z.enum(ChuckNorrisJokeCategory)).optional(),
+});
 
-describe(
-    "Third Party Client",
-    () => {
-        it("GET /inventory/ExchangerInventory", async () => {
-            const response = await CLIENT.getInventory.axios({
-                query: {
-                    page: 1,
-                    orderBy: "price",
-                    results: 100,
-                    sortOrder: "DESC",
-                    onlyTradeLocked: false,
-                },
-            });
-            if (response.success) {
-                expect(response.data.items.length).toBe(100);
-            }
-            else {
-                console.error(response);
-            }
-            expect(response.success).toBe(true);
-        });
-    },
-)
+const CHUCK_NORRIS_API = {
+	search: {
+		method: "get",
+		path: "/search",
+		response: z.object({
+			total: z.number(),
+			result: z.array(zChuckNorrisJoke),
+		}),
+		query: z.object({
+			query: z.tuple([z.string()]),
+		}),
+	},
+	random: {
+		method: "get",
+		path: "/random",
+		response: zChuckNorrisJoke,
+		query: z.object({
+			category: z.tuple([z.enum(ChuckNorrisJokeCategory)]).optional(),
+		}),
+	},
+} as const satisfies ZonoEndpointRecord;
+
+const CHUCK_NORRIS_CLIENT = createZonoEndpointClientSuite(CHUCK_NORRIS_API, { baseUrl: BASE_URL });
+
+describe("External API Client", () => {
+	it("search endpoint", async () => {
+		const response = await CHUCK_NORRIS_CLIENT.search.fetch({
+			query: {
+				query: ["bung"],
+			},
+		});
+		if (response.success) {
+			expect(response.data.result.length).toBeGreaterThan(0);
+		} else {
+			console.error(response);
+		}
+		expect(response.success).toBe(true);
+	});
+
+	it("random endpoint", async () => {
+		const response = await CHUCK_NORRIS_CLIENT.random.axios({
+			query: {
+				category: [ChuckNorrisJokeCategory.ANIMAL],
+			},
+		});
+		if (response.success) {
+			expect(response.data.categories).toContain(ChuckNorrisJokeCategory.ANIMAL);
+		} else {
+			console.error(response);
+		}
+		expect(response.success).toBe(true);
+	});
+});

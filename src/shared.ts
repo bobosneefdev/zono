@@ -1,2 +1,2 @@
-export * from "./classes/endpoint.js";
-export * from "./lib_types.js";
+export * from "./shared/endpoint.js";
+export * from "./shared/socket.js";

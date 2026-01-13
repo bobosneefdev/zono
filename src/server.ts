@@ -1,3 +1,2 @@
-export * from "./classes/server.js";
-export * from "./classes/socket_server.js";
-export * from "./lib_types.js";
+export * from "./server/http_server.js";
+export * from "./server/socket_server.js";
