@@ -1,10 +1,13 @@
-# Zono
-### Build type-safe clients and Hono servers using Zod schemas
+import z from "zod";
+import { createZonoEndpointClientSuite } from "../src/client.js";
+import {
+	createZonoHttpServerMiddlewareHeaders,
+	ZonoEndpointConvertersRecord,
+	ZonoHttpServer,
+	ZonoHttpServerHandlers,
+} from "../src/server.js";
+import { ZonoEndpointHeaders, ZonoEndpointRecord } from "../src/shared.js";
 
-**Note:** There's also a WebSocket client/server pair powered by the bun engine, you can find a usage example in the tests directory.
-
-### Server + Client Example:
-```ts
 const PORT = 3000;
 
 const KEY = "1234567890";
@@ -102,7 +105,7 @@ const ENDPOINT_HANDLERS: ZonoHttpServerHandlers<typeof ENDPOINTS> = {
 
 const zMiddlewareHeaders = z.object({
 	/** Ensure that header keys are always lowercase! */
-	authorization: z.literal(KEY),
+	authorization: z.number().transform(String),
 }) satisfies ZonoEndpointHeaders;
 
 const ENDPOINT_CONVERTERS: ZonoEndpointConvertersRecord<typeof ENDPOINTS> = {
@@ -130,7 +133,13 @@ const SERVER = new ZonoHttpServer(
 		basePath: "/v1",
 		handlers: ENDPOINT_HANDLERS,
 		converters: ENDPOINT_CONVERTERS,
-		middlewareHeaders: createZonoHttpServerMiddlewareHeaders(zMiddlewareHeaders),
+		middlewareHeaders: createZonoHttpServerMiddlewareHeaders(zMiddlewareHeaders, {
+			converter(input) {
+				return {
+					authorization: Number(input.authorization),
+				};
+			},
+		}),
 	},
 	{
 		openApiOptions: {
@@ -144,6 +153,7 @@ const SERVER = new ZonoHttpServer(
 		middleware: [
 			async (ctx, next, headers) => {
 				if (headers.authorization !== KEY) {
+					console.log(headers);
 					return ctx.json(
 						{
 							error: "Unauthorized",
@@ -163,86 +173,90 @@ const CLIENT = createZonoEndpointClientSuite(ENDPOINTS, {
 	middlewareHeaders: zMiddlewareHeaders,
 });
 
-SERVER.start();
+describe("Local HTTP Server/Client", () => {
+	beforeAll(async () => {
+		SERVER.start();
+	});
 
-const response = await CLIENT.nonStringHeader.fetch({
-	headers: {
-		"numerical-header": 1,
-	},
-	middlewareHeaders: {
-		authorization: KEY,
-	},
+	afterAll(async () => {
+		await SERVER.stop(true);
+	});
+
+	it("GET getPeople endpoint", async () => {
+		const response = await CLIENT.basicGet.fetch({
+			additionalPaths: ["Bob", "2"],
+			middlewareHeaders: {
+				authorization: Number(KEY),
+			},
+		});
+		if (response.success) {
+			expect(response.data.success).toBe(true);
+		} else {
+			const json = await response.response.json();
+			console.error(response, json);
+		}
+		expect(response.success).toBe(true);
+	});
+
+	it("POST postPeople endpoint", async () => {
+		const response = await CLIENT.basicPost.fetch({
+			body: {
+				firstName: "Bob",
+				lastName: "Williams",
+			},
+			headers: {
+				"x-api-key": KEY,
+			},
+			middlewareHeaders: {
+				authorization: Number(KEY),
+			},
+		});
+		if (response.success) {
+			expect(response.data.success).toBe(true);
+		} else {
+			const json = await response.response.json();
+			console.error(response, json);
+		}
+		expect(response.success).toBe(true);
+	});
+
+	it("GET nonStringQuery endpoint", async () => {
+		const response = await CLIENT.nonStringQuery.fetch({
+			query: {
+				date: [new Date()],
+			},
+			middlewareHeaders: {
+				authorization: Number(KEY),
+			},
+		});
+
+		if (response.success) {
+			expect(response.data.success).toBe(true);
+		} else {
+			const json = await response.response.json();
+			console.error(response, json);
+		}
+
+		expect(response.success).toBe(true);
+	});
+
+	it("GET nonStringHeader endpoint", async () => {
+		const response = await CLIENT.nonStringHeader.fetch({
+			middlewareHeaders: {
+				authorization: Number(KEY),
+			},
+			headers: {
+				"numerical-header": 1,
+			},
+		});
+
+		if (response.success) {
+			expect(response.data.success).toBe(true);
+		} else {
+			const json = await response.response.json();
+			console.error(response, json);
+		}
+
+		expect(response.success).toBe(true);
+	});
 });
-
-if (response.success) {
-	console.log(JSON.stringify(response.data, null, 2));
-}
-```
-
-### Standalone Client Example:
-```ts
-const BASE_URL = "https://api.chucknorris.io/jokes";
-
-enum ChuckNorrisJokeCategory {
-	ANIMAL = "animal",
-	CAREER = "career",
-	CELEBRITY = "celebrity",
-	DEV = "dev",
-	EXPLICIT = "explicit",
-	FASHION = "fashion",
-	FOOD = "food",
-	HISTORY = "history",
-	MONEY = "money",
-	MOVIE = "movie",
-	MUSIC = "music",
-	POLITICAL = "political",
-	RELIGION = "religion",
-	SCIENCE = "science",
-	SPORT = "sport",
-	TRAVEL = "travel",
-}
-
-const zChuckNorrisJoke = z.object({
-	id: z.string(),
-	created_at: z.coerce.date(),
-	updated_at: z.coerce.date(),
-	icon_url: z.url(),
-	url: z.url(),
-	value: z.string(),
-	categories: z.array(z.enum(ChuckNorrisJokeCategory)).optional(),
-});
-
-const CHUCK_NORRIS_API = {
-	search: {
-		method: "get",
-		path: "/search",
-		response: z.object({
-			total: z.number(),
-			result: z.array(zChuckNorrisJoke),
-		}),
-		query: z.object({
-			query: z.tuple([z.string()]),
-		}),
-	},
-	random: {
-		method: "get",
-		path: "/random",
-		response: zChuckNorrisJoke,
-		query: z.object({
-			category: z.tuple([z.enum(ChuckNorrisJokeCategory)]).optional(),
-		}),
-	},
-} as const satisfies ZonoEndpointRecord;
-
-const CHUCK_NORRIS_CLIENT = createZonoEndpointClientSuite(CHUCK_NORRIS_API, { baseUrl: BASE_URL });
-
-const response = await CHUCK_NORRIS_CLIENT.random.fetch({
-	query: {
-		category: [ChuckNorrisJokeCategory.ANIMAL],
-	},
-});
-
-if (response.success) {
-	console.log(JSON.stringify(response.data, null, 2));
-}
-```
