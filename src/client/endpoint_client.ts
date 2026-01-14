@@ -94,8 +94,8 @@ export class ZonoEndpointClient<
 		return result;
 	}
 
-	async parseResponseData(data: any) {
-		return await this.endpoint.response.safeParseAsync(data);
+	async parseResponseData(data: any): Promise<z.ZodSafeParseResult<T["response"]>> {
+		return (await this.endpoint.response.safeParseAsync(data)) as any;
 	}
 
 	async fetch(
