@@ -620,6 +620,8 @@ export type ZonoMiddleware<T extends ZonoHttpServerMiddlewareHeadersAny | undefi
 	...args: ZonoMiddlewarePassIns<T>
 ) => OptionalPromise<Response | void>;
 
+export type ZonoMiddlewareRaw = MiddlewareHandler;
+
 type ZonoMiddlewarePassIns<T extends ZonoHttpServerMiddlewareHeadersAny | undefined> =
 	T extends ZonoHttpServerMiddlewareHeadersAny ? [middlewareHeaders: z.output<T["schema"]>] : [];
 
