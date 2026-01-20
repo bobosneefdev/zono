@@ -151,18 +151,28 @@ const SERVER = new ZonoHttpServer(
 			},
 		},
 		middleware: [
-			async (ctx, next, headers) => {
-				if (headers.authorization !== KEY) {
-					console.log(headers);
-					return ctx.json(
-						{
-							error: "Unauthorized",
-						},
-						401,
-					);
-				}
-				await next();
-				return undefined;
+			{
+				type: "preParseHeaders",
+				handler: async (ctx, next, headers) => {
+					if (headers.authorization !== KEY) {
+						console.log(headers);
+						return ctx.json(
+							{
+								error: "Unauthorized",
+							},
+							401,
+						);
+					}
+					await next();
+					return undefined;
+				},
+			},
+			{
+				type: "raw",
+				handler: async (c, next) => {
+					console.log(c.req.path);
+					await next();
+				},
 			},
 		],
 	},
