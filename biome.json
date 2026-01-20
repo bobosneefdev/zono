@@ -99,7 +99,8 @@
 				"noImportAssign": "error",
 				"noExplicitAny": "off",
 				"noThenProperty": "off",
-				"noVar": "error"
+				"noVar": "error",
+				"noConfusingVoidType": "off"
 			},
 			"complexity": {
 				"noStaticOnlyClass": "off",

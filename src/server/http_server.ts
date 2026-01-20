@@ -292,10 +292,14 @@ export class ZonoHttpServer<
 
 		const formatted: Array<MiddlewareHandler> = [];
 		for (const middleware of this.opts.middleware) {
+			if (middleware.type === "raw") {
+				formatted.push(middleware.handler);
+				continue;
+			}
 			formatted.push(async (ctx, next) => {
 				const middlewareHeadersConfig = this.conf.middlewareHeaders;
 				if (!middlewareHeadersConfig) {
-					return (middleware as any)(ctx, next);
+					return (middleware.handler as any)(ctx, next);
 				}
 
 				const rawHeaders = ctx.req.header();
@@ -314,7 +318,7 @@ export class ZonoHttpServer<
 					);
 				}
 
-				return (middleware as any)(ctx, next, parsed.data);
+				return (middleware.handler as any)(ctx, next, parsed.data);
 			});
 		}
 		return formatted;
@@ -555,7 +559,16 @@ export type ZonoHttpServerOptions<
 	globalHandlerOpts?: ZonoEndpointHandlerOptions;
 	specificHandlerOpts?: Partial<Record<keyof T, ZonoEndpointHandlerOptions>>;
 	openApiOptions?: ZonoHttpServerOpenApiOptions<T>;
-	middleware?: Array<ZonoMiddleware<U["middlewareHeaders"]>>;
+	middleware?: Array<
+		| {
+				type: "preParseHeaders";
+				handler: ZonoMiddleware<U["middlewareHeaders"]>;
+		  }
+		| {
+				type: "raw";
+				handler: MiddlewareHandler;
+		  }
+	>;
 };
 
 type ZonoHttpServerMiddlewareHeadersAny = Omit<MiddlewareHeaders<ZonoEndpointHeaders>, "opts"> & {
@@ -605,7 +618,7 @@ export type ZonoMiddleware<T extends ZonoHttpServerMiddlewareHeadersAny | undefi
 	c: Context,
 	next: Next,
 	...args: ZonoMiddlewarePassIns<T>
-) => OptionalPromise<Response | undefined>;
+) => OptionalPromise<Response | void>;
 
 type ZonoMiddlewarePassIns<T extends ZonoHttpServerMiddlewareHeadersAny | undefined> =
 	T extends ZonoHttpServerMiddlewareHeadersAny ? [middlewareHeaders: z.output<T["schema"]>] : [];
