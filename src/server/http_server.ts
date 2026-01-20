@@ -555,7 +555,7 @@ export type ZonoHttpServerOptions<
 	globalHandlerOpts?: ZonoEndpointHandlerOptions;
 	specificHandlerOpts?: Partial<Record<keyof T, ZonoEndpointHandlerOptions>>;
 	openApiOptions?: ZonoHttpServerOpenApiOptions<T>;
-	middleware?: Array<ZonoMiddleware<U>>;
+	middleware?: Array<ZonoMiddleware<U["middlewareHeaders"]>>;
 };
 
 type ZonoHttpServerMiddlewareHeadersAny = Omit<MiddlewareHeaders<ZonoEndpointHeaders>, "opts"> & {
@@ -601,16 +601,14 @@ export function createZonoHttpServerMiddlewareHeaders<T extends ZonoEndpointHead
 	} as any;
 }
 
-export type ZonoMiddleware<T extends ZonoHttpServerConfig<any>> = (
+export type ZonoMiddleware<T extends ZonoHttpServerMiddlewareHeadersAny | undefined = undefined> = (
 	c: Context,
 	next: Next,
 	...args: ZonoMiddlewarePassIns<T>
 ) => OptionalPromise<Response | undefined>;
 
-type ZonoMiddlewarePassIns<T extends ZonoHttpServerConfig<any>> =
-	T["middlewareHeaders"] extends MiddlewareHeaders<infer H>
-		? [middlewareHeaders: z.output<H>]
-		: [];
+type ZonoMiddlewarePassIns<T extends ZonoHttpServerMiddlewareHeadersAny | undefined> =
+	T extends ZonoHttpServerMiddlewareHeadersAny ? [middlewareHeaders: z.output<T["schema"]>] : [];
 
 export type ZonoHttpServerOpenApiOptions<T extends ZonoEndpointRecord> = {
 	title: string;
