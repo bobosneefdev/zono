@@ -608,7 +608,7 @@ export type ZonoMiddleware<T extends ZonoHttpServerMiddlewareHeadersAny | undefi
 ) => OptionalPromise<Response | undefined>;
 
 type ZonoMiddlewarePassIns<T extends ZonoHttpServerMiddlewareHeadersAny | undefined> =
-	T extends ZonoHttpServerMiddlewareHeadersAny ? [middlewareHeaders?: z.output<T["schema"]>] : [];
+	T extends ZonoHttpServerMiddlewareHeadersAny ? [middlewareHeaders: z.output<T["schema"]>] : [];
 
 export type ZonoHttpServerOpenApiOptions<T extends ZonoEndpointRecord> = {
 	title: string;
