@@ -5,10 +5,11 @@
 		"esModuleInterop": true,
 		"strictNullChecks": true,
 		"target": "ES6",
-		"moduleResolution": "node",
-		"module": "ES6",
+		"moduleResolution": "bundler",
+		"module": "ESNext",
 		"declaration": true,
 		"isolatedModules": true,
+		"skipLibCheck": true,
 		"noEmit": true,
 		"outDir": "dist",
 		"baseUrl": ".",
@@ -16,6 +17,6 @@
 			"~/*": ["src/*"]
 		}
 	},
-	"include": ["src", "test"],
+	"include": ["src"],
 	"exclude": ["node_modules", "dist"]
 }
