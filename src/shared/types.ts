@@ -30,22 +30,16 @@ export type ZonoServerHandlerOutput<TContract extends ZonoContractAny> = {
 	[K in keyof TContract["responses"]]: Prettify<
 		{
 			status: K;
-		} & ConditionalKeyInObject<
-			"data",
-			NonNullable<TContract["responses"][K]> extends { body?: infer TBody }
-				? TBody extends z.ZodType
-					? z.infer<TBody>
-					: never
-				: never
-		> &
-			ConditionalKeyInObject<
-				"headers",
-				NonNullable<TContract["responses"][K]> extends { headers?: infer THeaders }
-					? THeaders extends z.ZodType
-						? z.infer<THeaders>
-						: never
-					: never
-			>
+		} & (NonNullable<TContract["responses"][K]> extends { body?: infer TBody }
+			? TBody extends z.ZodType
+				? { data: z.infer<TBody> }
+				: { data?: undefined }
+			: { data?: undefined }) &
+			(NonNullable<TContract["responses"][K]> extends { headers?: infer THeaders }
+				? THeaders extends z.ZodType
+					? { headers: z.infer<THeaders> }
+					: { headers?: undefined }
+				: { headers?: undefined })
 	>;
 }[keyof TContract["responses"]];
 

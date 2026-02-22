@@ -3,7 +3,7 @@ import z from "zod";
 import { ConditionalKeyInObject, PossibleZodOptional } from "~/shared/types.js";
 import { ZonoContractMethod } from "./enums.js";
 
-export type ZonoContractPath = `/${string}`;
+export type ZonoContractPath = `/:${string}` | "";
 
 type ExtractPathParams<TPath extends string> =
 	TPath extends `${infer _Start}:${infer Param}/${infer Rest}`
@@ -23,13 +23,14 @@ export type ZonoContractOptions<TPath extends ZonoContractPath> = {
 	[ExtractPathParams<TPath>] extends [never] ? never : ZonoContractPathParams<TPath>
 >;
 
-export type ZonoContractResponses = Partial<
-	Record<StatusCode, { body?: z.ZodType; headers?: ZonoContractHeaders }>
->;
+export type ZonoContractResponse = { body?: z.ZodType; headers?: ZonoContractHeaders };
 
-export type ZonoContract<TPath extends ZonoContractPath> = {
-	path: TPath;
-} & ZonoContractOptions<TPath>;
+export type ZonoContractResponses = Partial<Record<StatusCode, ZonoContractResponse>>;
+
+export type ZonoContract<
+	TPath extends ZonoContractPath,
+	TOptions extends ZonoContractOptions<TPath>,
+> = { path: TPath } & TOptions;
 
 /**
  * A loosely-typed contract, used for router definitions where the
@@ -47,13 +48,13 @@ export type ZonoContractAny = {
 };
 
 export type ZonoContractQueryValue =
-	| PossibleZodOptional<z.ZodString>
-	| z.ZodArray<z.ZodString>
-	| z.ZodTuple<[z.ZodString, ...Array<z.ZodString>]>;
+	| PossibleZodOptional<z.ZodType<string, string>>
+	| z.ZodArray<z.ZodType<string, string>>
+	| z.ZodTuple<[z.ZodType<string, string>, ...Array<z.ZodType<string, string>>]>;
 
 export type ZonoContractQuery = z.ZodObject<Record<string, ZonoContractQueryValue>>;
 
-export type ZonoContractHeaderValue = PossibleZodOptional<z.ZodString>;
+export type ZonoContractHeaderValue = PossibleZodOptional<z.ZodType<string, string>>;
 
 export type ZonoContractHeaders = z.ZodObject<Record<string, ZonoContractHeaderValue>>;
 
