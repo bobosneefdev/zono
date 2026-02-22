@@ -13,7 +13,7 @@ function resolvePath(path: string, pathParams?: Record<string, any>): string {
 function processRouterOrContract(item: any, config: ZonoClientConfig, prefix = ""): any {
 	if ("path" in item && "method" in item && "responses" in item) {
 		// It's a ZonoContract
-		const contract: ZonoContract<any> = item;
+		const contract: ZonoContract<any, any> = item;
 		return async (args: any) => {
 			const pathParams = args?.pathParams;
 			const query = args?.query;

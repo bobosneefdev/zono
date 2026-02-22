@@ -1,8 +1,9 @@
-import { ZonoContractOptions, ZonoContractPath, ZonoRouter } from "./types.js";
+import { ZonoContract, ZonoContractOptions, ZonoContractPath, ZonoRouter } from "./types.js";
 
 /**
- * Creates a Zono contract. This is effectively an identity function
- * that helps infer strictly typed definitions.
+ * Creates a Zono contract.
+ * @param path - Path used to infer what pathParameters should be defined. Should be "" in most cases unless this contract needs path params.
+ * @param options - Options for the contract
  */
 export const createZonoContract = <
 	TPath extends ZonoContractPath,
@@ -10,7 +11,7 @@ export const createZonoContract = <
 >(
 	path: TPath,
 	options: TOptions,
-): { path: TPath } & TOptions => {
+): ZonoContract<TPath, TOptions> => {
 	return Object.assign({ path }, options);
 };
 

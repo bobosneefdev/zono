@@ -50,12 +50,11 @@ test("createZonoContract works for all HTTP methods", () => {
 	] as const;
 
 	for (const method of methods) {
-		const contract = createZonoContract("/resource", {
+		const contract = createZonoContract("", {
 			method,
 			responses: {},
 		});
 		expect(contract.method).toBe(method);
-		expect(contract.path).toBe("/resource");
 	}
 });
 
@@ -64,7 +63,7 @@ test("createZonoContract on a static route preserves body, query, and headers", 
 	const querySchema = z.object({ search: z.string().optional() });
 	const headersSchema = z.object({ authorization: z.string() });
 
-	const contract = createZonoContract("/items", {
+	const contract = createZonoContract("", {
 		method: ZonoContractMethod.POST,
 		responses: {
 			201: { body: z.object({ id: z.string() }) },
@@ -74,7 +73,7 @@ test("createZonoContract on a static route preserves body, query, and headers", 
 		headers: headersSchema,
 	});
 
-	expect(contract.path).toBe("/items");
+	expect(contract.path).toBe("");
 	expect(contract.body).toBe(bodySchema);
 	expect(contract.query).toBe(querySchema);
 	expect(contract.headers).toBe(headersSchema);
@@ -85,7 +84,7 @@ test("createZonoRouter preserves deeply-nested sub-routers", () => {
 		api: {
 			v1: {
 				users: {
-					list: createZonoContract("/", {
+					list: createZonoContract("", {
 						method: ZonoContractMethod.GET,
 						responses: {},
 					}),
@@ -99,7 +98,7 @@ test("createZonoRouter preserves deeply-nested sub-routers", () => {
 		},
 	});
 
-	expect(router.api.v1.users.list.path).toBe("/");
+	expect(router.api.v1.users.list.path).toBe("");
 	expect(router.api.v1.users.detail.path).toBe("/:id");
 	expect(router.api.v1.users.detail.method).toBe(ZonoContractMethod.GET);
 });
@@ -110,7 +109,7 @@ test("createZonoContract preserves the responses object by reference", () => {
 		404: { body: z.object({ error: z.string() }) },
 	};
 
-	const contract = createZonoContract("/item/:id", {
+	const contract = createZonoContract("/:id", {
 		method: ZonoContractMethod.GET,
 		responses: responseSpec,
 		pathParams: z.object({ id: z.string() }),
@@ -132,7 +131,7 @@ test("createZonoContract attaches the exact pathParams schema instance", () => {
 });
 
 test("createZonoContract does not attach pathParams on a static route", () => {
-	const contract = createZonoContract("/static", {
+	const contract = createZonoContract("", {
 		method: ZonoContractMethod.GET,
 		responses: {},
 	});

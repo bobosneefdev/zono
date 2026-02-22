@@ -4,7 +4,7 @@ import z from "zod";
 import { ZonoContractAny, ZonoRouter } from "~/contract/types.js";
 import { ZonoServerImplementation } from "~/shared.js";
 
-export function applyZonoToHono<T extends ZonoRouter>(
+export function applyZonoRouterToHono<T extends ZonoRouter>(
 	app: Hono,
 	router: T,
 	implementation: ZonoServerImplementation<T, [Context]>,

@@ -4,7 +4,7 @@ import z from "zod";
 import { createZonoClient } from "~/client.js";
 import { ZonoContractMethod } from "~/contract/enums.js";
 import { createZonoContract, createZonoRouter } from "~/contract/factory.js";
-import { applyZonoToHono } from "~/hono.js";
+import { applyZonoRouterToHono } from "~/hono.js";
 
 // ---------------------------------------------------------------------------
 // Context passing
@@ -32,7 +32,7 @@ test("basic usage", async () => {
 
 	const app = new Hono();
 
-	applyZonoToHono(app, router, {
+	applyZonoRouterToHono(app, router, {
 		async posts() {
 			return {
 				status: 200,
