@@ -6,23 +6,8 @@ import type {
 	ServerHandlerOutput,
 	ServerHandlerTree,
 } from "~/hono/types.js";
-
-function dotPathToHonoPath(dotPath: string): string {
-	if (!dotPath) {
-		return "/";
-	}
-
-	const segments = dotPath.split(".").filter(Boolean);
-	const mapped = segments.map((segment) => {
-		if (segment.startsWith("$")) {
-			return `:${segment.slice(1)}`;
-		}
-
-		return segment;
-	});
-
-	return `/${mapped.join("/")}`;
-}
+import { dotPathToParamPath } from "~/internal/router_runtime.js";
+import { buildContractResponse, parseContractInput } from "~/internal/server_runtime.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
@@ -33,78 +18,24 @@ async function parseRequestInput<TContract extends Contract>(
 	context: Context,
 	bypassIncomingParse: boolean,
 ): Promise<ServerHandlerInput<TContract>> {
-	const parsed: Record<string, unknown> = {};
-
-	if (contract.pathParams) {
-		const rawPathParams = context.req.param();
-		parsed.pathParams = bypassIncomingParse
-			? rawPathParams
-			: await contract.pathParams.parseAsync(rawPathParams);
-	}
-
-	if (contract.query) {
-		const rawQuery = context.req.query();
-		parsed.query = bypassIncomingParse ? rawQuery : await contract.query.parseAsync(rawQuery);
-	}
-
-	if (contract.headers) {
-		const rawHeaders = Object.fromEntries(context.req.raw.headers.entries());
-		parsed.headers = bypassIncomingParse
-			? rawHeaders
-			: await contract.headers.parseAsync(rawHeaders);
-	}
-
-	if (contract.body) {
-		const rawBody = await context.req.json();
-		parsed.body = bypassIncomingParse ? rawBody : await contract.body.parseAsync(rawBody);
-	}
-
-	return parsed as ServerHandlerInput<TContract>;
+	return await parseContractInput(
+		contract,
+		{
+			pathParams: context.req.param(),
+			query: context.req.query(),
+			headers: Object.fromEntries(context.req.raw.headers.entries()),
+			body: contract.body ? await context.req.json() : undefined,
+		},
+		bypassIncomingParse,
+	);
 }
 
 async function buildResponse<TContract extends Contract>(
 	contract: TContract,
 	result: ServerHandlerOutput<TContract>,
+	defaultBypassOutgoingParse: boolean,
 ): Promise<Response> {
-	const statusDefinition = contract.responses[result.status];
-	if (!statusDefinition) {
-		throw new Error(`Unexpected response status: ${result.status}`);
-	}
-
-	const bypassOutgoingParse = result.opts?.bypassOutgoingParse ?? false;
-
-	let responseBody: unknown;
-	if (statusDefinition.body) {
-		const rawData = "data" in result ? result.data : undefined;
-		responseBody = bypassOutgoingParse
-			? rawData
-			: await statusDefinition.body.parseAsync(rawData);
-	}
-
-	let responseHeaders: HeadersInit | undefined;
-	if (statusDefinition.headers) {
-		const rawHeaders = "headers" in result ? result.headers : undefined;
-		const parsedHeaders = bypassOutgoingParse
-			? rawHeaders
-			: await statusDefinition.headers.parseAsync(rawHeaders);
-		responseHeaders = isRecord(parsedHeaders)
-			? (Object.entries(parsedHeaders).filter(
-					(entry): entry is [string, string] => typeof entry[1] === "string",
-				) as HeadersInit)
-			: undefined;
-	}
-
-	if (responseBody === undefined) {
-		return new Response(null, {
-			status: result.status,
-			headers: responseHeaders,
-		});
-	}
-
-	return Response.json(responseBody, {
-		status: result.status,
-		headers: responseHeaders,
-	});
+	return await buildContractResponse(contract, result, defaultBypassOutgoingParse);
 }
 
 type RouteRegistration = {
@@ -136,12 +67,12 @@ function collectRoutes(
 			const resolvedHandler = handlerNode.handler;
 			if (typeof resolvedHandler !== "function") {
 				throw new Error(
-					`Missing handler function for route: ${dotPathToHonoPath(nodePath)}`,
+					`Missing handler function for route: ${dotPathToParamPath(nodePath)}`,
 				);
 			}
 
 			registrations.push({
-				path: dotPathToHonoPath(nodePath),
+				path: dotPathToParamPath(nodePath),
 				contract,
 				handler: async (
 					context: Context,
@@ -154,7 +85,11 @@ function collectRoutes(
 					);
 					const handlerParams = options.getHandlerParams(context);
 					const result = await resolvedHandler(input, ...handlerParams);
-					return await buildResponse(contract, result as ServerHandlerOutput<Contract>);
+					return await buildResponse(
+						contract,
+						result as ServerHandlerOutput<Contract>,
+						options.bypassOutgoingParse,
+					);
 				},
 			});
 		}
@@ -224,6 +159,7 @@ export function initHono<TRouter, TParams extends Array<unknown> = [Context]>(
 ): Hono {
 	const resolvedOptions: Required<InitHonoOptions<Array<unknown>>> = {
 		bypassIncomingParse: options?.bypassIncomingParse ?? false,
+		bypassOutgoingParse: options?.bypassOutgoingParse ?? false,
 		getHandlerParams: (context) =>
 			options?.getHandlerParams
 				? (options.getHandlerParams(context) as Array<unknown>)
