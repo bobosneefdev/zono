@@ -1,8 +1,8 @@
 import z from "zod";
-import { createRouter } from "./contract";
+import { createRouter } from "./contract.js";
 import { Hono } from "hono";
-import { initHono } from "./hono";
-import { createClient } from "./client";
+import { initHono } from "./hono.js";
+import { createClient } from "./client.js";
 
 const zUser = z.null(); // example/placeholder schema
 const zFilter = z.null(); // example/placeholder schema
@@ -84,7 +84,7 @@ initHono(app, router, {
     users: {
         $discordId: {
             handler: {
-                get: async (input) => {
+                get: async (_input) => {
                     return {
                         status: 200,
                         data: null,
@@ -94,7 +94,7 @@ initHono(app, router, {
             router: {
                 filters: {
                     handler: {
-                        get: async (input) => {
+                        get: async (_input) => {
                             return {
                                 status: 200,
                                 data: [null],
@@ -104,7 +104,7 @@ initHono(app, router, {
                     router: {
                         $filterId: {
                             handler: {
-                                get: async (input) => {
+                                get: async (_input) => {
                                     return {
                                         status: 200,
                                         data: null,
