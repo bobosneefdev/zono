@@ -45,41 +45,61 @@ const router = createRouter(
 		users: {
 			$id: {
 				contract: {
-					method: "get",
-					pathParams: z.object({
-						id: z.string(),
-					}),
-					headers: z.object({
-						"x-input-header": z.string(),
-					}),
-					responses: {
-						200: {
-							body: z.object({
-								id: z.string(),
-								name: z.string().transform(async (value) => value.toUpperCase()),
-							}),
-							headers: z.object({
-								"x-output-header": z.string(),
-							}),
+					get: {
+						pathParams: z.object({
+							id: z.string(),
+						}),
+						headers: z.object({
+							"x-input-header": z.string(),
+						}),
+						responses: {
+							200: {
+								body: z.object({
+									id: z.string(),
+									name: z
+										.string()
+										.transform(async (value) => value.toUpperCase()),
+								}),
+								headers: z.object({
+									"x-output-header": z.string(),
+								}),
+							},
+						},
+					},
+					post: {
+						pathParams: z.object({
+							id: z.string(),
+						}),
+						body: z.object({
+							name: z.string(),
+						}),
+						responses: {
+							201: {
+								body: z.object({
+									id: z.string(),
+									name: z.string(),
+								}),
+							},
 						},
 					},
 				},
 				router: {
 					$postId: {
 						contract: {
-							method: "get",
-							pathParams: z.object({
-								id: z.string(),
-								postId: z.string(),
-							}),
-							responses: {
-								200: {
-									body: z.object({
-										id: z.string(),
-										title: z
-											.string()
-											.transform(async (value) => value.toUpperCase()),
-									}),
+							get: {
+								pathParams: z.object({
+									id: z.string(),
+									postId: z.string(),
+								}),
+								responses: {
+									200: {
+										body: z.object({
+											id: z.string(),
+											title: z
+												.string()
+												.transform(async (value) => value.toUpperCase()),
+										}),
+									},
 								},
 							},
 						},
@@ -91,27 +111,61 @@ const router = createRouter(
 );
 
 describe("initSvelteKit", () => {
-	it("provides strongly typed route and handler contracts", () => {
+	it("provides strongly typed route and method handlers", () => {
 		const implementer = initSvelteKit(router);
 		expectType<SvelteKitImplementer<typeof router>>(implementer);
 
-		const getUser = implementer("/users/$id", async (data) => {
-			expectType<string>(data.pathParams.id);
-			expectType<string>(data.headers["x-input-header"]);
+		const userExports = implementer("/users/$id", {
+			get: async (data: {
+				pathParams: { id: string };
+				headers: { "x-input-header": string };
+			}) => {
+				expectType<string>(data.pathParams.id);
+				expectType<string>(data.headers["x-input-header"]);
 
-			return {
-				status: 200,
-				data: {
-					id: data.pathParams.id,
-					name: "john",
-				},
-				headers: {
-					"x-output-header": "hello",
-				},
-			};
+				return {
+					status: 200 as const,
+					data: {
+						id: data.pathParams.id,
+						name: "john",
+					},
+					headers: {
+						"x-output-header": "hello",
+					},
+				};
+			},
+			post: async (data: { pathParams: { id: string }; body: { name: string } }) => {
+				expectType<string>(data.pathParams.id);
+				expectType<string>(data.body.name);
+
+				return {
+					status: 201 as const,
+					data: {
+						id: data.pathParams.id,
+						name: data.body.name,
+					},
+				};
+			},
 		});
 
-		expectType<RequestHandler>(getUser);
+		expectType<RequestHandler>(userExports.GET);
+		expectType<RequestHandler>(userExports.POST);
+
+		type UserRouteHandlers = Parameters<typeof implementer>[1];
+		const invalidMethodHandlers: UserRouteHandlers = {
+			// @ts-expect-error method not defined in route contract map should be rejected
+			delete: async () => ({
+				status: 200,
+				data: {
+					id: "x",
+					name: "x",
+				},
+				headers: {
+					"x-output-header": "x",
+				},
+			}),
+		};
+		void invalidMethodHandlers;
 
 		// @ts-expect-error invalid route path should be rejected
 		const invalidRoute: Parameters<typeof implementer>[0] = "/users/invalid";
@@ -121,17 +175,19 @@ describe("initSvelteKit", () => {
 	it("parses incoming and outgoing values for nested routes", async () => {
 		const implementer = initSvelteKit(router);
 
-		const getPost = implementer("/users/$id/$postId", async (data) => {
-			return {
-				status: 200,
-				data: {
-					id: data.pathParams.postId,
-					title: "post title",
-				},
-			};
+		const routeExports = implementer("/users/$id/$postId", {
+			get: async (data: { pathParams: { id: string; postId: string } }) => {
+				return {
+					status: 200 as const,
+					data: {
+						id: data.pathParams.postId,
+						title: "post title",
+					},
+				};
+			},
 		});
 
-		const response = await getPost(
+		const response = await routeExports.GET(
 			createEvent({
 				url: "http://localhost/users/123/abc",
 				method: "GET",
@@ -162,17 +218,18 @@ describe("initSvelteKit", () => {
 				items: {
 					$id: {
 						contract: {
-							method: "get",
-							pathParams: z.object({
-								id: z.string().regex(/^\d+$/),
-							}),
-							responses: {
-								200: {
-									body: z.object({
-										id: z
-											.string()
-											.transform(async (value) => value.toUpperCase()),
-									}),
+							get: {
+								pathParams: z.object({
+									id: z.string().regex(/^\d+$/),
+								}),
+								responses: {
+									200: {
+										body: z.object({
+											id: z
+												.string()
+												.transform(async (value) => value.toUpperCase()),
+										}),
+									},
 								},
 							},
 						},
@@ -186,19 +243,21 @@ describe("initSvelteKit", () => {
 			bypassOutgoingParse: true,
 		});
 
-		const getItem = implementer("/items/$id", async (data) => {
-			return {
-				status: 200,
-				data: {
-					id: data.pathParams.id,
-				},
-				opts: {
-					bypassOutgoingParse: false,
-				},
-			};
+		const itemExports = implementer("/items/$id", {
+			get: async (data: { pathParams: { id: string } }) => {
+				return {
+					status: 200 as const,
+					data: {
+						id: data.pathParams.id,
+					},
+					opts: {
+						bypassOutgoingParse: false,
+					},
+				};
+			},
 		});
 
-		const response = await getItem(
+		const response = await itemExports.GET(
 			createEvent({
 				url: "http://localhost/items/abc",
 				method: "GET",

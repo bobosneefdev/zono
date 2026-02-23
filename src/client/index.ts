@@ -1,25 +1,25 @@
 import type {
 	Client,
+	ClientMethodRoute,
 	ClientOptions,
-	ClientRequestForRoute,
-	ClientRoute,
-	ContractForRoute,
+	ClientRequestForRouteMethod,
 	HeaderFactoryValue,
-	ParsedResponseForRoute,
+	ParsedResponseForRouteMethod,
 } from "~/client/types.js";
-import type { Contract } from "~/contract/types.js";
-import { getContractForRoutePath } from "~/internal/router_runtime.js";
+import type { Contract, ContractMethod } from "~/contract/types.js";
+import { getContractForRoutePathMethod } from "~/internal/router_runtime.js";
 
 function routeToSegments(route: string): Array<string> {
 	const withoutLeadingSlash = route.startsWith("/") ? route.slice(1) : route;
 	return withoutLeadingSlash.split("/").filter(Boolean);
 }
 
-function getContractForRoute<TRouter, TRoute extends ClientRoute<TRouter>>(
-	router: TRouter,
-	route: TRoute,
-): ContractForRoute<TRouter, TRoute> {
-	return getContractForRoutePath(router, route) as ContractForRoute<TRouter, TRoute>;
+function getContractForRouteMethod<
+	TRouter,
+	TMethod extends ContractMethod,
+	TRoute extends ClientMethodRoute<TRouter, TMethod>,
+>(router: TRouter, method: TMethod, route: TRoute): Contract {
+	return getContractForRoutePathMethod(router, route, method) as Contract;
 }
 
 function buildPathWithParams(pathTemplate: string, pathParams?: Record<string, string>): string {
@@ -149,86 +149,155 @@ async function parseIncomingResponse<TContract extends Contract>(
 }
 
 export function createClient<TRouter>(router: TRouter, options: ClientOptions): Client<TRouter> {
-	const client: Client<TRouter> = {
-		async fetch<TRoute extends ClientRoute<TRouter>>(
-			route: TRoute,
-			...args: keyof ClientRequestForRoute<TRouter, TRoute> extends never
-				? [request?: ClientRequestForRoute<TRouter, TRoute>]
-				: [request: ClientRequestForRoute<TRouter, TRoute>]
-		): Promise<ParsedResponseForRoute<TRouter, TRoute>> {
-			const [url, requestInit] = await this.fetchConfig(
-				route,
-				...(args as [ClientRequestForRoute<TRouter, TRoute>]),
-			);
-			const response = await fetch(url, requestInit);
-			return await this.parseResponse(route, response);
-		},
+	async function fetchConfigForMethod<
+		TMethod extends ContractMethod,
+		TRoute extends ClientMethodRoute<TRouter, TMethod>,
+	>(
+		method: TMethod,
+		route: TRoute,
+		request: Record<string, unknown>,
+	): Promise<[string, RequestInit]> {
+		const contract = getContractForRouteMethod(router, method, route);
 
-		async fetchConfig<TRoute extends ClientRoute<TRouter>>(
-			route: TRoute,
-			...args: keyof ClientRequestForRoute<TRouter, TRoute> extends never
-				? [request?: ClientRequestForRoute<TRouter, TRoute>]
-				: [request: ClientRequestForRoute<TRouter, TRoute>]
-		): Promise<[string, RequestInit]> {
-			const contract = getContractForRoute(router, route) as Contract;
-			const request = (args[0] ?? {}) as Record<string, unknown>;
+		const parsedRequest = await parseOutgoingRequest(
+			contract,
+			request,
+			options.bypassOutgoingParse ?? false,
+		);
 
-			const parsedRequest = await parseOutgoingRequest(
-				contract,
-				request,
-				options.bypassOutgoingParse ?? false,
-			);
+		const resolvedHeaders = await resolveDefaultHeaders(options.defaultHeaders);
 
-			const resolvedHeaders = await resolveDefaultHeaders(options.defaultHeaders);
-
-			if (parsedRequest.headers && typeof parsedRequest.headers === "object") {
-				for (const [headerKey, headerValue] of Object.entries(parsedRequest.headers)) {
-					if (typeof headerValue === "string") {
-						resolvedHeaders.set(headerKey, headerValue);
-					}
+		if (parsedRequest.headers && typeof parsedRequest.headers === "object") {
+			for (const [headerKey, headerValue] of Object.entries(parsedRequest.headers)) {
+				if (typeof headerValue === "string") {
+					resolvedHeaders.set(headerKey, headerValue);
 				}
 			}
+		}
 
-			if (parsedRequest.body !== undefined && !resolvedHeaders.has("content-type")) {
-				resolvedHeaders.set("content-type", "application/json");
-			}
+		if (parsedRequest.body !== undefined && !resolvedHeaders.has("content-type")) {
+			resolvedHeaders.set("content-type", "application/json");
+		}
 
-			const routePath = String(route);
-			const path = buildPathWithParams(
-				routePath,
-				parsedRequest.pathParams as Record<string, string>,
-			);
-			const query = buildQueryString(
-				parsedRequest.query as Record<string, string | undefined>,
-			);
-			const normalizedBaseUrl = options.baseUrl.endsWith("/")
-				? options.baseUrl.slice(0, -1)
-				: options.baseUrl;
+		const routePath = String(route);
+		const path = buildPathWithParams(
+			routePath,
+			parsedRequest.pathParams as Record<string, string>,
+		);
+		const query = buildQueryString(parsedRequest.query as Record<string, string | undefined>);
+		const normalizedBaseUrl = options.baseUrl.endsWith("/")
+			? options.baseUrl.slice(0, -1)
+			: options.baseUrl;
 
-			const init: RequestInit = {
-				method: contract.method.toUpperCase(),
-				headers: resolvedHeaders,
-			};
+		const init: RequestInit = {
+			method: method.toUpperCase(),
+			headers: resolvedHeaders,
+		};
 
-			if (parsedRequest.body !== undefined) {
-				init.body = JSON.stringify(parsedRequest.body);
-			}
+		if (parsedRequest.body !== undefined) {
+			init.body = JSON.stringify(parsedRequest.body);
+		}
 
-			return [`${normalizedBaseUrl}${path}${query}`, init];
+		return [`${normalizedBaseUrl}${path}${query}`, init];
+	}
+
+	async function executeMethod<
+		TMethod extends ContractMethod,
+		TRoute extends ClientMethodRoute<TRouter, TMethod>,
+	>(
+		method: TMethod,
+		route: TRoute,
+		request: Record<string, unknown>,
+	): Promise<ParsedResponseForRouteMethod<TRouter, TMethod, TRoute>> {
+		const [url, requestInit] = await fetchConfigForMethod(method, route, request);
+		const response = await fetch(url, requestInit);
+		return await client.parseResponse(method, route, response);
+	}
+
+	const client: Client<TRouter> = {
+		async get<TRoute extends ClientMethodRoute<TRouter, "get">>(
+			route: TRoute,
+			...args: keyof ClientRequestForRouteMethod<TRouter, "get", TRoute> extends never
+				? [request?: ClientRequestForRouteMethod<TRouter, "get", TRoute>]
+				: [request: ClientRequestForRouteMethod<TRouter, "get", TRoute>]
+		): Promise<ParsedResponseForRouteMethod<TRouter, "get", TRoute>> {
+			return await executeMethod("get", route, (args[0] ?? {}) as Record<string, unknown>);
 		},
 
-		async parseResponse<TRoute extends ClientRoute<TRouter>>(
+		async post<TRoute extends ClientMethodRoute<TRouter, "post">>(
+			route: TRoute,
+			...args: keyof ClientRequestForRouteMethod<TRouter, "post", TRoute> extends never
+				? [request?: ClientRequestForRouteMethod<TRouter, "post", TRoute>]
+				: [request: ClientRequestForRouteMethod<TRouter, "post", TRoute>]
+		): Promise<ParsedResponseForRouteMethod<TRouter, "post", TRoute>> {
+			return await executeMethod("post", route, (args[0] ?? {}) as Record<string, unknown>);
+		},
+
+		async put<TRoute extends ClientMethodRoute<TRouter, "put">>(
+			route: TRoute,
+			...args: keyof ClientRequestForRouteMethod<TRouter, "put", TRoute> extends never
+				? [request?: ClientRequestForRouteMethod<TRouter, "put", TRoute>]
+				: [request: ClientRequestForRouteMethod<TRouter, "put", TRoute>]
+		): Promise<ParsedResponseForRouteMethod<TRouter, "put", TRoute>> {
+			return await executeMethod("put", route, (args[0] ?? {}) as Record<string, unknown>);
+		},
+
+		async delete<TRoute extends ClientMethodRoute<TRouter, "delete">>(
+			route: TRoute,
+			...args: keyof ClientRequestForRouteMethod<TRouter, "delete", TRoute> extends never
+				? [request?: ClientRequestForRouteMethod<TRouter, "delete", TRoute>]
+				: [request: ClientRequestForRouteMethod<TRouter, "delete", TRoute>]
+		): Promise<ParsedResponseForRouteMethod<TRouter, "delete", TRoute>> {
+			return await executeMethod("delete", route, (args[0] ?? {}) as Record<string, unknown>);
+		},
+
+		async patch<TRoute extends ClientMethodRoute<TRouter, "patch">>(
+			route: TRoute,
+			...args: keyof ClientRequestForRouteMethod<TRouter, "patch", TRoute> extends never
+				? [request?: ClientRequestForRouteMethod<TRouter, "patch", TRoute>]
+				: [request: ClientRequestForRouteMethod<TRouter, "patch", TRoute>]
+		): Promise<ParsedResponseForRouteMethod<TRouter, "patch", TRoute>> {
+			return await executeMethod("patch", route, (args[0] ?? {}) as Record<string, unknown>);
+		},
+
+		async options<TRoute extends ClientMethodRoute<TRouter, "options">>(
+			route: TRoute,
+			...args: keyof ClientRequestForRouteMethod<TRouter, "options", TRoute> extends never
+				? [request?: ClientRequestForRouteMethod<TRouter, "options", TRoute>]
+				: [request: ClientRequestForRouteMethod<TRouter, "options", TRoute>]
+		): Promise<ParsedResponseForRouteMethod<TRouter, "options", TRoute>> {
+			return await executeMethod(
+				"options",
+				route,
+				(args[0] ?? {}) as Record<string, unknown>,
+			);
+		},
+
+		async head<TRoute extends ClientMethodRoute<TRouter, "head">>(
+			route: TRoute,
+			...args: keyof ClientRequestForRouteMethod<TRouter, "head", TRoute> extends never
+				? [request?: ClientRequestForRouteMethod<TRouter, "head", TRoute>]
+				: [request: ClientRequestForRouteMethod<TRouter, "head", TRoute>]
+		): Promise<ParsedResponseForRouteMethod<TRouter, "head", TRoute>> {
+			return await executeMethod("head", route, (args[0] ?? {}) as Record<string, unknown>);
+		},
+
+		async parseResponse<
+			TMethod extends ContractMethod,
+			TRoute extends ClientMethodRoute<TRouter, TMethod>,
+		>(
+			method: TMethod,
 			route: TRoute,
 			response: Response,
-		): Promise<ParsedResponseForRoute<TRouter, TRoute>> {
-			const contract = getContractForRoute(router, route) as Contract;
+		): Promise<ParsedResponseForRouteMethod<TRouter, TMethod, TRoute>> {
+			const contract = getContractForRouteMethod(router, method, route);
 			const parsed = await parseIncomingResponse(
 				contract,
 				response,
 				options.bypassIncomingParse ?? false,
 			);
 
-			return parsed as ParsedResponseForRoute<TRouter, TRoute>;
+			return parsed as ParsedResponseForRouteMethod<TRouter, TMethod, TRoute>;
 		},
 	};
 

@@ -1,4 +1,4 @@
-import type { Contract } from "~/contract/types.js";
+import type { ContractMethod, ContractMethodMap } from "~/contract/types.js";
 import type { JoinPath } from "~/internal/types.js";
 
 type DotPathToRoutePath<TPath extends string> = TPath extends `${infer TSegment}.${infer TRest}`
@@ -13,7 +13,7 @@ type RoutePathToDotPath<TPath extends string> =
 		: StripLeadingSlash<TPath>;
 
 type RoutePathsFromNode<TNode, TPrefix extends string = ""> = TNode extends {
-	contract: Contract;
+	contract: ContractMethodMap;
 }
 	?
 			| DotPathToRoutePath<TPrefix>
@@ -44,18 +44,50 @@ type ContractAtDotPath<
 		? ContractAtDotPath<NextNodeForPath<TNode[TSegment]>, TRest>
 		: never
 	: TPath extends keyof TNode
-		? ContractFromNode<TNode[TPath]>
+		? ContractMapFromNode<TNode[TPath]>
 		: never;
 
-type ContractFromNode<TNode> = TNode extends { contract: infer TContract extends Contract }
-	? TContract
+type ContractMapFromNode<TNode> = TNode extends {
+	contract: infer TContractMap extends ContractMethodMap;
+}
+	? TContractMap
 	: never;
 
+type ContractsFromMap<TContractMap extends ContractMethodMap> = Exclude<
+	TContractMap[keyof TContractMap],
+	undefined
+>;
+
+type ContractForMethod<
+	TContractMap extends ContractMethodMap,
+	TMethod extends ContractMethod,
+> = Exclude<TContractMap[TMethod], undefined>;
+
+export type ContractMapForRoutePath<
+	TRouter,
+	TRoute extends RouterRoutePath<TRouter>,
+> = ContractMapFromNode<ValueAtDotPath<TRouter, RoutePathToDotPath<TRoute>>> extends never
+	? ContractAtDotPath<TRouter, RoutePathToDotPath<TRoute>>
+	: ContractMapFromNode<ValueAtDotPath<TRouter, RoutePathToDotPath<TRoute>>>;
+
 export type RouterRoutePath<TRouter> = RoutePathsFromNode<TRouter>;
+
+export type ContractMethodsForRoutePath<
+	TRouter,
+	TRoute extends RouterRoutePath<TRouter>,
+> = keyof ContractMapForRoutePath<TRouter, TRoute> & ContractMethod;
 
 export type ContractForRoutePath<
 	TRouter,
 	TRoute extends RouterRoutePath<TRouter>,
-> = ContractFromNode<ValueAtDotPath<TRouter, RoutePathToDotPath<TRoute>>> extends never
-	? ContractAtDotPath<TRouter, RoutePathToDotPath<TRoute>>
-	: ContractFromNode<ValueAtDotPath<TRouter, RoutePathToDotPath<TRoute>>>;
+> = ContractMapForRoutePath<TRouter, TRoute> extends infer TContractMap extends ContractMethodMap
+	? ContractsFromMap<TContractMap>
+	: never;
+
+export type ContractForRoutePathMethod<
+	TRouter,
+	TRoute extends RouterRoutePath<TRouter>,
+	TMethod extends ContractMethod,
+> = ContractMapForRoutePath<TRouter, TRoute> extends infer TContractMap extends ContractMethodMap
+	? ContractForMethod<TContractMap, TMethod>
+	: never;

@@ -1,5 +1,5 @@
 import type z from "zod";
-import type { Contract } from "~/contract/types.js";
+import type { Contract, ContractMethod, ContractMethodMap } from "~/contract/types.js";
 import type { PossiblePromise } from "~/internal/types.js";
 
 type EmptyObject = object;
@@ -83,11 +83,20 @@ export type ServerHandler<TContract extends Contract, TParams extends Array<unkn
 	...args: TParams
 ) => PossiblePromise<ServerHandlerOutput<TContract>>;
 
+type ServerHandlerMethodMap<
+	TContractMap extends ContractMethodMap,
+	TParams extends Array<unknown>,
+> = {
+	[TMethod in keyof TContractMap & ContractMethod]: TContractMap[TMethod] extends Contract
+		? ServerHandler<TContractMap[TMethod], TParams>
+		: never;
+};
+
 type HandlerNode<TNode, TParams extends Array<unknown>> = TNode extends {
-	contract: infer TContract extends Contract;
+	contract: infer TContractMap extends ContractMethodMap;
 }
 	? {
-			handler: ServerHandler<TContract, TParams>;
+			handler: ServerHandlerMethodMap<TContractMap, TParams>;
 		} & (TNode extends { router: infer TRouter }
 			? { router: ServerHandlerTree<TRouter, TParams> }
 			: { router?: undefined })

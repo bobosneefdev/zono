@@ -27,39 +27,59 @@ const router = createRouter(
 		users: {
 			$id: {
 				contract: {
-					method: "get",
-					pathParams: z.object({
-						id: z.string(),
-					}),
-					headers: z.object({
-						"x-input-header": z.string(),
-					}),
-					responses: {
-						200: {
-							body: z.object({
-								id: z.string(),
-								name: z.string().transform(async (value) => value.toUpperCase()),
-							}),
-							headers: z.object({
-								"x-custom-header": z.string(),
-							}),
+					get: {
+						pathParams: z.object({
+							id: z.string(),
+						}),
+						headers: z.object({
+							"x-input-header": z.string(),
+						}),
+						responses: {
+							200: {
+								body: z.object({
+									id: z.string(),
+									name: z
+										.string()
+										.transform(async (value) => value.toUpperCase()),
+								}),
+								headers: z.object({
+									"x-custom-header": z.string(),
+								}),
+							},
+						},
+					},
+					post: {
+						pathParams: z.object({
+							id: z.string(),
+						}),
+						body: z.object({
+							name: z.string(),
+						}),
+						responses: {
+							201: {
+								body: z.object({
+									id: z.string(),
+									name: z.string(),
+								}),
+							},
 						},
 					},
 				},
 				router: {
 					$postId: {
 						contract: {
-							method: "get",
-							pathParams: z.object({
-								id: z.string(),
-								postId: z.string(),
-							}),
-							responses: {
-								200: {
-									body: z.object({
-										id: z.string(),
-										title: z.string(),
-									}),
+							get: {
+								pathParams: z.object({
+									id: z.string(),
+									postId: z.string(),
+								}),
+								responses: {
+									200: {
+										body: z.object({
+											id: z.string(),
+											title: z.string(),
+										}),
+									},
 								},
 							},
 						},
@@ -72,9 +92,11 @@ const router = createRouter(
 
 describe("initHono", () => {
 	it("provides strongly typed handler input and output", () => {
-		type UsersContract = typeof router.users.$id.contract;
+		type UsersContract = NonNullable<typeof router.users.$id.contract.get>;
 		type UsersInput = ServerHandlerInput<UsersContract>;
 		type UsersOutput = ServerHandlerOutput<UsersContract>;
+		type CreateUserContract = NonNullable<typeof router.users.$id.contract.post>;
+		type CreateUserInput = ServerHandlerInput<CreateUserContract>;
 
 		const input: UsersInput = {
 			pathParams: {
@@ -100,33 +122,57 @@ describe("initHono", () => {
 
 		expectType<200>(output.status);
 
+		const createInput: CreateUserInput = {
+			pathParams: {
+				id: "123",
+			},
+			body: {
+				name: "john",
+			},
+		};
+
+		expectType<string>(createInput.body.name);
+
 		const app = new Hono();
 		const handlers: ServerHandlerTree<typeof router, [Context]> = {
 			users: {
 				$id: {
-					handler: async (data, c) => {
-						expectType<Context>(c);
-						return {
-							status: 200,
-							data: {
-								id: data.pathParams.id,
-								name: "john",
-							},
-							headers: {
-								"x-custom-header": "hello",
-							},
-						};
+					handler: {
+						get: async (data, c) => {
+							expectType<Context>(c);
+							return {
+								status: 200,
+								data: {
+									id: data.pathParams.id,
+									name: "john",
+								},
+								headers: {
+									"x-custom-header": "hello",
+								},
+							};
+						},
+						post: async (data) => {
+							return {
+								status: 201,
+								data: {
+									id: data.pathParams.id,
+									name: data.body.name,
+								},
+							};
+						},
 					},
 					router: {
 						$postId: {
-							handler: async (data) => {
-								return {
-									status: 200,
-									data: {
-										id: data.pathParams.postId,
-										title: "post",
-									},
-								};
+							handler: {
+								get: async (data) => {
+									return {
+										status: 200,
+										data: {
+											id: data.pathParams.postId,
+											title: "post",
+										},
+									};
+								},
 							},
 						},
 					},
@@ -153,28 +199,41 @@ describe("initHono", () => {
 		initHono(app, router, {
 			users: {
 				$id: {
-					handler: async (data) => {
-						return {
-							status: 200,
-							data: {
-								id: data.pathParams.id,
-								name: "john doe",
-							},
-							headers: {
-								"x-custom-header": "Hello, world!",
-							},
-						};
+					handler: {
+						get: async (data) => {
+							return {
+								status: 200,
+								data: {
+									id: data.pathParams.id,
+									name: "john doe",
+								},
+								headers: {
+									"x-custom-header": "Hello, world!",
+								},
+							};
+						},
+						post: async (data) => {
+							return {
+								status: 201,
+								data: {
+									id: data.pathParams.id,
+									name: data.body.name,
+								},
+							};
+						},
 					},
 					router: {
 						$postId: {
-							handler: async (data) => {
-								return {
-									status: 200,
-									data: {
-										id: data.pathParams.postId,
-										title: "Post Title",
-									},
-								};
+							handler: {
+								get: async (data) => {
+									return {
+										status: 200,
+										data: {
+											id: data.pathParams.postId,
+											title: "Post Title",
+										},
+									};
+								},
 							},
 						},
 					},
@@ -194,6 +253,22 @@ describe("initHono", () => {
 		expect(await usersResponse.json()).toEqual({
 			id: "123",
 			name: "JOHN DOE",
+		});
+
+		const createResponse = await app.request("http://localhost/users/123", {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+			},
+			body: JSON.stringify({
+				name: "Jane",
+			}),
+		});
+
+		expect(createResponse.status).toBe(201);
+		expect(await createResponse.json()).toEqual({
+			id: "123",
+			name: "Jane",
 		});
 
 		const postsResponse = await app.request("http://localhost/users/123/abc", {
@@ -223,15 +298,16 @@ describe("initHono", () => {
 				items: {
 					$id: {
 						contract: {
-							method: "get",
-							pathParams: z.object({
-								id: z.string().regex(/^\d+$/),
-							}),
-							responses: {
-								200: {
-									body: z.object({
-										id: z.string(),
-									}),
+							get: {
+								pathParams: z.object({
+									id: z.string().regex(/^\d+$/),
+								}),
+								responses: {
+									200: {
+										body: z.object({
+											id: z.string(),
+										}),
+									},
 								},
 							},
 						},
@@ -248,12 +324,14 @@ describe("initHono", () => {
 			{
 				items: {
 					$id: {
-						handler: async (data) => ({
-							status: 200,
-							data: {
-								id: data.pathParams.id,
-							},
-						}),
+						handler: {
+							get: async (data) => ({
+								status: 200,
+								data: {
+									id: data.pathParams.id,
+								},
+							}),
+						},
 					},
 				},
 			},
@@ -268,5 +346,54 @@ describe("initHono", () => {
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({ id: "abc" });
+	});
+
+	it("throws deterministic error when method contract is missing matching handler", () => {
+		const app = new Hono();
+		const handlersWithMissingPostMethod = {
+			users: {
+				$id: {
+					handler: {
+						get: async (
+							data: ServerHandlerInput<
+								NonNullable<typeof router.users.$id.contract.get>
+							>,
+						) => ({
+							status: 200,
+							data: {
+								id: data.pathParams.id,
+								name: "john",
+							},
+							headers: {
+								"x-custom-header": "ok",
+							},
+						}),
+					},
+					router: {
+						$postId: {
+							handler: {
+								get: async (
+									data: ServerHandlerInput<
+										NonNullable<
+											typeof router.users.$id.router.$postId.contract.get
+										>
+									>,
+								) => ({
+									status: 200,
+									data: {
+										id: data.pathParams.postId,
+										title: "post",
+									},
+								}),
+							},
+						},
+					},
+				},
+			},
+		} as unknown as ServerHandlerTree<typeof router, [Context]>;
+
+		expect(() => initHono(app, router, handlersWithMissingPostMethod)).toThrow(
+			"Missing handler function for POST /users/:id",
+		);
 	});
 });

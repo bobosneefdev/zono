@@ -1,5 +1,20 @@
-import type { Contract } from "~/contract/types.js";
-import type { ContractForRoutePath, RouterRoutePath } from "~/internal/route_types.js";
+import type { Contract, ContractMethod, ContractMethodMap } from "~/contract/types.js";
+import type {
+	ContractForRoutePath,
+	ContractForRoutePathMethod,
+	ContractMapForRoutePath,
+	RouterRoutePath,
+} from "~/internal/route_types.js";
+
+const contractMethodOrder: Array<ContractMethod> = [
+	"get",
+	"post",
+	"put",
+	"delete",
+	"patch",
+	"options",
+	"head",
+];
 
 function routePathToDotPath(routePath: string): string {
 	const withoutLeadingSlash = routePath.startsWith("/") ? routePath.slice(1) : routePath;
@@ -19,10 +34,10 @@ export function dotPathToParamPath(dotPath: string): string {
 	return `/${mapped.join("/")}`;
 }
 
-export function getContractForRoutePath<TRouter, TRoute extends RouterRoutePath<TRouter>>(
+export function getContractMapForRoutePath<TRouter, TRoute extends RouterRoutePath<TRouter>>(
 	router: TRouter,
 	routePath: TRoute,
-): ContractForRoutePath<TRouter, TRoute> & Contract {
+): ContractMapForRoutePath<TRouter, TRoute> & ContractMethodMap {
 	const dotPath = routePathToDotPath(routePath);
 	const keys = dotPath.length === 0 ? [] : dotPath.split(".");
 
@@ -61,5 +76,40 @@ export function getContractForRoutePath<TRouter, TRoute extends RouterRoutePath<
 		throw new Error(`Route does not resolve to a contract: ${routePath}`);
 	}
 
-	return current.contract as ContractForRoutePath<TRouter, TRoute> & Contract;
+	return current.contract as ContractMapForRoutePath<TRouter, TRoute> & ContractMethodMap;
+}
+
+export function getContractForRoutePath<TRouter, TRoute extends RouterRoutePath<TRouter>>(
+	router: TRouter,
+	routePath: TRoute,
+): ContractForRoutePath<TRouter, TRoute> & Contract {
+	const contractMap = getContractMapForRoutePath(router, routePath);
+
+	for (const method of contractMethodOrder) {
+		const contract = contractMap[method];
+		if (contract) {
+			return contract as ContractForRoutePath<TRouter, TRoute> & Contract;
+		}
+	}
+
+	throw new Error(`Route does not contain any contracts: ${routePath}`);
+}
+
+export function getContractForRoutePathMethod<
+	TRouter,
+	TRoute extends RouterRoutePath<TRouter>,
+	TMethod extends ContractMethod,
+>(
+	router: TRouter,
+	routePath: TRoute,
+	method: TMethod,
+): ContractForRoutePathMethod<TRouter, TRoute, TMethod> & Contract {
+	const contractMap = getContractMapForRoutePath(router, routePath);
+	const contract = contractMap[method];
+
+	if (!contract) {
+		throw new Error(`Route does not contain contract for method ${method}: ${routePath}`);
+	}
+
+	return contract as ContractForRoutePathMethod<TRouter, TRoute, TMethod> & Contract;
 }
