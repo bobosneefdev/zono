@@ -1,50 +1,160 @@
-import { Prettify } from "ts-essentials";
 import z from "zod";
-import { ZonoContractAny, ZonoRouter } from "~/contract/types.js";
-import { FilterNever } from "~/shared.js";
+import type { Contract } from "~/contract/types.js";
+import type { JoinPath, PossiblePromise } from "~/internal/types.js";
 
-export type ZonoClientConfig = {
-	baseUrl: string;
-	defaultHeaders?: ZonoClientConfigDefaultHeaders;
-	/** @default false */
-	ignoreInputValidation?: boolean;
-	/** @default false */
-	ignoreOutputValidation?: boolean;
-};
+type EmptyObject = object;
 
-export type ZonoClientConfigDefaultHeaders = Record<string, ZonoClientConfigDefaultHeaderValue>;
+type DotPathToRoutePath<TPath extends string> = TPath extends `${infer TSegment}.${infer TRest}`
+	? `/${TSegment}${DotPathToRoutePath<TRest>}`
+	: `/${TPath}`;
 
-export type ZonoClientConfigDefaultHeaderValue = string | (() => string) | (() => Promise<string>);
+type StripLeadingSlash<TPath extends string> = TPath extends `/${infer TRest}` ? TRest : TPath;
 
-export type ZonoClientContractCallOptions<T extends ZonoContractAny> = FilterNever<{
-	pathParams: T["pathParams"] extends z.ZodType ? z.infer<T["pathParams"]> : never;
-	query: T["query"] extends z.ZodType ? z.infer<T["query"]> : never;
-	body: T["body"] extends z.ZodType ? z.infer<T["body"]> : never;
-	headers: T["headers"] extends z.ZodType ? z.infer<T["headers"]> : never;
-}>;
+type RoutePathToDotPath<TPath extends string> =
+	StripLeadingSlash<TPath> extends `${infer TSegment}/${infer TRest}`
+		? `${TSegment}.${RoutePathToDotPath<TRest>}`
+		: StripLeadingSlash<TPath>;
 
-type ZonoClientContractCallArgs<T extends ZonoContractAny> = keyof ZonoClientContractCallOptions<T> extends never
-	? []
-	: [opts: ZonoClientContractCallOptions<T>];
+type RoutePathsFromNode<TNode, TPrefix extends string = ""> = TNode extends {
+	contract: Contract;
+}
+	?
+			| DotPathToRoutePath<TPrefix>
+			| (TNode extends { router: infer TRouter }
+					? RoutePathsFromNode<TRouter, TPrefix>
+					: never)
+	: TNode extends Record<string, unknown>
+		? {
+				[K in keyof TNode & string]: RoutePathsFromNode<TNode[K], JoinPath<TPrefix, K>>;
+			}[keyof TNode & string]
+		: never;
 
-export type ZonoClientEndpointResponse<TContract extends ZonoContractAny> = {
-	[K in keyof TContract["responses"]]: {
-		status: Extract<K, number>;
-		data: TContract["responses"][K] extends { body: z.ZodType }
-			? z.infer<TContract["responses"][K]["body"]>
-			: undefined;
-		headers: TContract["responses"][K] extends { headers: z.ZodType }
-			? z.infer<TContract["responses"][K]["headers"]>
-			: undefined;
+type ValueAtDotPath<TValue, TPath extends string> = TPath extends `${infer TSegment}.${infer TRest}`
+	? TSegment extends keyof TValue
+		? ValueAtDotPath<TValue[TSegment], TRest>
+		: never
+	: TPath extends keyof TValue
+		? TValue[TPath]
+		: never;
+
+type NextNodeForPath<TNode> = TNode extends { router: infer TRouter } ? TRouter : TNode;
+
+type ContractAtDotPath<
+	TNode,
+	TPath extends string,
+> = TPath extends `${infer TSegment}.${infer TRest}`
+	? TSegment extends keyof TNode
+		? ContractAtDotPath<NextNodeForPath<TNode[TSegment]>, TRest>
+		: never
+	: TPath extends keyof TNode
+		? ContractFromNode<TNode[TPath]>
+		: never;
+
+type ContractFromNode<TNode> = TNode extends { contract: infer TContract extends Contract }
+	? TContract
+	: never;
+
+export type ClientRoute<TRouter> = RoutePathsFromNode<TRouter>;
+
+export type ContractForRoute<TRouter, TRoute extends ClientRoute<TRouter>> = ContractFromNode<
+	ValueAtDotPath<TRouter, RoutePathToDotPath<TRoute>>
+> extends never
+	? ContractAtDotPath<TRouter, RoutePathToDotPath<TRoute>>
+	: ContractFromNode<ValueAtDotPath<TRouter, RoutePathToDotPath<TRoute>>>;
+
+type SchemaInput<TSchema> = TSchema extends z.ZodType ? z.input<TSchema> : never;
+
+type SchemaOutput<TSchema> = TSchema extends z.ZodType ? z.output<TSchema> : never;
+
+type IncludePathParams<TContract extends Contract> =
+	NonNullable<TContract["pathParams"]> extends z.ZodType
+		? { pathParams: SchemaInput<NonNullable<TContract["pathParams"]>> }
+		: EmptyObject;
+
+type IncludeBody<TContract extends Contract> =
+	NonNullable<TContract["body"]> extends z.ZodType
+		? { body: SchemaInput<NonNullable<TContract["body"]>> }
+		: EmptyObject;
+
+type IncludeQuery<TContract extends Contract> =
+	NonNullable<TContract["query"]> extends z.ZodType
+		? { query: SchemaInput<NonNullable<TContract["query"]>> }
+		: EmptyObject;
+
+type IncludeHeaders<TContract extends Contract> =
+	NonNullable<TContract["headers"]> extends z.ZodType
+		? { headers: SchemaInput<NonNullable<TContract["headers"]>> }
+		: EmptyObject;
+
+export type ClientRequestInput<TContract extends Contract> = IncludePathParams<TContract> &
+	IncludeBody<TContract> &
+	IncludeQuery<TContract> &
+	IncludeHeaders<TContract>;
+
+export type ClientRequestForRoute<
+	TRouter,
+	TRoute extends ClientRoute<TRouter>,
+> = ClientRequestInput<ContractForRoute<TRouter, TRoute>>;
+
+type ContractResponseStatuses<TContract extends Contract> = Extract<
+	keyof TContract["responses"],
+	number
+>;
+
+type ParsedBodyForStatus<
+	TContract extends Contract,
+	TStatus extends ContractResponseStatuses<TContract>,
+> = TContract["responses"][TStatus]["body"] extends z.ZodType
+	? SchemaOutput<TContract["responses"][TStatus]["body"]>
+	: undefined;
+
+type ParsedHeadersForStatus<
+	TContract extends Contract,
+	TStatus extends ContractResponseStatuses<TContract>,
+> = TContract["responses"][TStatus]["headers"] extends z.ZodType
+	? SchemaOutput<TContract["responses"][TStatus]["headers"]>
+	: undefined;
+
+export type ParsedResponseForContract<TContract extends Contract> = {
+	[TStatus in ContractResponseStatuses<TContract>]: {
+		status: TStatus;
+		body: ParsedBodyForStatus<TContract, TStatus>;
+		headers: ParsedHeadersForStatus<TContract, TStatus>;
+		response: Response;
 	};
-}[keyof TContract["responses"]];
+}[ContractResponseStatuses<TContract>];
 
-export type ZonoClientEndpoint<T extends ZonoContractAny> = Prettify<(...args: ZonoClientContractCallArgs<T>) => Promise<ZonoClientEndpointResponse<T>>>;
+export type ParsedResponseForRoute<
+	TRouter,
+	TRoute extends ClientRoute<TRouter>,
+> = ParsedResponseForContract<ContractForRoute<TRouter, TRoute>>;
 
-export type ZonoClient<T extends ZonoRouter> = {
-	[K in keyof T]: T[K] extends ZonoContractAny
-		? ZonoClientEndpoint<T[K]>
-		: T[K] extends ZonoRouter
-			? ZonoClient<T[K]>
-			: never;
+export type HeaderFactoryValue = string | (() => PossiblePromise<string>);
+
+export type ClientOptions = {
+	baseUrl: string;
+	bypassOutgoingParse?: boolean;
+	bypassIncomingParse?: boolean;
+	defaultHeaders?: Record<string, HeaderFactoryValue>;
 };
+
+export interface Client<TRouter> {
+	fetch<TRoute extends ClientRoute<TRouter>>(
+		route: TRoute,
+		...args: keyof ClientRequestForRoute<TRouter, TRoute> extends never
+			? [request?: ClientRequestForRoute<TRouter, TRoute>]
+			: [request: ClientRequestForRoute<TRouter, TRoute>]
+	): Promise<ParsedResponseForRoute<TRouter, TRoute>>;
+
+	fetchConfig<TRoute extends ClientRoute<TRouter>>(
+		route: TRoute,
+		...args: keyof ClientRequestForRoute<TRouter, TRoute> extends never
+			? [request?: ClientRequestForRoute<TRouter, TRoute>]
+			: [request: ClientRequestForRoute<TRouter, TRoute>]
+	): Promise<[string, RequestInit]>;
+
+	parseResponse<TRoute extends ClientRoute<TRouter>>(
+		route: TRoute,
+		response: Response,
+	): Promise<ParsedResponseForRoute<TRouter, TRoute>>;
+}

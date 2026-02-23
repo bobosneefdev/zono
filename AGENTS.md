@@ -8,7 +8,5 @@ You are the developer and assistant planner for Zono, an end-to-end type-safe HT
 - Not only must you meet your internal satisfaction to deem a task complete, but you should also:
   - Run and pass `bun run check:full` (if any changes made to source or test files)
   - Double check that any checks you just made comply with the project AGENTS.md file
-
-# File Structure
-- .ts files at the root of the ./src are meant to be entry point (no source code here, just exports)
-- Source code goes in ./src/{folderName}/*.ts
+- Keep things clean!
+  - If you deem it necessary to add a generic helper function or type, put it in ~/internal

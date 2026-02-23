@@ -1,2 +1,1 @@
-export * from "./client/factory.js";
-export * from "./client/types.js";
+export * from "./client/index.js";
