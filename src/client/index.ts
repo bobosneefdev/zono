@@ -8,11 +8,7 @@ import type {
 	ParsedResponseForRoute,
 } from "~/client/types.js";
 import type { Contract } from "~/contract/types.js";
-
-function routeToDotPath(route: string): string {
-	const withoutLeadingSlash = route.startsWith("/") ? route.slice(1) : route;
-	return withoutLeadingSlash.split("/").filter(Boolean).join(".");
-}
+import { getContractForRoutePath } from "~/internal/router_runtime.js";
 
 function routeToSegments(route: string): Array<string> {
 	const withoutLeadingSlash = route.startsWith("/") ? route.slice(1) : route;
@@ -23,45 +19,7 @@ function getContractForRoute<TRouter, TRoute extends ClientRoute<TRouter>>(
 	router: TRouter,
 	route: TRoute,
 ): ContractForRoute<TRouter, TRoute> {
-	const dotPath = routeToDotPath(route);
-	const keys = dotPath.length === 0 ? [] : dotPath.split(".");
-
-	let current: unknown = router;
-	for (const key of keys) {
-		if (typeof current !== "object" || current === null) {
-			throw new Error(`Unknown route: ${route}`);
-		}
-
-		const currentRecord = current as Record<string, unknown>;
-		if (key in currentRecord) {
-			current = currentRecord[key];
-			continue;
-		}
-
-		if (
-			"router" in currentRecord &&
-			typeof currentRecord.router === "object" &&
-			currentRecord.router !== null &&
-			key in (currentRecord.router as Record<string, unknown>)
-		) {
-			current = (currentRecord.router as Record<string, unknown>)[key];
-			continue;
-		}
-
-		throw new Error(`Unknown route: ${route}`);
-	}
-
-	if (
-		typeof current !== "object" ||
-		current === null ||
-		!("contract" in current) ||
-		typeof current.contract !== "object" ||
-		current.contract === null
-	) {
-		throw new Error(`Route does not resolve to a contract: ${route}`);
-	}
-
-	return current.contract as ContractForRoute<TRouter, TRoute>;
+	return getContractForRoutePath(router, route) as ContractForRoute<TRouter, TRoute>;
 }
 
 function buildPathWithParams(pathTemplate: string, pathParams?: Record<string, string>): string {
