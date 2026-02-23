@@ -3,5 +3,5 @@ node_modules/
 .env
 .npmrc
 package-lock.json
-!README.md
 *.md
+!README.md
