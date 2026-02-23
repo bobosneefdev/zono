@@ -6,13 +6,9 @@ export type PossiblePromise<T> = T | Promise<T>;
 
 export type PossibleZodOptional<T extends z.ZodType> = T | z.ZodOptional<T>;
 
-/**
- * If V is never, returns Partial<Record<K, undefined>>.
- * Otherwise, returns Record<K, V>
- */
-export type ConditionalKeyInObject<K extends string | number | symbol, V> = [V] extends [never]
-	? Partial<Record<K, undefined>>
-	: Record<K, V>;
+export type FilterNever<T> = {
+	[K in keyof T as [T[K]] extends [never] ? never : K]?: T[K];
+};
 
 export type ZonoServerOptions = {
 	port?: string | number;
@@ -48,10 +44,10 @@ export type ZonoServerHandler<T extends ZonoContractAny, U extends [...Array<any
 	...args: U
 ) => PossiblePromise<ZonoServerHandlerOutput<T>>;
 
-export type ZonoServerImplementation<T extends ZonoRouter, U extends [...Array<any>] = []> = {
+export type ZonoRouterImplementation<T extends ZonoRouter, U extends [...Array<any>] = []> = {
 	[K in keyof T]: T[K] extends ZonoContractAny
 		? ZonoServerHandler<T[K], U>
 		: T[K] extends ZonoRouter
-			? ZonoServerImplementation<T[K], U>
+			? ZonoRouterImplementation<T[K], U>
 			: never;
 };
