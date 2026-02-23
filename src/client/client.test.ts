@@ -1,7 +1,11 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, mock } from "bun:test";
 import z from "zod";
 import { createClient } from "~/client/index.js";
-import type { ClientRequestForRoute, ClientRoute } from "~/client/types.js";
+import type {
+	ClientMethodRoute,
+	ClientRequestForRouteMethod,
+	ClientRoute,
+} from "~/client/types.js";
 import { createRouter } from "~/contract/index.js";
 
 const router = createRouter(
@@ -24,36 +28,55 @@ const router = createRouter(
 		users: {
 			$id: {
 				contract: {
-					method: "get",
-					pathParams: z.object({
-						id: z
-							.string()
-							.refine(async (value) => value.length > 0, "id must be non-empty"),
-					}),
-					responses: {
-						200: {
-							body: z.object({
-								id: z.string(),
-								name: z.string().transform(async (value) => value.toUpperCase()),
-							}),
+					get: {
+						pathParams: z.object({
+							id: z
+								.string()
+								.refine(async (value) => value.length > 0, "id must be non-empty"),
+						}),
+						responses: {
+							200: {
+								body: z.object({
+									id: z.string(),
+									name: z
+										.string()
+										.transform(async (value) => value.toUpperCase()),
+								}),
+							},
+						},
+					},
+					post: {
+						pathParams: z.object({
+							id: z.string(),
+						}),
+						body: z.object({
+							name: z.string(),
+						}),
+						responses: {
+							201: {
+								body: z.object({
+									ok: z.literal(true),
+								}),
+							},
 						},
 					},
 				},
 				router: {
 					posts: {
 						contract: {
-							method: "post",
-							pathParams: z.object({
-								id: z.string(),
-							}),
-							body: z.object({
-								title: z.string(),
-							}),
-							responses: {
-								201: {
-									body: z.object({
-										ok: z.literal(true),
-									}),
+							post: {
+								pathParams: z.object({
+									id: z.string(),
+								}),
+								body: z.object({
+									title: z.string(),
+								}),
+								responses: {
+									201: {
+										body: z.object({
+											ok: z.literal(true),
+										}),
+									},
 								},
 							},
 						},
@@ -66,69 +89,74 @@ const router = createRouter(
 
 function expectType<T>(_value: T): void {}
 
+afterEach(() => {
+	mock.restore();
+});
+
 describe("createClient", () => {
-	it("provides strongly-typed route and request inference", async () => {
+	it("provides strongly-typed method-aware routes and requests", async () => {
 		const client = createClient(router, {
 			baseUrl: "http://localhost:3000",
-			defaultHeaders: {
-				"Header-1": "value-1",
-				"Header-2": () => "value-2",
-				"Header-3": async () => "value-3",
-			},
 		});
 
-		const fetchConfig = await client.fetchConfig("/users/$id", {
-			pathParams: {
-				id: "123",
-			},
-		});
+		const anyRoute = "/users/$id" as const satisfies ClientRoute<typeof router>;
+		expectType<"/users/$id" | "/users/$id/posts">(anyRoute);
 
-		expectType<[string, RequestInit]>(fetchConfig);
-		expectType<"/users/$id" | "/users/$id/posts">("/users/$id");
+		const getRoute = "/users/$id" as const satisfies ClientMethodRoute<typeof router, "get">;
+		expectType<"/users/$id">(getRoute);
 
-		const validRoute: ClientRoute<typeof router> = "/users/$id";
-		expectType<"/users/$id" | "/users/$id/posts">(validRoute);
+		const postRoute = "/users/$id/posts" as const satisfies ClientMethodRoute<
+			typeof router,
+			"post"
+		>;
+		expectType<"/users/$id" | "/users/$id/posts">(postRoute);
 
 		// @ts-expect-error invalid route path should be rejected
 		const invalidRoute: ClientRoute<typeof router> = "/users/nope";
 		void invalidRoute;
 
-		type UsersRequest = ClientRequestForRoute<typeof router, "/users/$id">;
-		const usersRequestOk: UsersRequest = {
+		// @ts-expect-error /users/$id/posts does not support get
+		const invalidGetRoute: ClientMethodRoute<typeof router, "get"> = "/users/$id/posts";
+		void invalidGetRoute;
+
+		type UsersGetRequest = ClientRequestForRouteMethod<typeof router, "get", "/users/$id">;
+		const usersGetRequestOk: UsersGetRequest = {
 			pathParams: {
 				id: "123",
 			},
 		};
-		expectType<UsersRequest>(usersRequestOk);
+		expectType<UsersGetRequest>(usersGetRequestOk);
 
-		// @ts-expect-error missing required pathParams
-		const usersRequestBad: UsersRequest = {};
-		void usersRequestBad;
-
-		type PostsRequest = ClientRequestForRoute<typeof router, "/users/$id/posts">;
-		const postsRequestOk: PostsRequest = {
+		type UsersPostRequest = ClientRequestForRouteMethod<typeof router, "post", "/users/$id">;
+		const usersPostRequestOk: UsersPostRequest = {
 			pathParams: {
 				id: "123",
 			},
 			body: {
-				title: "Hello world",
+				name: "Jake",
 			},
 		};
-		expectType<PostsRequest>(postsRequestOk);
+		expectType<UsersPostRequest>(usersPostRequestOk);
 
-		const postsFetchConfig = await client.fetchConfig("/users/$id/posts", {
-			pathParams: {
-				id: "123",
-			},
-			body: {
-				title: "Hello world",
-			},
-		});
+		expectType<(route: "/users/$id", request: UsersPostRequest) => Promise<{ status: 201 }>>(
+			client.post,
+		);
 
-		expectType<[string, RequestInit]>(postsFetchConfig);
+		// @ts-expect-error /users/$id/posts does not support get
+		expectType<(route: "/users/$id/posts") => unknown>(client.get);
 	});
 
-	it("builds fetch tuple with parsed outgoing input and merged headers", async () => {
+	it("builds request with parsed outgoing input and merged headers", async () => {
+		const fetchMock = mock(async () => {
+			return new Response(JSON.stringify({ id: "abc xyz", name: "jake" }), {
+				status: 200,
+				headers: {
+					"content-type": "application/json",
+				},
+			});
+		});
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+
 		const client = createClient(router, {
 			baseUrl: "http://localhost:3000/",
 			defaultHeaders: {
@@ -138,12 +166,18 @@ describe("createClient", () => {
 			},
 		});
 
-		const [url, init] = await client.fetchConfig("/users/$id", {
+		const parsed = await client.get("/users/$id", {
 			pathParams: {
 				id: "abc xyz",
 			},
 		});
 
+		expect(parsed.status).toBe(200);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+
+		const firstCall = fetchMock.mock.calls[0];
+		expect(firstCall).toBeDefined();
+		const [url, init] = firstCall as unknown as [string, RequestInit];
 		expect(url).toBe("http://localhost:3000/users/abc%20xyz");
 		expect(init.method).toBe("GET");
 		expect(init.headers).toBeInstanceOf(Headers);
@@ -166,7 +200,7 @@ describe("createClient", () => {
 			},
 		});
 
-		const parsed = await client.parseResponse("/users/$id", response);
+		const parsed = await client.parseResponse("get", "/users/$id", response);
 
 		expect(parsed.status).toBe(200);
 		expect(parsed.body).toEqual({ id: "123", name: "JAKE" });

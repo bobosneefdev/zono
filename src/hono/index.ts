@@ -1,5 +1,5 @@
 import type { Context, Hono } from "hono";
-import type { Contract } from "~/contract/types.js";
+import type { Contract, ContractMethod, ContractMethodMap } from "~/contract/types.js";
 import type {
 	InitHonoOptions,
 	ServerHandlerInput,
@@ -40,12 +40,34 @@ async function buildResponse<TContract extends Contract>(
 
 type RouteRegistration = {
 	path: string;
+	method: ContractMethod;
 	contract: Contract;
 	handler: (
 		context: Context,
 		options: Required<InitHonoOptions<Array<unknown>>>,
 	) => Promise<Response>;
 };
+
+const contractMethodOrder: Array<ContractMethod> = [
+	"get",
+	"post",
+	"put",
+	"delete",
+	"patch",
+	"options",
+	"head",
+];
+
+function getContractMethods(contractMap: ContractMethodMap): Array<ContractMethod> {
+	const methods: Array<ContractMethod> = [];
+	for (const method of contractMethodOrder) {
+		if (contractMap[method]) {
+			methods.push(method);
+		}
+	}
+
+	return methods;
+}
 
 function collectRoutes(
 	router: Record<string, unknown>,
@@ -63,35 +85,48 @@ function collectRoutes(
 		}
 
 		if ("contract" in value && isRecord(value.contract) && "handler" in handlerNode) {
-			const contract = value.contract as Contract;
-			const resolvedHandler = handlerNode.handler;
-			if (typeof resolvedHandler !== "function") {
-				throw new Error(
-					`Missing handler function for route: ${dotPathToParamPath(nodePath)}`,
-				);
+			const path = dotPathToParamPath(nodePath);
+			const contractMap = value.contract as ContractMethodMap;
+			const handlerMap = handlerNode.handler;
+
+			if (!isRecord(handlerMap)) {
+				throw new Error(`Missing handler map for route: ${path}`);
 			}
 
-			registrations.push({
-				path: dotPathToParamPath(nodePath),
-				contract,
-				handler: async (
-					context: Context,
-					options: Required<InitHonoOptions<Array<unknown>>>,
-				) => {
-					const input = await parseRequestInput(
-						contract,
-						context,
-						options.bypassIncomingParse,
-					);
-					const handlerParams = options.getHandlerParams(context);
-					const result = await resolvedHandler(input, ...handlerParams);
-					return await buildResponse(
-						contract,
-						result as ServerHandlerOutput<Contract>,
-						options.bypassOutgoingParse,
-					);
-				},
-			});
+			for (const method of getContractMethods(contractMap)) {
+				const contract = contractMap[method];
+				if (!contract) {
+					continue;
+				}
+
+				const resolvedHandler = handlerMap[method];
+				if (typeof resolvedHandler !== "function") {
+					throw new Error(`Missing handler function for ${method.toUpperCase()} ${path}`);
+				}
+
+				registrations.push({
+					path,
+					method,
+					contract,
+					handler: async (
+						context: Context,
+						options: Required<InitHonoOptions<Array<unknown>>>,
+					) => {
+						const input = await parseRequestInput(
+							contract,
+							context,
+							options.bypassIncomingParse,
+						);
+						const handlerParams = options.getHandlerParams(context);
+						const result = await resolvedHandler(input, ...handlerParams);
+						return await buildResponse(
+							contract,
+							result as ServerHandlerOutput<Contract>,
+							options.bypassOutgoingParse,
+						);
+					},
+				});
+			}
 		}
 
 		const routerChild =
@@ -124,7 +159,7 @@ function registerRoute(
 	const routeHandler = (context: Context): Promise<Response> =>
 		registration.handler(context, options);
 
-	switch (registration.contract.method) {
+	switch (registration.method) {
 		case "get":
 			app.get(registration.path, routeHandler);
 			return;
@@ -147,7 +182,7 @@ function registerRoute(
 			app.on("HEAD", registration.path, routeHandler);
 			return;
 		default:
-			throw new Error(`Unsupported HTTP method: ${registration.contract.method}`);
+			throw new Error(`Unsupported HTTP method: ${registration.method}`);
 	}
 }
 
