@@ -1,78 +1,70 @@
-import { StatusCode } from "hono/utils/http-status";
 import z from "zod";
-import { PossibleZodOptional } from "~/shared/types.js";
+import type { JoinPath, PossibleZodOptional } from "~/internal/types.js";
 
-export type ZonoContractPath = `/:${string}` | "";
-
-export type ZonoContractMethod =
-	"get" |
-	"post" |
-	"put" |
-	"delete" |
-	"patch" |
-	"options" |
-	"head";
-
-type ExtractPathParams<TPath extends string> =
-	TPath extends `${infer _Start}:${infer Param}/${infer Rest}`
-		? Param | ExtractPathParams<`/${Rest}`>
-		: TPath extends `${infer _Start}:${infer Param}`
-			? Param
-			: never;
-
-export type ZonoContractOptions<TPath extends ZonoContractPath> = {
-	method: ZonoContractMethod;
-	responses: ZonoContractResponses;
+export type Contract = {
+	method: ContractMethod;
+	responses: ContractResponses;
+	pathParams?: z.ZodType<Record<string, string>>;
 	body?: z.ZodType;
-	query?: ZonoContractQuery;
-	headers?: ZonoContractHeaders;
-} & (
-	[ExtractPathParams<TPath>] extends [never]
-		? { pathParams?: undefined }
-		: { pathParams: ZonoContractPathParams<TPath> }
-);
-
-export type ZonoContractResponse = { body?: z.ZodType; headers?: ZonoContractHeaders };
-
-export type ZonoContractResponses = Partial<Record<StatusCode, ZonoContractResponse>>;
-
-export type ZonoContract<
-	TPath extends ZonoContractPath,
-	TOptions extends ZonoContractOptions<TPath>,
-> = { path: TPath } & TOptions;
-
-/**
- * A loosely-typed contract, used for router definitions where the
- * path is not statically known. Avoids the `pathParams` required issue
- * that arises with `ZonoContract<any>`.
- */
-export type ZonoContractAny = {
-	path: ZonoContractPath;
-	method: ZonoContractMethod;
-	responses: ZonoContractResponses;
-	body?: z.ZodType;
-	query?: ZonoContractQuery;
-	headers?: ZonoContractHeaders;
-	pathParams?: z.ZodObject<Record<string, ZonoContractPathParamValue> & object>;
+	query?: ContractQuery;
+	headers?: ContractHeaders;
 };
 
-export type ZonoContractQueryValue =
-	| PossibleZodOptional<z.ZodType<string, string>>
-	| z.ZodArray<z.ZodType<string, string>>
-	| z.ZodTuple<[z.ZodType<string, string>, ...Array<z.ZodType<string, string>>]>;
+type PathParamNamesFromSegment<TSegment extends string> = TSegment extends `$${infer TParamName}`
+	? TParamName
+	: never;
 
-export type ZonoContractQuery = z.ZodObject<Record<string, ZonoContractQueryValue>>;
+type PathParamNamesFromPath<TPath extends string> = TPath extends `${infer TSegment}.${infer TRest}`
+	? PathParamNamesFromSegment<TSegment> | PathParamNamesFromPath<TRest>
+	: PathParamNamesFromSegment<TPath>;
 
-export type ZonoContractHeaderValue = PossibleZodOptional<z.ZodType<string, string>>;
+type PathParamsShape<TPath extends string> = {
+	[K in PathParamNamesFromPath<TPath>]: z.ZodType<string, string>;
+};
 
-export type ZonoContractHeaders = z.ZodObject<Record<string, ZonoContractHeaderValue>>;
+export type ContractMethod = "get" | "post" | "put" | "delete" | "patch" | "options" | "head";
 
-export type ZonoContractPathParamValue = z.ZodType<string, string>;
-
-export type ZonoContractPathParams<TPath extends ZonoContractPath> = z.ZodObject<
-	Record<ExtractPathParams<TPath>, ZonoContractPathParamValue> & object
+export type ContractHeaders = z.ZodObject<
+	Record<string, PossibleZodOptional<z.ZodType<string, string>>>
 >;
 
-export interface ZonoRouter {
-	[key: string]: ZonoContractAny | ZonoRouter;
+export type ContractResponses = Record<
+	number,
+	{
+		body?: z.ZodType;
+		headers?: ContractHeaders;
+	}
+>;
+
+export type ContractQuery = z.ZodObject<
+	Record<string, PossibleZodOptional<z.ZodType<string, string>>>
+>;
+
+export interface RouterShape {
+	[key: string]: RouterRouterNode | ContractRouterNode;
 }
+
+export type RouterRouterNode = {
+	type: "router";
+	router: RouterShape;
+};
+
+export type ContractRouterNode = {
+	type: "contract";
+	router?: RouterShape;
+};
+
+export type Router<TShape extends RouterShape, TPath extends string = ""> = {
+	[K in keyof TShape]: TShape[K] extends RouterRouterNode
+		? Router<TShape[K]["router"], JoinPath<TPath, Extract<K, string>>>
+		: {
+				contract: ContractForPath<JoinPath<TPath, Extract<K, string>>>;
+			} & (TShape[K]["router"] extends RouterShape
+				? { router: Router<TShape[K]["router"], JoinPath<TPath, Extract<K, string>>> }
+				: { router?: undefined });
+};
+
+type ContractForPath<TPath extends string> = Contract &
+	([PathParamNamesFromPath<TPath>] extends [never]
+		? { pathParams?: undefined }
+		: { pathParams: z.ZodObject<PathParamsShape<TPath>> });

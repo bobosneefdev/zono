@@ -5,7 +5,6 @@ export default defineConfig({
 	entry: {
 		client: "src/client.ts",
 		contract: "src/contract.ts",
-		shared: "src/shared.ts",
 		hono: "src/hono.ts",
 		sveltekit: "src/sveltekit.ts",
 	},

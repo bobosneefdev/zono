@@ -1,1 +1,1 @@
-export * from "./hono/applicator.js";
+export * from "./hono/index.js";

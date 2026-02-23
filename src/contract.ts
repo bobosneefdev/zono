@@ -1,2 +1,1 @@
-export * from "./contract/factory.js";
-export * from "./contract/types.js";
+export * from "./contract/index.js";
