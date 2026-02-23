@@ -1,14 +1,12 @@
 import { ZonoContract, ZonoRouter } from "~/contract/types.js";
 import { ZonoClient, ZonoClientConfig } from "./types.js";
 
-function resolvePath(path: string, pathParams?: Record<string, any>): string {
-	if (!pathParams) return path;
-	let resolved = path;
-	for (const [key, value] of Object.entries(pathParams)) {
-		resolved = resolved.replace(`:${key}`, encodeURIComponent(String(value)));
-	}
-	return resolved;
-}
+export const createZonoClient = <T extends ZonoRouter>(
+	router: T,
+	config: ZonoClientConfig,
+): ZonoClient<T> => {
+	return processRouterOrContract(router, config);
+};
 
 function processRouterOrContract(item: any, config: ZonoClientConfig, prefix = ""): any {
 	if ("path" in item && "method" in item && "responses" in item) {
@@ -113,6 +111,15 @@ function processRouterOrContract(item: any, config: ZonoClientConfig, prefix = "
 	return result;
 }
 
+function resolvePath(path: string, pathParams?: Record<string, any>): string {
+	if (!pathParams) return path;
+	let resolved = path;
+	for (const [key, value] of Object.entries(pathParams)) {
+		resolved = resolved.replace(`:${key}`, encodeURIComponent(String(value)));
+	}
+	return resolved;
+}
+
 async function awaitRecord(
 	record: Record<string, string | Promise<string>>,
 ): Promise<Record<string, string>> {
@@ -121,10 +128,3 @@ async function awaitRecord(
 	);
 	return Object.fromEntries(entries);
 }
-
-export const createZonoClient = <T extends ZonoRouter>(
-	router: T,
-	config: ZonoClientConfig,
-): ZonoClient<T> => {
-	return processRouterOrContract(router, config);
-};

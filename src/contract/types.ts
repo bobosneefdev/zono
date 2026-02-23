@@ -1,9 +1,17 @@
 import { StatusCode } from "hono/utils/http-status";
 import z from "zod";
-import { ConditionalKeyInObject, PossibleZodOptional } from "~/shared/types.js";
-import { ZonoContractMethod } from "./enums.js";
+import { PossibleZodOptional } from "~/shared/types.js";
 
 export type ZonoContractPath = `/:${string}` | "";
+
+export type ZonoContractMethod =
+	"get" |
+	"post" |
+	"put" |
+	"delete" |
+	"patch" |
+	"options" |
+	"head";
 
 type ExtractPathParams<TPath extends string> =
 	TPath extends `${infer _Start}:${infer Param}/${infer Rest}`
@@ -18,10 +26,11 @@ export type ZonoContractOptions<TPath extends ZonoContractPath> = {
 	body?: z.ZodType;
 	query?: ZonoContractQuery;
 	headers?: ZonoContractHeaders;
-} & ConditionalKeyInObject<
-	"pathParams",
-	[ExtractPathParams<TPath>] extends [never] ? never : ZonoContractPathParams<TPath>
->;
+} & (
+	[ExtractPathParams<TPath>] extends [never]
+		? { pathParams?: undefined }
+		: { pathParams: ZonoContractPathParams<TPath> }
+);
 
 export type ZonoContractResponse = { body?: z.ZodType; headers?: ZonoContractHeaders };
 
@@ -44,7 +53,7 @@ export type ZonoContractAny = {
 	body?: z.ZodType;
 	query?: ZonoContractQuery;
 	headers?: ZonoContractHeaders;
-	pathParams?: z.ZodObject<Record<string, ZonoContractPathParamValue>>;
+	pathParams?: z.ZodObject<Record<string, ZonoContractPathParamValue> & object>;
 };
 
 export type ZonoContractQueryValue =
@@ -61,7 +70,7 @@ export type ZonoContractHeaders = z.ZodObject<Record<string, ZonoContractHeaderV
 export type ZonoContractPathParamValue = z.ZodType<string, string>;
 
 export type ZonoContractPathParams<TPath extends ZonoContractPath> = z.ZodObject<
-	Record<ExtractPathParams<TPath>, ZonoContractPathParamValue>
+	Record<ExtractPathParams<TPath>, ZonoContractPathParamValue> & object
 >;
 
 export interface ZonoRouter {

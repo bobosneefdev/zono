@@ -5,7 +5,7 @@ import { ZonoContract, ZonoContractOptions, ZonoContractPath, ZonoRouter } from 
  * @param path - Path used to infer what pathParameters should be defined. Should be "" in most cases unless this contract needs path params.
  * @param options - Options for the contract
  */
-export const createZonoContract = <
+export const createContract = <
 	TPath extends ZonoContractPath,
 	TOptions extends ZonoContractOptions<TPath>,
 >(
@@ -18,6 +18,6 @@ export const createZonoContract = <
 /**
  * Creates a Zono router from a nested map of routers and contracts.
  */
-export const createZonoRouter = <T extends ZonoRouter>(router: T): T => {
+export const createRouter = <T extends ZonoRouter>(router: T): T => {
 	return router;
 };

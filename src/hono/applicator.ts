@@ -2,19 +2,19 @@ import { Context, Hono } from "hono";
 import { ContentfulStatusCode } from "hono/utils/http-status";
 import z from "zod";
 import { ZonoContractAny, ZonoRouter } from "~/contract/types.js";
-import { ZonoServerImplementation } from "~/shared.js";
+import { ZonoRouterImplementation } from "~/shared.js";
 
-export function applyZonoRouterToHono<T extends ZonoRouter>(
+export function initHono<T extends ZonoRouter>(
 	app: Hono,
 	router: T,
-	implementation: ZonoServerImplementation<T, [Context]>,
+	implementation: ZonoRouterImplementation<T, [Context]>,
 ) {
 	applyZonoHandler(app, router, implementation);
 }
 
 function applyZonoHandler<
 	TRouter extends ZonoRouter,
-	TImplementation extends ZonoServerImplementation<TRouter, [Context]>,
+	TImplementation extends ZonoRouterImplementation<TRouter, [Context]>,
 >(app: Hono, router: TRouter, implementations: TImplementation, prefix = "") {
 	for (const key in router) {
 		const implementation = implementations[key];
