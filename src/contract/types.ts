@@ -1,5 +1,5 @@
 import z from "zod";
-import type { JoinPath, PossibleZodOptional } from "~/internal/types.js";
+import type { JoinPath, PossibleZodOptional } from "~/lib/types.js";
 
 export type Contract = {
 	responses: ContractResponses;
@@ -31,13 +31,30 @@ export type ContractHeaders = z.ZodObject<
 	Record<string, PossibleZodOptional<z.ZodType<string, string>>>
 >;
 
-export type ContractResponses = Record<
-	number,
-	{
-		body?: z.ZodType;
-		headers?: ContractHeaders;
-	}
->;
+export type ContractResponseJsonContentType = "application/json";
+export type ContractResponseTextContentType = "text/plain";
+export type ContractResponseBytesContentType = "application/octet-stream";
+
+export type ContractResponseNonNullContentType =
+	| ContractResponseJsonContentType
+	| ContractResponseTextContentType
+	| ContractResponseBytesContentType;
+
+type ContractResponseWithBody = {
+	contentType: ContractResponseNonNullContentType;
+	body: z.ZodType;
+	headers?: ContractHeaders;
+};
+
+type ContractResponseWithoutBody = {
+	contentType: null;
+	body?: undefined;
+	headers?: ContractHeaders;
+};
+
+export type ContractResponse = ContractResponseWithBody | ContractResponseWithoutBody;
+
+export type ContractResponses = Record<number, ContractResponse>;
 
 export type ContractQuery = z.ZodObject<
 	Record<string, PossibleZodOptional<z.ZodType<string, string>>>

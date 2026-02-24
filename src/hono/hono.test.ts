@@ -3,7 +3,11 @@ import { Context, Hono } from "hono";
 import z from "zod";
 import { createRouter } from "~/contract/index.js";
 import { initHono } from "~/hono/index.js";
-import type { ServerHandlerInput, ServerHandlerOutput, ServerHandlerTree } from "~/hono/types.js";
+import type {
+	ServerHandlerInput,
+	ServerHandlerOutput,
+	ServerHandlerTree,
+} from "~/lib/server_types.js";
 
 function expectType<T>(_value: T): void {}
 
@@ -36,6 +40,7 @@ const router = createRouter(
 						}),
 						responses: {
 							200: {
+								contentType: "application/json",
 								body: z.object({
 									id: z.string(),
 									name: z
@@ -57,6 +62,7 @@ const router = createRouter(
 						}),
 						responses: {
 							201: {
+								contentType: "application/json",
 								body: z.object({
 									id: z.string(),
 									name: z.string(),
@@ -75,6 +81,7 @@ const router = createRouter(
 								}),
 								responses: {
 									200: {
+										contentType: "application/json",
 										body: z.object({
 											id: z.string(),
 											title: z.string(),
@@ -304,6 +311,7 @@ describe("initHono", () => {
 								}),
 								responses: {
 									200: {
+										contentType: "application/json",
 										body: z.object({
 											id: z.string(),
 										}),
@@ -346,6 +354,92 @@ describe("initHono", () => {
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({ id: "abc" });
+	});
+
+	it("supports global and route-level middleware in initHono", async () => {
+		const app = new Hono();
+
+		initHono(
+			app,
+			router,
+			{
+				users: {
+					$id: {
+						handler: {
+							get: async (data) => {
+								return {
+									status: 200,
+									data: {
+										id: data.pathParams.id,
+										name: "john",
+									},
+									headers: {
+										"x-custom-header": "ok",
+									},
+								};
+							},
+							post: async (data) => {
+								return {
+									status: 201,
+									data: {
+										id: data.pathParams.id,
+										name: data.body.name,
+									},
+								};
+							},
+						},
+						middleware: [
+							async (context, next) => {
+								context.header("x-route-middleware", "users-id");
+								await next();
+							},
+						],
+						router: {
+							$postId: {
+								handler: {
+									get: async (data) => {
+										return {
+											status: 200,
+											data: {
+												id: data.pathParams.postId,
+												title: "post",
+											},
+										};
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			{
+				globalMiddleware: [
+					async (context, next) => {
+						context.header("x-global-middleware", "enabled");
+						await next();
+					},
+				],
+			},
+		);
+
+		const usersResponse = await app.request("http://localhost/users/123", {
+			method: "GET",
+			headers: {
+				"x-input-header": "ok",
+			},
+		});
+
+		expect(usersResponse.status).toBe(200);
+		expect(usersResponse.headers.get("x-global-middleware")).toBe("enabled");
+		expect(usersResponse.headers.get("x-route-middleware")).toBe("users-id");
+
+		const postsResponse = await app.request("http://localhost/users/123/abc", {
+			method: "GET",
+		});
+
+		expect(postsResponse.status).toBe(200);
+		expect(postsResponse.headers.get("x-global-middleware")).toBe("enabled");
+		expect(postsResponse.headers.get("x-route-middleware")).toBeNull();
 	});
 
 	it("throws deterministic error when method contract is missing matching handler", () => {
@@ -395,5 +489,162 @@ describe("initHono", () => {
 		expect(() => initHono(app, router, handlersWithMissingPostMethod)).toThrow(
 			"Missing handler function for POST /users/:id",
 		);
+	});
+
+	it("parses multipart FormData request bodies", async () => {
+		const formRouter = createRouter(
+			{
+				uploads: {
+					type: "contract",
+				},
+			},
+			{
+				uploads: {
+					contract: {
+						post: {
+							body: z.instanceof(FormData),
+							responses: {
+								200: {
+									contentType: "application/json",
+									body: z.object({
+										name: z.string(),
+									}),
+								},
+							},
+						},
+					},
+				},
+			},
+		);
+
+		const app = new Hono();
+		initHono(app, formRouter, {
+			uploads: {
+				handler: {
+					post: async (data) => ({
+						status: 200,
+						data: {
+							name: String(data.body.get("name") ?? ""),
+						},
+					}),
+				},
+			},
+		});
+
+		const formData = new FormData();
+		formData.set("name", "Jane");
+
+		const response = await app.request("http://localhost/uploads", {
+			method: "POST",
+			body: formData,
+		});
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({
+			name: "Jane",
+		});
+	});
+
+	it("encodes json/text/bytes/null responses based on response contentType", async () => {
+		const contentTypeRouter = createRouter(
+			{
+				json: { type: "contract" },
+				text: { type: "contract" },
+				bytes: { type: "contract" },
+				nullish: { type: "contract" },
+			},
+			{
+				json: {
+					contract: {
+						get: {
+							responses: {
+								200: {
+									contentType: "application/json",
+									body: z.object({ value: z.string() }),
+								},
+							},
+						},
+					},
+				},
+				text: {
+					contract: {
+						get: {
+							responses: {
+								200: {
+									contentType: "text/plain",
+									body: z.string(),
+								},
+							},
+						},
+					},
+				},
+				bytes: {
+					contract: {
+						get: {
+							responses: {
+								200: {
+									contentType: "application/octet-stream",
+									body: z.instanceof(Uint8Array),
+								},
+							},
+						},
+					},
+				},
+				nullish: {
+					contract: {
+						get: {
+							responses: {
+								204: {
+									contentType: null,
+								},
+							},
+						},
+					},
+				},
+			},
+		);
+
+		const app = new Hono();
+		initHono(app, contentTypeRouter, {
+			json: {
+				handler: {
+					get: async () => ({ status: 200, data: { value: "ok" } }),
+				},
+			},
+			text: {
+				handler: {
+					get: async () => ({ status: 200, data: "hello" }),
+				},
+			},
+			bytes: {
+				handler: {
+					get: async () => ({ status: 200, data: Uint8Array.from([7, 8, 9]) }),
+				},
+			},
+			nullish: {
+				handler: {
+					get: async () => ({ status: 204 }),
+				},
+			},
+		});
+
+		const jsonResponse = await app.request("http://localhost/json", { method: "GET" });
+		expect(jsonResponse.headers.get("content-type")?.includes("application/json")).toBe(true);
+		expect(await jsonResponse.json()).toEqual({ value: "ok" });
+
+		const textResponse = await app.request("http://localhost/text", { method: "GET" });
+		expect(textResponse.headers.get("content-type")).toBe("text/plain");
+		expect(await textResponse.text()).toBe("hello");
+
+		const bytesResponse = await app.request("http://localhost/bytes", { method: "GET" });
+		expect(bytesResponse.headers.get("content-type")).toBe("application/octet-stream");
+		expect(new Uint8Array(await bytesResponse.arrayBuffer())).toEqual(
+			Uint8Array.from([7, 8, 9]),
+		);
+
+		const nullResponse = await app.request("http://localhost/nullish", { method: "GET" });
+		expect(nullResponse.status).toBe(204);
+		expect(nullResponse.headers.get("content-type")).toBeNull();
+		expect(await nullResponse.text()).toBe("");
 	});
 });

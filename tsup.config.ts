@@ -6,6 +6,7 @@ export default defineConfig({
 		client: "src/client.ts",
 		contract: "src/contract.ts",
 		hono: "src/hono.ts",
+		lib: "src/lib.ts",
 		sveltekit: "src/sveltekit.ts",
 	},
 	keepNames: true,
@@ -13,4 +14,6 @@ export default defineConfig({
 	shims: true,
 	skipNodeModulesBundle: true,
 	clean: true,
+	splitting: true,
+	treeshake: "recommended",
 });

@@ -20,12 +20,18 @@
 			"import": "./dist/hono.mjs",
 			"require": "./dist/hono.js"
 		},
+		"./lib": {
+			"types": "./dist/lib.d.ts",
+			"import": "./dist/lib.mjs",
+			"require": "./dist/lib.js"
+		},
 		"./sveltekit": {
 			"types": "./dist/sveltekit.d.ts",
 			"import": "./dist/sveltekit.mjs",
 			"require": "./dist/sveltekit.js"
 		}
 	},
+    "sideEffects": false,
     "scripts": {
         "lint": "biome check --fix --unsafe",
         "format": "biome format --write .",

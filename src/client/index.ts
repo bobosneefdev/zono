@@ -7,7 +7,7 @@ import type {
 	ParsedResponseForRouteMethod,
 } from "~/client/types.js";
 import type { Contract, ContractMethod } from "~/contract/types.js";
-import { getContractForRoutePathMethod } from "~/internal/router_runtime.js";
+import { getContractForRoutePathMethod } from "~/lib/router_runtime.js";
 
 function routeToSegments(route: string): Array<string> {
 	const withoutLeadingSlash = route.startsWith("/") ? route.slice(1) : route;
@@ -81,6 +81,10 @@ async function resolveDefaultHeaders(
 	return headers;
 }
 
+function isFormDataBody(value: unknown): value is FormData {
+	return typeof FormData !== "undefined" && value instanceof FormData;
+}
+
 async function parseOutgoingRequest(
 	contract: Contract,
 	rawRequest: Record<string, unknown>,
@@ -127,8 +131,14 @@ async function parseIncomingResponse<TContract extends Contract>(
 	}
 
 	let body: unknown;
-	if (statusDefinition.body) {
+	if (statusDefinition.contentType === "application/json") {
 		const rawBody = await response.clone().json();
+		body = bypassIncomingParse ? rawBody : await statusDefinition.body.parseAsync(rawBody);
+	} else if (statusDefinition.contentType === "text/plain") {
+		const rawBody = await response.clone().text();
+		body = bypassIncomingParse ? rawBody : await statusDefinition.body.parseAsync(rawBody);
+	} else if (statusDefinition.contentType === "application/octet-stream") {
+		const rawBody = await response.clone().bytes();
 		body = bypassIncomingParse ? rawBody : await statusDefinition.body.parseAsync(rawBody);
 	}
 
@@ -175,7 +185,11 @@ export function createClient<TRouter>(router: TRouter, options: ClientOptions): 
 			}
 		}
 
-		if (parsedRequest.body !== undefined && !resolvedHeaders.has("content-type")) {
+		if (
+			parsedRequest.body !== undefined &&
+			!isFormDataBody(parsedRequest.body) &&
+			!resolvedHeaders.has("content-type")
+		) {
 			resolvedHeaders.set("content-type", "application/json");
 		}
 
@@ -195,7 +209,9 @@ export function createClient<TRouter>(router: TRouter, options: ClientOptions): 
 		};
 
 		if (parsedRequest.body !== undefined) {
-			init.body = JSON.stringify(parsedRequest.body);
+			init.body = isFormDataBody(parsedRequest.body)
+				? parsedRequest.body
+				: JSON.stringify(parsedRequest.body);
 		}
 
 		return [`${normalizedBaseUrl}${path}${query}`, init];

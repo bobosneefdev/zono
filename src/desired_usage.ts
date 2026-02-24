@@ -1,16 +1,12 @@
 // NOT A MODULE, JUST A SANDBOX FOR TESTING AS I DEVELOP
 
-import { Hono } from "hono";
 import z from "zod";
-import { createClient } from "./client.js";
 import { createRouter } from "./contract.js";
-import { initHono } from "./hono.js";
-import { initSvelteKit } from "./sveltekit.js";
 
 const zUser = z.null(); // example/placeholder schema
 const zFilter = z.null(); // example/placeholder schema
 
-const router = createRouter(
+const _router = createRouter(
 	{
 		users: {
 			type: "router",
@@ -56,6 +52,7 @@ const router = createRouter(
 								}),
 								responses: {
 									200: {
+										// TODO: add content type to contract responses, if contentType is not null, then body is a required key with z.ZodType as value
 										contentType: "application/json",
 										body: z.array(zFilter),
 									},
@@ -72,6 +69,7 @@ const router = createRouter(
 										}),
 										responses: {
 											200: {
+												// TODO: add content type to contract responses, if contentType is not null, then body is a required key with z.ZodType as value
 												contentType: "application/json",
 												body: zFilter,
 											},
@@ -85,6 +83,7 @@ const router = createRouter(
 										body: zFilter,
 										responses: {
 											204: {
+												// TODO: if contentType is null, then body is an optional key with undefined value
 												contentType: null,
 											},
 										},
@@ -98,83 +97,3 @@ const router = createRouter(
 		},
 	},
 );
-
-// HONO
-
-const app = new Hono();
-
-initHono(app, router, {
-	users: {
-		$discordId: {
-			handler: {
-				get: async (_input) => {
-					return {
-						status: 200,
-						data: null,
-					};
-				},
-			},
-			router: {
-				filters: {
-					handler: {
-						get: async (_input) => {
-							return {
-								status: 200,
-								data: [null],
-							};
-						},
-					},
-					router: {
-						$filterId: {
-							handler: {
-								get: async (_input) => {
-									return {
-										status: 200,
-										data: null,
-									};
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	},
-});
-
-Bun.serve({
-	fetch: app.fetch,
-	port: 3000,
-});
-
-console.log("Server is running on http://localhost:3000");
-
-// SVELTEKIT
-const implement = initSvelteKit(router, {
-	getHandlerParams: (event) => [event],
-});
-
-implement("/users/$discordId", {
-	get: async (_data) => {
-		return {
-			status: 200,
-			data: null,
-		};
-	},
-});
-
-// CLIENT
-
-const client = createClient(router, {
-	baseUrl: "http://localhost:3000",
-});
-
-(async () => {
-	const resp = await client.post("/users/$discordId/filters/$filterId", {
-		pathParams: {
-			discordId: "123",
-			filterId: "456",
-		},
-		body: null,
-	});
-})();

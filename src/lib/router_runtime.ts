@@ -4,17 +4,8 @@ import type {
 	ContractForRoutePathMethod,
 	ContractMapForRoutePath,
 	RouterRoutePath,
-} from "~/internal/route_types.js";
-
-const contractMethodOrder: Array<ContractMethod> = [
-	"get",
-	"post",
-	"put",
-	"delete",
-	"patch",
-	"options",
-	"head",
-];
+} from "~/lib/route_types.js";
+import { CONTRACT_METHOD_ORDER } from "~/lib/util.js";
 
 function routePathToDotPath(routePath: string): string {
 	const withoutLeadingSlash = routePath.startsWith("/") ? routePath.slice(1) : routePath;
@@ -85,7 +76,7 @@ export function getContractForRoutePath<TRouter, TRoute extends RouterRoutePath<
 ): ContractForRoutePath<TRouter, TRoute> & Contract {
 	const contractMap = getContractMapForRoutePath(router, routePath);
 
-	for (const method of contractMethodOrder) {
+	for (const method of CONTRACT_METHOD_ORDER) {
 		const contract = contractMap[method];
 		if (contract) {
 			return contract as ContractForRoutePath<TRouter, TRoute> & Contract;

@@ -1,5 +1,5 @@
 # Role
-You are the developer and plan drafter for Zono, a TypeScript + Zod end-to-end type-safe HTTP contract, client, and server solution.
+You are the developer and plan drafter for Zono, a TypeScript + Zod end-to-end type-safe HTTP contract, client, and server solution. Version 7 (this) is currently under very early development, so breaking changes, changes to the API, etc. are all completely fine.
 
 # Development Expectations
 - Over-use of type assertions is prohibited. Use them deliberately and sparingly.

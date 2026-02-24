@@ -1,8 +1,8 @@
 import type { RequestHandler } from "@sveltejs/kit";
 import type { ContractMethod } from "~/contract/types.js";
-import type { ContractForRoutePathMethod } from "~/internal/route_types.js";
-import { getContractForRoutePathMethod } from "~/internal/router_runtime.js";
-import { buildContractResponse, parseContractInput } from "~/internal/server_runtime.js";
+import type { ContractForRoutePathMethod } from "~/lib/route_types.js";
+import { getContractForRoutePathMethod } from "~/lib/router_runtime.js";
+import { buildContractResponse, parseContractInput } from "~/lib/server_runtime.js";
 import type {
 	InitSvelteKitOptions,
 	SvelteKitImplementer,
@@ -23,14 +23,24 @@ function toSvelteKitMethodExport(method: ContractMethod): SvelteKitMethodExport 
 	return method.toUpperCase() as SvelteKitMethodExport;
 }
 
-export function initSvelteKit<TRouter>(
-	router: TRouter,
-	options?: InitSvelteKitOptions,
-): SvelteKitImplementer<TRouter> {
-	const defaultBypassIncomingParse = options?.bypassIncomingParse ?? false;
-	const defaultBypassOutgoingParse = options?.bypassOutgoingParse ?? false;
+async function parseRequestBody(event: Parameters<RequestHandler>[0]): Promise<unknown> {
+	const contentType = event.request.headers.get("content-type") ?? "";
+	if (contentType.toLowerCase().includes("application/json")) {
+		return await event.request.json();
+	}
 
-	const implementer: SvelteKitImplementer<TRouter> = (route, handlersByMethod) => {
+	return await event.request.formData();
+}
+
+export function initSvelteKit<TRouter, TParams extends Array<unknown>>(
+	router: TRouter,
+	options: InitSvelteKitOptions<TParams>,
+): SvelteKitImplementer<TRouter, TParams> {
+	const defaultBypassIncomingParse = options.bypassIncomingParse ?? false;
+	const defaultBypassOutgoingParse = options.bypassOutgoingParse ?? false;
+	const { getHandlerParams } = options;
+
+	const implementer: SvelteKitImplementer<TRouter, TParams> = (route, handlersByMethod) => {
 		const routeExports: Partial<Record<SvelteKitMethodExport, RequestHandler>> = {};
 
 		type MethodContract<TMethod extends ContractMethod> = ContractForRoutePathMethod<
@@ -41,7 +51,7 @@ export function initSvelteKit<TRouter>(
 
 		const registerMethod = <TMethod extends ContractMethod>(
 			method: TMethod,
-			handler: SvelteKitServerHandler<MethodContract<TMethod>>,
+			handler: SvelteKitServerHandler<MethodContract<TMethod>, TParams>,
 		): void => {
 			if (!handler) {
 				return;
@@ -55,36 +65,46 @@ export function initSvelteKit<TRouter>(
 						pathParams: event.params,
 						query: getRequestQuery(event),
 						headers: getRequestHeaders(event),
-						body: contract.body ? await event.request.json() : undefined,
+						body: contract.body ? await parseRequestBody(event) : undefined,
 					},
 					defaultBypassIncomingParse,
 				);
 
-				const output = await handler(input, event);
+				const handlerParams = getHandlerParams(event);
+				const output = await handler(input, ...handlerParams);
 				return await buildContractResponse(contract, output, defaultBypassOutgoingParse);
 			};
 		};
 
 		const getHandler = (handlersByMethod as { get?: unknown }).get;
 		if (typeof getHandler === "function") {
-			registerMethod("get", getHandler as SvelteKitServerHandler<MethodContract<"get">>);
+			registerMethod(
+				"get",
+				getHandler as SvelteKitServerHandler<MethodContract<"get">, TParams>,
+			);
 		}
 
 		const postHandler = (handlersByMethod as { post?: unknown }).post;
 		if (typeof postHandler === "function") {
-			registerMethod("post", postHandler as SvelteKitServerHandler<MethodContract<"post">>);
+			registerMethod(
+				"post",
+				postHandler as SvelteKitServerHandler<MethodContract<"post">, TParams>,
+			);
 		}
 
 		const putHandler = (handlersByMethod as { put?: unknown }).put;
 		if (typeof putHandler === "function") {
-			registerMethod("put", putHandler as SvelteKitServerHandler<MethodContract<"put">>);
+			registerMethod(
+				"put",
+				putHandler as SvelteKitServerHandler<MethodContract<"put">, TParams>,
+			);
 		}
 
 		const deleteHandler = (handlersByMethod as { delete?: unknown }).delete;
 		if (typeof deleteHandler === "function") {
 			registerMethod(
 				"delete",
-				deleteHandler as SvelteKitServerHandler<MethodContract<"delete">>,
+				deleteHandler as SvelteKitServerHandler<MethodContract<"delete">, TParams>,
 			);
 		}
 
@@ -92,7 +112,7 @@ export function initSvelteKit<TRouter>(
 		if (typeof patchHandler === "function") {
 			registerMethod(
 				"patch",
-				patchHandler as SvelteKitServerHandler<MethodContract<"patch">>,
+				patchHandler as SvelteKitServerHandler<MethodContract<"patch">, TParams>,
 			);
 		}
 
@@ -100,16 +120,19 @@ export function initSvelteKit<TRouter>(
 		if (typeof optionsHandler === "function") {
 			registerMethod(
 				"options",
-				optionsHandler as SvelteKitServerHandler<MethodContract<"options">>,
+				optionsHandler as SvelteKitServerHandler<MethodContract<"options">, TParams>,
 			);
 		}
 
 		const headHandler = (handlersByMethod as { head?: unknown }).head;
 		if (typeof headHandler === "function") {
-			registerMethod("head", headHandler as SvelteKitServerHandler<MethodContract<"head">>);
+			registerMethod(
+				"head",
+				headHandler as SvelteKitServerHandler<MethodContract<"head">, TParams>,
+			);
 		}
 
-		return routeExports as ReturnType<SvelteKitImplementer<TRouter>>;
+		return routeExports as ReturnType<SvelteKitImplementer<TRouter, TParams>>;
 	};
 
 	return implementer;

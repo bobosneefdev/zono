@@ -36,6 +36,7 @@ const router = createRouter(
 						}),
 						responses: {
 							200: {
+								contentType: "application/json",
 								body: z.object({
 									id: z.string(),
 									name: z
@@ -49,11 +50,15 @@ const router = createRouter(
 						pathParams: z.object({
 							id: z.string(),
 						}),
-						body: z.object({
-							name: z.string(),
-						}),
+						body: z.union([
+							z.object({
+								name: z.string(),
+							}),
+							z.instanceof(FormData),
+						]),
 						responses: {
 							201: {
+								contentType: "application/json",
 								body: z.object({
 									ok: z.literal(true),
 								}),
@@ -73,6 +78,7 @@ const router = createRouter(
 								}),
 								responses: {
 									201: {
+										contentType: "application/json",
 										body: z.object({
 											ok: z.literal(true),
 										}),
@@ -209,5 +215,152 @@ describe("createClient", () => {
 		if (parsed.status === 200) {
 			expectType<{ id: string; name: string }>(parsed.body);
 		}
+	});
+
+	it("sends FormData bodies without forcing JSON content-type", async () => {
+		const fetchMock = mock(async () => {
+			return new Response(JSON.stringify({ ok: true }), {
+				status: 201,
+				headers: {
+					"content-type": "application/json",
+				},
+			});
+		});
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+		const client = createClient(router, {
+			baseUrl: "http://localhost:3000",
+			bypassOutgoingParse: true,
+		});
+
+		const formData = new FormData();
+		formData.set("name", "Jake");
+
+		const parsed = await client.post("/users/$id", {
+			pathParams: {
+				id: "123",
+			},
+			body: formData,
+		});
+
+		expect(parsed.status).toBe(201);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+
+		const firstCall = fetchMock.mock.calls[0];
+		expect(firstCall).toBeDefined();
+		const [, init] = firstCall as unknown as [string, RequestInit];
+		expect(init.body).toBe(formData);
+		expect(init.headers).toBeInstanceOf(Headers);
+		const headers = init.headers as Headers;
+		expect(headers.has("content-type")).toBe(false);
+	});
+
+	it("decodes json/text/bytes/null response bodies from contract contentType", async () => {
+		const contentTypeRouter = createRouter(
+			{
+				json: { type: "contract" },
+				text: { type: "contract" },
+				bytes: { type: "contract" },
+				nullish: { type: "contract" },
+			},
+			{
+				json: {
+					contract: {
+						get: {
+							responses: {
+								200: {
+									contentType: "application/json",
+									body: z.object({ ok: z.literal(true) }),
+								},
+							},
+						},
+					},
+				},
+				text: {
+					contract: {
+						get: {
+							responses: {
+								200: {
+									contentType: "text/plain",
+									body: z.string(),
+								},
+							},
+						},
+					},
+				},
+				bytes: {
+					contract: {
+						get: {
+							responses: {
+								200: {
+									contentType: "application/octet-stream",
+									body: z.instanceof(Uint8Array),
+								},
+							},
+						},
+					},
+				},
+				nullish: {
+					contract: {
+						get: {
+							responses: {
+								204: {
+									contentType: null,
+								},
+							},
+						},
+					},
+				},
+			},
+		);
+
+		const client = createClient(contentTypeRouter, {
+			baseUrl: "http://localhost:3000",
+		});
+
+		const parsedJson = await client.parseResponse(
+			"get",
+			"/json",
+			new Response(JSON.stringify({ ok: true }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			}),
+		);
+		expect(parsedJson.body).toEqual({ ok: true });
+
+		const parsedText = await client.parseResponse(
+			"get",
+			"/text",
+			new Response("hello", {
+				status: 200,
+				headers: { "content-type": "text/plain" },
+			}),
+		);
+		expect(parsedText.body).toBe("hello");
+
+		const bytes = Uint8Array.from([1, 2, 3]);
+		const parsedBytes = await client.parseResponse(
+			"get",
+			"/bytes",
+			new Response(bytes, {
+				status: 200,
+				headers: { "content-type": "application/octet-stream" },
+			}),
+		);
+		expect(parsedBytes.body).toEqual(bytes);
+
+		const parsedNull = await client.parseResponse(
+			"get",
+			"/nullish",
+			new Response(null, { status: 204 }),
+		);
+		expect(parsedNull.body).toBeUndefined();
+
+		type NullContract = NonNullable<typeof contentTypeRouter.nullish.contract.get>;
+		type NullResponse = import("~/lib/server_types.js").ServerHandlerOutput<NullContract>;
+		const nullResponseOk: NullResponse = { status: 204 };
+		const nullResponseWithUndefinedData: NullResponse = { status: 204, data: undefined };
+		expectType<204>(nullResponseOk.status);
+		expectType<204>(nullResponseWithUndefinedData.status);
 	});
 });

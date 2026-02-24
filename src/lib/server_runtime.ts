@@ -1,9 +1,6 @@
 import type { Contract } from "~/contract/types.js";
-import type { ServerHandlerInput, ServerHandlerOutput } from "~/internal/server_types.js";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null;
-}
+import type { ServerHandlerInput, ServerHandlerOutput } from "~/lib/server_types.js";
+import { isRecord } from "~/lib/util.js";
 
 export type RawContractInput = {
 	pathParams?: unknown;
@@ -58,12 +55,24 @@ export async function buildContractResponse<TContract extends Contract>(
 
 	const bypassOutgoingParse = result.opts?.bypassOutgoingParse ?? defaultBypassOutgoingParse;
 
-	let responseBody: unknown;
-	if (statusDefinition.body) {
-		const rawData = "data" in result ? result.data : undefined;
-		responseBody = bypassOutgoingParse
+	const rawData = "data" in result ? result.data : undefined;
+
+	let encodedBody: BodyInit | null = null;
+	if (statusDefinition.contentType === "application/json") {
+		const parsedBody = bypassOutgoingParse
 			? rawData
 			: await statusDefinition.body.parseAsync(rawData);
+		encodedBody = JSON.stringify(parsedBody);
+	} else if (statusDefinition.contentType === "text/plain") {
+		const parsedBody = bypassOutgoingParse
+			? rawData
+			: await statusDefinition.body.parseAsync(rawData);
+		encodedBody = String(parsedBody);
+	} else if (statusDefinition.contentType === "application/octet-stream") {
+		const parsedBody = bypassOutgoingParse
+			? rawData
+			: await statusDefinition.body.parseAsync(rawData);
+		encodedBody = parsedBody as BodyInit;
 	}
 
 	let responseHeaders: HeadersInit | undefined;
@@ -79,15 +88,13 @@ export async function buildContractResponse<TContract extends Contract>(
 			: undefined;
 	}
 
-	if (responseBody === undefined) {
-		return new Response(null, {
-			status: result.status,
-			headers: responseHeaders,
-		});
+	const finalHeaders = new Headers(responseHeaders);
+	if (statusDefinition.contentType !== null && !finalHeaders.has("content-type")) {
+		finalHeaders.set("content-type", statusDefinition.contentType);
 	}
 
-	return Response.json(responseBody, {
+	return new Response(encodedBody, {
 		status: result.status,
-		headers: responseHeaders,
+		headers: finalHeaders,
 	});
 }

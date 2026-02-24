@@ -5,9 +5,9 @@ import type {
 	ContractForRoutePathMethod,
 	ContractMethodsForRoutePath,
 	RouterRoutePath,
-} from "~/internal/route_types.js";
-import type { ServerHandlerInput } from "~/internal/server_types.js";
-import type { PossiblePromise } from "~/internal/types.js";
+} from "~/lib/route_types.js";
+import type { ServerHandlerInput } from "~/lib/server_types.js";
+import type { PossiblePromise } from "~/lib/types.js";
 
 export type ClientRoute<TRouter> = RouterRoutePath<TRouter>;
 
@@ -51,8 +51,8 @@ type ContractResponseStatuses<TContract extends Contract> = Extract<
 type ParsedBodyForStatus<
 	TContract extends Contract,
 	TStatus extends ContractResponseStatuses<TContract>,
-> = TContract["responses"][TStatus]["body"] extends z.ZodType
-	? SchemaOutput<TContract["responses"][TStatus]["body"]>
+> = TContract["responses"][TStatus] extends { body: infer TBody extends z.ZodType }
+	? SchemaOutput<TBody>
 	: undefined;
 
 type ParsedHeadersForStatus<

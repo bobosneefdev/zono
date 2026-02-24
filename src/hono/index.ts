@@ -1,16 +1,18 @@
-import type { Context, Hono } from "hono";
+import type { Context, Hono, MiddlewareHandler } from "hono";
 import type { Contract, ContractMethod, ContractMethodMap } from "~/contract/types.js";
-import type {
-	InitHonoOptions,
-	ServerHandlerInput,
-	ServerHandlerOutput,
-	ServerHandlerTree,
-} from "~/hono/types.js";
-import { dotPathToParamPath } from "~/internal/router_runtime.js";
-import { buildContractResponse, parseContractInput } from "~/internal/server_runtime.js";
+import type { HonoServerHandlerTree, InitHonoOptions } from "~/hono/types.js";
+import { dotPathToParamPath } from "~/lib/router_runtime.js";
+import { buildContractResponse, parseContractInput } from "~/lib/server_runtime.js";
+import type { ServerHandlerInput, ServerHandlerOutput } from "~/lib/server_types.js";
+import { CONTRACT_METHOD_ORDER, isRecord } from "~/lib/util.js";
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null;
+async function parseRequestBody(context: Context): Promise<unknown> {
+	const contentType = context.req.header("content-type") ?? "";
+	if (contentType.toLowerCase().includes("application/json")) {
+		return await context.req.json();
+	}
+
+	return await context.req.formData();
 }
 
 async function parseRequestInput<TContract extends Contract>(
@@ -24,7 +26,7 @@ async function parseRequestInput<TContract extends Contract>(
 			pathParams: context.req.param(),
 			query: context.req.query(),
 			headers: Object.fromEntries(context.req.raw.headers.entries()),
-			body: contract.body ? await context.req.json() : undefined,
+			body: contract.body ? await parseRequestBody(context) : undefined,
 		},
 		bypassIncomingParse,
 	);
@@ -42,25 +44,16 @@ type RouteRegistration = {
 	path: string;
 	method: ContractMethod;
 	contract: Contract;
+	middleware: Array<MiddlewareHandler>;
 	handler: (
 		context: Context,
 		options: Required<InitHonoOptions<Array<unknown>>>,
 	) => Promise<Response>;
 };
 
-const contractMethodOrder: Array<ContractMethod> = [
-	"get",
-	"post",
-	"put",
-	"delete",
-	"patch",
-	"options",
-	"head",
-];
-
 function getContractMethods(contractMap: ContractMethodMap): Array<ContractMethod> {
 	const methods: Array<ContractMethod> = [];
-	for (const method of contractMethodOrder) {
+	for (const method of CONTRACT_METHOD_ORDER) {
 		if (contractMap[method]) {
 			methods.push(method);
 		}
@@ -88,9 +81,14 @@ function collectRoutes(
 			const path = dotPathToParamPath(nodePath);
 			const contractMap = value.contract as ContractMethodMap;
 			const handlerMap = handlerNode.handler;
+			const middleware = handlerNode.middleware;
 
 			if (!isRecord(handlerMap)) {
 				throw new Error(`Missing handler map for route: ${path}`);
+			}
+
+			if (middleware !== undefined && !Array.isArray(middleware)) {
+				throw new Error(`Middleware for route must be an array: ${path}`);
 			}
 
 			for (const method of getContractMethods(contractMap)) {
@@ -108,6 +106,7 @@ function collectRoutes(
 					path,
 					method,
 					contract,
+					middleware: (middleware ?? []) as Array<MiddlewareHandler>,
 					handler: async (
 						context: Context,
 						options: Required<InitHonoOptions<Array<unknown>>>,
@@ -156,8 +155,41 @@ function registerRoute(
 	registration: RouteRegistration,
 	options: Required<InitHonoOptions<Array<unknown>>>,
 ): void {
-	const routeHandler = (context: Context): Promise<Response> =>
-		registration.handler(context, options);
+	const middlewareChain = [...options.globalMiddleware, ...registration.middleware];
+	const routeHandler = async (context: Context): Promise<Response> => {
+		const dispatch = async (index: number): Promise<void> => {
+			if (index >= middlewareChain.length) {
+				const response = await registration.handler(context, options);
+				const mergedHeaders = new Headers(context.res.headers);
+				for (const [key, value] of response.headers.entries()) {
+					mergedHeaders.set(key, value);
+				}
+
+				context.res = new Response(response.body, {
+					status: response.status,
+					headers: mergedHeaders,
+				});
+				return;
+			}
+
+			const middleware = middlewareChain[index];
+			const middlewareResponse = await middleware(context, async () => {
+				await dispatch(index + 1);
+			});
+
+			if (middlewareResponse instanceof Response) {
+				context.res = middlewareResponse;
+			}
+		};
+
+		await dispatch(0);
+
+		if (context.res instanceof Response) {
+			return context.res;
+		}
+
+		throw new Error("Middleware chain completed without producing a response");
+	};
 
 	switch (registration.method) {
 		case "get":
@@ -189,12 +221,13 @@ function registerRoute(
 export function initHono<TRouter, TParams extends Array<unknown> = [Context]>(
 	app: Hono,
 	router: TRouter,
-	handlers: ServerHandlerTree<TRouter, TParams>,
+	handlers: HonoServerHandlerTree<TRouter, TParams>,
 	options?: InitHonoOptions<TParams>,
 ): Hono {
 	const resolvedOptions: Required<InitHonoOptions<Array<unknown>>> = {
 		bypassIncomingParse: options?.bypassIncomingParse ?? false,
 		bypassOutgoingParse: options?.bypassOutgoingParse ?? false,
+		globalMiddleware: options?.globalMiddleware ?? [],
 		getHandlerParams: (context) =>
 			options?.getHandlerParams
 				? (options.getHandlerParams(context) as Array<unknown>)
