@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, mock } from "bun:test";
 import z from "zod";
-import { createClient } from "~/client/index.js";
 import type {
 	ClientMethodRoute,
 	ClientRequestForRouteMethod,
 	ClientRoute,
-} from "~/client/types.js";
+} from "~/client/client.types.js";
+import { createClient } from "~/client/index.js";
 import { createRouter } from "~/contract/index.js";
 
 const router = createRouter(
@@ -357,7 +357,7 @@ describe("createClient", () => {
 		expect(parsedNull.body).toBeUndefined();
 
 		type NullContract = NonNullable<typeof contentTypeRouter.nullish.contract.get>;
-		type NullResponse = import("~/lib/server_types.js").ServerHandlerOutput<NullContract>;
+		type NullResponse = import("~/lib/server.types.js").ServerHandlerOutput<NullContract>;
 		const nullResponseOk: NullResponse = { status: 204 };
 		const nullResponseWithUndefinedData: NullResponse = { status: 204, data: undefined };
 		expectType<204>(nullResponseOk.status);

@@ -1,13 +1,13 @@
 import z from "zod";
-import type { Contract, ContractMethod } from "~/contract/types.js";
+import type { Contract, ContractMethod } from "~/contract/contract.types.js";
 import type {
 	ContractForRoutePath,
 	ContractForRoutePathMethod,
 	ContractMethodsForRoutePath,
 	RouterRoutePath,
-} from "~/lib/route_types.js";
-import type { ServerHandlerInput } from "~/lib/server_types.js";
-import type { PossiblePromise } from "~/lib/types.js";
+} from "~/lib/route.types.js";
+import type { ServerHandlerInput } from "~/lib/server.types.js";
+import type { PossiblePromise } from "~/lib/util.types.js";
 
 export type ClientRoute<TRouter> = RouterRoutePath<TRouter>;
 

@@ -3,7 +3,7 @@ import type { RequestHandler } from "@sveltejs/kit";
 import z from "zod";
 import { createRouter } from "~/contract/index.js";
 import { initSvelteKit } from "~/sveltekit/index.js";
-import type { SvelteKitImplementer } from "~/sveltekit/types.js";
+import type { SvelteKitImplementer } from "~/sveltekit/sveltekit.types.js";
 
 function expectType<T>(_value: T): void {}
 

@@ -1,5 +1,5 @@
-import type { Contract } from "~/contract/types.js";
-import type { ServerHandlerInput, ServerHandlerOutput } from "~/lib/server_types.js";
+import type { Contract } from "~/contract/contract.types.js";
+import type { ServerHandlerInput, ServerHandlerOutput } from "~/lib/server.types.js";
 import {
 	BYTES_CONTENT_TYPES,
 	isRecord,

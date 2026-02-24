@@ -1,5 +1,5 @@
-import type { ContractMethod, ContractMethodMap } from "~/contract/types.js";
-import type { JoinPath } from "~/lib/types.js";
+import type { ContractMethod, ContractMethodMap } from "~/contract/contract.types.js";
+import type { JoinPath } from "~/lib/util.types.js";
 
 type DotPathToRoutePath<TPath extends string> = TPath extends `${infer TSegment}.${infer TRest}`
 	? `/${TSegment}${DotPathToRoutePath<TRest>}`

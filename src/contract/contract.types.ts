@@ -1,6 +1,6 @@
 import { JSONValue } from "hono/utils/types";
 import z from "zod";
-import type { EnumValues, JoinPath, PossibleZodOptional } from "~/lib/types.js";
+import type { EnumValues, JoinPath, PossibleZodOptional } from "~/lib/util.types.js";
 
 export type Contract = {
 	responses: ContractResponses;

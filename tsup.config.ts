@@ -3,11 +3,11 @@ import { defineConfig } from "tsup";
 export default defineConfig({
 	format: ["esm", "cjs"],
 	entry: {
-		client: "src/client.ts",
-		contract: "src/contract.ts",
-		hono: "src/hono.ts",
-		lib: "src/lib.ts",
-		sveltekit: "src/sveltekit.ts",
+		client: "src/client/index.ts",
+		contract: "src/contract/index.ts",
+		hono: "src/hono/index.ts",
+		lib: "src/lib/index.ts",
+		sveltekit: "src/sveltekit/index.ts",
 	},
 	keepNames: true,
 	dts: true,

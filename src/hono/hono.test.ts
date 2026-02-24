@@ -7,7 +7,7 @@ import type {
 	ServerHandlerInput,
 	ServerHandlerOutput,
 	ServerHandlerTree,
-} from "~/lib/server_types.js";
+} from "~/lib/server.types.js";
 
 function expectType<T>(_value: T): void {}
 

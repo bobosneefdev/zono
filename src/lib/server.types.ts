@@ -1,6 +1,6 @@
 import type z from "zod";
-import type { Contract, ContractMethod, ContractMethodMap } from "~/contract/types.js";
-import type { PossiblePromise } from "~/lib/types.js";
+import type { Contract, ContractMethod, ContractMethodMap } from "~/contract/contract.types.js";
+import type { PossiblePromise } from "~/lib/util.types.js";
 
 type EmptyObject = object;
 

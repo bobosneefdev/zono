@@ -3,7 +3,7 @@ import {
 	ContractResponseBytesContentType,
 	ContractResponseJsonContentType,
 	ContractResponseTextContentType,
-} from "~/contract/types.js";
+} from "~/contract/contract.types.js";
 
 export const CONTRACT_METHOD_ORDER: Array<ContractMethod> = [
 	"get",

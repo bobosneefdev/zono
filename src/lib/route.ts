@@ -1,10 +1,10 @@
-import type { Contract, ContractMethod, ContractMethodMap } from "~/contract/types.js";
+import type { Contract, ContractMethod, ContractMethodMap } from "~/contract/contract.types.js";
 import type {
 	ContractForRoutePath,
 	ContractForRoutePathMethod,
 	ContractMapForRoutePath,
 	RouterRoutePath,
-} from "~/lib/route_types.js";
+} from "~/lib/route.types.js";
 import { CONTRACT_METHOD_ORDER } from "~/lib/util.js";
 
 function routePathToDotPath(routePath: string): string {

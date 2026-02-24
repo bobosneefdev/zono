@@ -1,6 +1,6 @@
 import type { Context, MiddlewareHandler } from "hono";
-import type { Contract, ContractMethod, ContractMethodMap } from "~/contract/types.js";
-import type { ServerHandler } from "~/lib/server_types.js";
+import type { Contract, ContractMethod, ContractMethodMap } from "~/contract/contract.types.js";
+import type { ServerHandler } from "~/lib/server.types.js";
 
 export type HonoMiddleware = MiddlewareHandler;
 
