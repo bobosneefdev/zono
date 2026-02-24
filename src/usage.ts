@@ -2,7 +2,7 @@
 
 import { Context, Hono } from "hono";
 import z from "zod";
-import { createClient } from "./client/client.js";
+import { createClient } from "./client/index.js";
 import { initHono } from "./hono/index.js";
 import { ServerHandlerGivenMethod } from "./lib/server.types.js";
 import { createRouter } from "./router/index.js";

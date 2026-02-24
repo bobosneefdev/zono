@@ -28,11 +28,11 @@ type SvelteKitExportMapForContractMap<TContractMap extends ContractMethodMap> = 
 };
 
 export type SvelteKitImplementer<TRouter, TParams extends Array<unknown>> = <
-	TRoute extends RouterPath<TRouter>,
+	TPath extends RouterPath<TRouter>,
 >(
-	route: TRoute,
+	path: TPath,
 	handlersByMethod: SvelteKitHandlerMapForContractMap<
-		RouterPathContractMap<TRouter, TRoute>,
+		RouterPathContractMap<TRouter, TPath>,
 		TParams
 	>,
-) => SvelteKitExportMapForContractMap<RouterPathContractMap<TRouter, TRoute>>;
+) => SvelteKitExportMapForContractMap<RouterPathContractMap<TRouter, TPath>>;

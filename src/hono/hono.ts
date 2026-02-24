@@ -1,6 +1,6 @@
 import type { Context, Hono, MiddlewareHandler } from "hono";
 import type { Contract, ContractMethod, ContractMethodMap } from "~/contract/contract.types.js";
-import type { InitHonoHandlers, InitHonoOptions } from "~/hono/hono.types.js";
+import type { HonoHandlers, HonoOptions } from "~/hono/hono.types.js";
 import { buildContractResponse, parseContractInput } from "~/lib/server.js";
 import type { ServerHandlerInput, ServerHandlerOutput } from "~/lib/server.types.js";
 import { CONTRACT_METHOD_ORDER, isRecord } from "~/lib/util.js";
@@ -47,7 +47,7 @@ type RouteRegistration = {
 	middleware: Array<MiddlewareHandler>;
 	handler: (
 		context: Context,
-		options: Required<InitHonoOptions<Array<unknown>>>,
+		options: Required<HonoOptions<Array<unknown>>>,
 	) => Promise<Response>;
 };
 
@@ -84,7 +84,7 @@ function collectRoutes(
 			const middleware = handlerNode.middleware;
 
 			if (!isRecord(handlerMap)) {
-				throw new Error(`Missing handler map for route: ${path}`);
+				throw new Error(`Missing handler map for path ${path}`);
 			}
 
 			if (middleware !== undefined && !Array.isArray(middleware)) {
@@ -107,7 +107,7 @@ function collectRoutes(
 					middleware: (middleware ?? []) as Array<MiddlewareHandler>,
 					handler: async (
 						context: Context,
-						options: Required<InitHonoOptions<Array<unknown>>>,
+						options: Required<HonoOptions<Array<unknown>>>,
 					) => {
 						const input = await parseRequestInput(
 							contract,
@@ -151,7 +151,7 @@ function collectRoutes(
 function registerRoute(
 	app: Hono,
 	registration: RouteRegistration,
-	options: Required<InitHonoOptions<Array<unknown>>>,
+	options: Required<HonoOptions<Array<unknown>>>,
 ): void {
 	const middlewareChain = [...options.globalMiddleware, ...registration.middleware];
 	const routeHandler = async (context: Context): Promise<Response> => {
@@ -219,10 +219,10 @@ function registerRoute(
 export function initHono<TRouter, TParams extends Array<unknown> = [Context]>(
 	app: Hono,
 	router: TRouter,
-	handlers: InitHonoHandlers<TRouter, TParams>,
-	options?: InitHonoOptions<TParams>,
+	handlers: HonoHandlers<TRouter, TParams>,
+	options?: HonoOptions<TParams>,
 ): Hono {
-	const resolvedOptions: Required<InitHonoOptions<Array<unknown>>> = {
+	const resolvedOptions: Required<HonoOptions<Array<unknown>>> = {
 		bypassIncomingParse: options?.bypassIncomingParse ?? false,
 		bypassOutgoingParse: options?.bypassOutgoingParse ?? false,
 		globalMiddleware: options?.globalMiddleware ?? [],

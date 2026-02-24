@@ -9,7 +9,7 @@ import type {
 	RouterPath,
 } from "~/router/router.resolve.types.js";
 
-export type ClientMethodRoute<TRouter, TMethod extends ContractMethod> = {
+export type ClientPathsAvailableGivenMethod<TRouter, TMethod extends ContractMethod> = {
 	[TPath in RouterPath<TRouter>]: TMethod extends RouterMethodGivenPath<TRouter, TPath>
 		? TPath
 		: never;
@@ -19,15 +19,10 @@ type SchemaOutput<TSchema> = TSchema extends z.ZodType ? z.output<TSchema> : nev
 
 export type ClientRequestInput<TContract extends Contract> = ServerHandlerInput<TContract>;
 
-export type ClientRequestInputGivenPath<
-	TRouter,
-	TPath extends RouterPath<TRouter>,
-> = ClientRequestInput<RouterContractGivenPath<TRouter, TPath>>;
-
-export type ClientRequestGivenMethodAndPath<
+export type ClientRequestInputGivenMethodAndPath<
 	TRouter,
 	TMethod extends ContractMethod,
-	TPath extends ClientMethodRoute<TRouter, TMethod>,
+	TPath extends ClientPathsAvailableGivenMethod<TRouter, TMethod>,
 > = ClientRequestInput<RouterContractGivenPathAndMethod<TRouter, TPath, TMethod>>;
 
 type ContractResponseStatuses<TContract extends Contract> = Extract<
@@ -49,7 +44,7 @@ type ParsedHeadersForStatus<
 	? SchemaOutput<TContract["responses"][TStatus]["headers"]>
 	: undefined;
 
-export type ParsedResponseGivenContract<TContract extends Contract> = {
+export type ClientOutput<TContract extends Contract> = {
 	[TStatus in ContractResponseStatuses<TContract>]: {
 		status: TStatus;
 		body: ParsedBodyForStatus<TContract, TStatus>;
@@ -58,24 +53,23 @@ export type ParsedResponseGivenContract<TContract extends Contract> = {
 	};
 }[ContractResponseStatuses<TContract>];
 
-export type ParsedResponseGivenPath<
-	TRouter,
-	TPath extends RouterPath<TRouter>,
-> = ParsedResponseGivenContract<RouterContractGivenPath<TRouter, TPath>>;
+export type ClientOutputGivenPath<TRouter, TPath extends RouterPath<TRouter>> = ClientOutput<
+	RouterContractGivenPath<TRouter, TPath>
+>;
 
-export type ParsedResponseGivenMethodAndPath<
+export type ClientOutputGivenPathAndMethod<
 	TRouter,
-	TMethod extends ContractMethod,
 	TPath extends RouterPath<TRouter>,
-> = ParsedResponseGivenContract<RouterContractGivenPathAndMethod<TRouter, TPath, TMethod>>;
+	TMethod extends ContractMethod,
+> = ClientOutput<RouterContractGivenPathAndMethod<TRouter, TPath, TMethod>>;
 
 type ClientMethodRequestArgs<
 	TRouter,
 	TMethod extends ContractMethod,
-	TRoute extends ClientMethodRoute<TRouter, TMethod>,
-> = keyof ClientRequestGivenMethodAndPath<TRouter, TMethod, TRoute> extends never
-	? [request?: ClientRequestGivenMethodAndPath<TRouter, TMethod, TRoute>]
-	: [request: ClientRequestGivenMethodAndPath<TRouter, TMethod, TRoute>];
+	TPath extends ClientPathsAvailableGivenMethod<TRouter, TMethod>,
+> = keyof ClientRequestInputGivenMethodAndPath<TRouter, TMethod, TPath> extends never
+	? [request?: ClientRequestInputGivenMethodAndPath<TRouter, TMethod, TPath>]
+	: [request: ClientRequestInputGivenMethodAndPath<TRouter, TMethod, TPath>];
 
 export type ClientOptionsDefaultHeaderValue = string | (() => PossiblePromise<string>);
 
@@ -87,47 +81,47 @@ export type ClientOptions = {
 };
 
 export interface Client<TRouter> {
-	get<TRoute extends ClientMethodRoute<TRouter, "get">>(
-		route: TRoute,
-		...args: ClientMethodRequestArgs<TRouter, "get", TRoute>
-	): Promise<ParsedResponseGivenMethodAndPath<TRouter, "get", TRoute>>;
+	get<TPath extends ClientPathsAvailableGivenMethod<TRouter, "get">>(
+		route: TPath,
+		...args: ClientMethodRequestArgs<TRouter, "get", TPath>
+	): Promise<ClientOutputGivenPathAndMethod<TRouter, TPath, "get">>;
 
-	post<TRoute extends ClientMethodRoute<TRouter, "post">>(
-		route: TRoute,
-		...args: ClientMethodRequestArgs<TRouter, "post", TRoute>
-	): Promise<ParsedResponseGivenMethodAndPath<TRouter, "post", TRoute>>;
+	post<TPath extends ClientPathsAvailableGivenMethod<TRouter, "post">>(
+		route: TPath,
+		...args: ClientMethodRequestArgs<TRouter, "post", TPath>
+	): Promise<ClientOutputGivenPathAndMethod<TRouter, TPath, "post">>;
 
-	put<TRoute extends ClientMethodRoute<TRouter, "put">>(
-		route: TRoute,
-		...args: ClientMethodRequestArgs<TRouter, "put", TRoute>
-	): Promise<ParsedResponseGivenMethodAndPath<TRouter, "put", TRoute>>;
+	put<TPath extends ClientPathsAvailableGivenMethod<TRouter, "put">>(
+		route: TPath,
+		...args: ClientMethodRequestArgs<TRouter, "put", TPath>
+	): Promise<ClientOutputGivenPathAndMethod<TRouter, TPath, "put">>;
 
-	delete<TRoute extends ClientMethodRoute<TRouter, "delete">>(
-		route: TRoute,
-		...args: ClientMethodRequestArgs<TRouter, "delete", TRoute>
-	): Promise<ParsedResponseGivenMethodAndPath<TRouter, "delete", TRoute>>;
+	delete<TPath extends ClientPathsAvailableGivenMethod<TRouter, "delete">>(
+		route: TPath,
+		...args: ClientMethodRequestArgs<TRouter, "delete", TPath>
+	): Promise<ClientOutputGivenPathAndMethod<TRouter, TPath, "delete">>;
 
-	patch<TRoute extends ClientMethodRoute<TRouter, "patch">>(
-		route: TRoute,
-		...args: ClientMethodRequestArgs<TRouter, "patch", TRoute>
-	): Promise<ParsedResponseGivenMethodAndPath<TRouter, "patch", TRoute>>;
+	patch<TPath extends ClientPathsAvailableGivenMethod<TRouter, "patch">>(
+		route: TPath,
+		...args: ClientMethodRequestArgs<TRouter, "patch", TPath>
+	): Promise<ClientOutputGivenPathAndMethod<TRouter, TPath, "patch">>;
 
-	options<TRoute extends ClientMethodRoute<TRouter, "options">>(
-		route: TRoute,
-		...args: ClientMethodRequestArgs<TRouter, "options", TRoute>
-	): Promise<ParsedResponseGivenMethodAndPath<TRouter, "options", TRoute>>;
+	options<TPath extends ClientPathsAvailableGivenMethod<TRouter, "options">>(
+		route: TPath,
+		...args: ClientMethodRequestArgs<TRouter, "options", TPath>
+	): Promise<ClientOutputGivenPathAndMethod<TRouter, TPath, "options">>;
 
-	head<TRoute extends ClientMethodRoute<TRouter, "head">>(
-		route: TRoute,
-		...args: ClientMethodRequestArgs<TRouter, "head", TRoute>
-	): Promise<ParsedResponseGivenMethodAndPath<TRouter, "head", TRoute>>;
+	head<TPath extends ClientPathsAvailableGivenMethod<TRouter, "head">>(
+		route: TPath,
+		...args: ClientMethodRequestArgs<TRouter, "head", TPath>
+	): Promise<ClientOutputGivenPathAndMethod<TRouter, TPath, "head">>;
 
 	parseResponse<
 		TMethod extends ContractMethod,
-		TRoute extends ClientMethodRoute<TRouter, TMethod>,
+		TPath extends ClientPathsAvailableGivenMethod<TRouter, TMethod>,
 	>(
 		method: TMethod,
-		route: TRoute,
+		route: TPath,
 		response: Response,
-	): Promise<ParsedResponseGivenMethodAndPath<TRouter, TMethod, TRoute>>;
+	): Promise<ClientOutputGivenPathAndMethod<TRouter, TPath, TMethod>>;
 }

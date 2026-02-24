@@ -32,13 +32,13 @@ function createEvent(args: {
 const router = createRouter(
 	{
 		users: {
-			type: "router",
-			router: {
+			TYPE: "router",
+			ROUTER: {
 				$id: {
-					type: "contract",
-					router: {
+					TYPE: "contract",
+					ROUTER: {
 						$postId: {
-							type: "contract",
+							TYPE: "contract",
 						},
 					},
 				},
@@ -48,7 +48,7 @@ const router = createRouter(
 	{
 		users: {
 			$id: {
-				contract: {
+				CONTRACT: {
 					get: {
 						pathParams: z.object({
 							id: z.string(),
@@ -91,7 +91,7 @@ const router = createRouter(
 				},
 				ROUTER: {
 					$postId: {
-						contract: {
+						CONTRACT: {
 							get: {
 								pathParams: z.object({
 									id: z.string(),
@@ -356,10 +356,10 @@ describe("initSvelteKit", () => {
 		const bypassRouter = createRouter(
 			{
 				items: {
-					type: "router",
-					router: {
+					TYPE: "router",
+					ROUTER: {
 						$id: {
-							type: "contract",
+							TYPE: "contract",
 						},
 					},
 				},
@@ -367,7 +367,7 @@ describe("initSvelteKit", () => {
 			{
 				items: {
 					$id: {
-						contract: {
+						CONTRACT: {
 							get: {
 								pathParams: z.object({
 									id: z.string().regex(/^\d+$/),
@@ -425,12 +425,12 @@ describe("initSvelteKit", () => {
 		const formRouter = createRouter(
 			{
 				uploads: {
-					type: "contract",
+					TYPE: "contract",
 				},
 			},
 			{
 				uploads: {
-					contract: {
+					CONTRACT: {
 						post: {
 							body: z.instanceof(FormData),
 							responses: {

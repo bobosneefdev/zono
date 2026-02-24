@@ -1,19 +1,23 @@
 import { afterEach, describe, expect, it, mock } from "bun:test";
 import z from "zod";
-import type { ClientMethodRoute, ClientRequestGivenMethodAndPath } from "~/client/client.types.js";
-import { createClient } from "~/client/index.js";
+import type {
+	ClientPathsAvailableGivenMethod,
+	ClientRequestInputGivenMethodAndPath,
+} from "~/client/client.types.js";
+import { createClient } from "./client.js";
+import { ServerHandlerOutput } from "~/lib/index.js";
 import { createRouter, RouterPath } from "~/router/index.js";
 
 const router = createRouter(
 	{
 		users: {
-			type: "router",
-			router: {
+			TYPE: "router",
+			ROUTER: {
 				$id: {
-					type: "contract",
-					router: {
+					TYPE: "contract",
+					ROUTER: {
 						posts: {
-							type: "contract",
+							TYPE: "contract",
 						},
 					},
 				},
@@ -23,7 +27,7 @@ const router = createRouter(
 	{
 		users: {
 			$id: {
-				contract: {
+				CONTRACT: {
 					get: {
 						pathParams: z.object({
 							id: z
@@ -64,7 +68,7 @@ const router = createRouter(
 				},
 				ROUTER: {
 					posts: {
-						contract: {
+						CONTRACT: {
 							post: {
 								pathParams: z.object({
 									id: z.string(),
@@ -104,10 +108,13 @@ describe("createClient", () => {
 		const anyRoute = "/users/$id" as const satisfies RouterPath<typeof router>;
 		expectType<"/users/$id" | "/users/$id/posts">(anyRoute);
 
-		const getRoute = "/users/$id" as const satisfies ClientMethodRoute<typeof router, "get">;
+		const getRoute = "/users/$id" as const satisfies ClientPathsAvailableGivenMethod<
+			typeof router,
+			"get"
+		>;
 		expectType<"/users/$id">(getRoute);
 
-		const postRoute = "/users/$id/posts" as const satisfies ClientMethodRoute<
+		const postRoute = "/users/$id/posts" as const satisfies ClientPathsAvailableGivenMethod<
 			typeof router,
 			"post"
 		>;
@@ -118,10 +125,15 @@ describe("createClient", () => {
 		void invalidRoute;
 
 		// @ts-expect-error /users/$id/posts does not support get
-		const invalidGetRoute: ClientMethodRoute<typeof router, "get"> = "/users/$id/posts";
+		const invalidGetRoute: ClientPathsAvailableGivenMethod<typeof router, "get"> =
+			"/users/$id/posts";
 		void invalidGetRoute;
 
-		type UsersGetRequest = ClientRequestGivenMethodAndPath<typeof router, "get", "/users/$id">;
+		type UsersGetRequest = ClientRequestInputGivenMethodAndPath<
+			typeof router,
+			"get",
+			"/users/$id"
+		>;
 		const usersGetRequestOk: UsersGetRequest = {
 			pathParams: {
 				id: "123",
@@ -129,7 +141,7 @@ describe("createClient", () => {
 		};
 		expectType<UsersGetRequest>(usersGetRequestOk);
 
-		type UsersPostRequest = ClientRequestGivenMethodAndPath<
+		type UsersPostRequest = ClientRequestInputGivenMethodAndPath<
 			typeof router,
 			"post",
 			"/users/$id"
@@ -144,12 +156,12 @@ describe("createClient", () => {
 		};
 		expectType<UsersPostRequest>(usersPostRequestOk);
 
-		expectType<(route: "/users/$id", request: UsersPostRequest) => Promise<{ status: 201 }>>(
+		expectType<(path: "/users/$id", request: UsersPostRequest) => Promise<{ status: 201 }>>(
 			client.post,
 		);
 
 		// @ts-expect-error /users/$id/posts does not support get
-		expectType<(route: "/users/$id/posts") => unknown>(client.get);
+		expectType<(path: "/users/$id/posts") => Promise<{ status: 200 }>>(client.get);
 	});
 
 	it("builds request with parsed outgoing input and merged headers", async () => {
@@ -258,14 +270,14 @@ describe("createClient", () => {
 	it("decodes json/text/bytes/null response bodies from contract contentType", async () => {
 		const contentTypeRouter = createRouter(
 			{
-				json: { type: "contract" },
-				text: { type: "contract" },
-				bytes: { type: "contract" },
-				nullish: { type: "contract" },
+				json: { TYPE: "contract" },
+				text: { TYPE: "contract" },
+				bytes: { TYPE: "contract" },
+				nullish: { TYPE: "contract" },
 			},
 			{
 				json: {
-					contract: {
+					CONTRACT: {
 						get: {
 							responses: {
 								200: {
@@ -277,7 +289,7 @@ describe("createClient", () => {
 					},
 				},
 				text: {
-					contract: {
+					CONTRACT: {
 						get: {
 							responses: {
 								200: {
@@ -289,7 +301,7 @@ describe("createClient", () => {
 					},
 				},
 				bytes: {
-					contract: {
+					CONTRACT: {
 						get: {
 							responses: {
 								200: {
@@ -301,7 +313,7 @@ describe("createClient", () => {
 					},
 				},
 				nullish: {
-					contract: {
+					CONTRACT: {
 						get: {
 							responses: {
 								204: {
@@ -356,8 +368,8 @@ describe("createClient", () => {
 		);
 		expect(parsedNull.body).toBeUndefined();
 
-		type NullContract = NonNullable<typeof contentTypeRouter.nullish.contract.get>;
-		type NullResponse = import("~/lib/server.types.js").ServerHandlerOutput<NullContract>;
+		type NullContract = NonNullable<typeof contentTypeRouter.nullish.CONTRACT.get>;
+		type NullResponse = ServerHandlerOutput<NullContract>;
 		const nullResponseOk: NullResponse = { status: 204 };
 		const nullResponseWithUndefinedData: NullResponse = { status: 204, data: undefined };
 		expectType<204>(nullResponseOk.status);

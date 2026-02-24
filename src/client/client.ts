@@ -1,10 +1,10 @@
 import type {
 	Client,
-	ClientMethodRoute,
 	ClientOptions,
 	ClientOptionsDefaultHeaderValue,
-	ClientRequestGivenMethodAndPath,
-	ParsedResponseGivenMethodAndPath,
+	ClientOutputGivenPathAndMethod,
+	ClientPathsAvailableGivenMethod,
+	ClientRequestInputGivenMethodAndPath,
 } from "~/client/client.types.js";
 import { type Contract, type ContractMethod } from "~/contract/contract.types.js";
 import { BYTES_CONTENT_TYPES, JSON_CONTENT_TYPES, TEXT_CONTENT_TYPES } from "~/lib/util.js";
@@ -18,8 +18,8 @@ function routeToSegments(route: string): Array<string> {
 function getContractForRouteMethod<
 	TRouter,
 	TMethod extends ContractMethod,
-	TRoute extends ClientMethodRoute<TRouter, TMethod>,
->(router: TRouter, method: TMethod, route: TRoute): Contract {
+	TPath extends ClientPathsAvailableGivenMethod<TRouter, TMethod>,
+>(router: TRouter, method: TMethod, route: TPath): Contract {
 	return resolveRouteMethodContract(router, route, method) as Contract;
 }
 
@@ -164,13 +164,13 @@ async function parseIncomingResponse<TContract extends Contract>(
 export function createClient<TRouter>(router: TRouter, options: ClientOptions): Client<TRouter> {
 	async function fetchConfigForMethod<
 		TMethod extends ContractMethod,
-		TRoute extends ClientMethodRoute<TRouter, TMethod>,
+		TPath extends ClientPathsAvailableGivenMethod<TRouter, TMethod>,
 	>(
 		method: TMethod,
-		route: TRoute,
+		path: TPath,
 		request: Record<string, unknown>,
 	): Promise<[string, RequestInit]> {
-		const contract = getContractForRouteMethod(router, method, route);
+		const contract = getContractForRouteMethod(router, method, path);
 
 		const parsedRequest = await parseOutgoingRequest(
 			contract,
@@ -196,8 +196,8 @@ export function createClient<TRouter>(router: TRouter, options: ClientOptions): 
 			resolvedHeaders.set("content-type", "application/json");
 		}
 
-		const routePath = String(route);
-		const path = buildPathWithParams(
+		const routePath = String(path);
+		const fullpath = buildPathWithParams(
 			routePath,
 			parsedRequest.pathParams as Record<string, string>,
 		);
@@ -217,106 +217,122 @@ export function createClient<TRouter>(router: TRouter, options: ClientOptions): 
 				: JSON.stringify(parsedRequest.body);
 		}
 
-		return [`${normalizedBaseUrl}${path}${query}`, init];
+		return [`${normalizedBaseUrl}${fullpath}${query}`, init];
 	}
 
 	async function executeMethod<
 		TMethod extends ContractMethod,
-		TRoute extends ClientMethodRoute<TRouter, TMethod>,
+		TPath extends ClientPathsAvailableGivenMethod<TRouter, TMethod>,
 	>(
 		method: TMethod,
-		route: TRoute,
+		path: TPath,
 		request: Record<string, unknown>,
-	): Promise<ParsedResponseGivenMethodAndPath<TRouter, TMethod, TRoute>> {
-		const [url, requestInit] = await fetchConfigForMethod(method, route, request);
+	): Promise<ClientOutputGivenPathAndMethod<TRouter, TPath, TMethod>> {
+		const [url, requestInit] = await fetchConfigForMethod(method, path, request);
 		const response = await fetch(url, requestInit);
-		return await client.parseResponse(method, route, response);
+		return await client.parseResponse(method, path, response);
 	}
 
 	const client: Client<TRouter> = {
-		async get<TRoute extends ClientMethodRoute<TRouter, "get">>(
-			route: TRoute,
-			...args: keyof ClientRequestGivenMethodAndPath<TRouter, "get", TRoute> extends never
-				? [request?: ClientRequestGivenMethodAndPath<TRouter, "get", TRoute>]
-				: [request: ClientRequestGivenMethodAndPath<TRouter, "get", TRoute>]
-		): Promise<ParsedResponseGivenMethodAndPath<TRouter, "get", TRoute>> {
-			return await executeMethod("get", route, (args[0] ?? {}) as Record<string, unknown>);
+		async get<TPath extends ClientPathsAvailableGivenMethod<TRouter, "get">>(
+			path: TPath,
+			...args: keyof ClientRequestInputGivenMethodAndPath<TRouter, "get", TPath> extends never
+				? [request?: ClientRequestInputGivenMethodAndPath<TRouter, "get", TPath>]
+				: [request: ClientRequestInputGivenMethodAndPath<TRouter, "get", TPath>]
+		): Promise<ClientOutputGivenPathAndMethod<TRouter, TPath, "get">> {
+			return await executeMethod("get", path, (args[0] ?? {}) as Record<string, unknown>);
 		},
 
-		async post<TRoute extends ClientMethodRoute<TRouter, "post">>(
-			route: TRoute,
-			...args: keyof ClientRequestGivenMethodAndPath<TRouter, "post", TRoute> extends never
-				? [request?: ClientRequestGivenMethodAndPath<TRouter, "post", TRoute>]
-				: [request: ClientRequestGivenMethodAndPath<TRouter, "post", TRoute>]
-		): Promise<ParsedResponseGivenMethodAndPath<TRouter, "post", TRoute>> {
-			return await executeMethod("post", route, (args[0] ?? {}) as Record<string, unknown>);
+		async post<TPath extends ClientPathsAvailableGivenMethod<TRouter, "post">>(
+			path: TPath,
+			...args: keyof ClientRequestInputGivenMethodAndPath<
+				TRouter,
+				"post",
+				TPath
+			> extends never
+				? [request?: ClientRequestInputGivenMethodAndPath<TRouter, "post", TPath>]
+				: [request: ClientRequestInputGivenMethodAndPath<TRouter, "post", TPath>]
+		): Promise<ClientOutputGivenPathAndMethod<TRouter, TPath, "post">> {
+			return await executeMethod("post", path, (args[0] ?? {}) as Record<string, unknown>);
 		},
 
-		async put<TRoute extends ClientMethodRoute<TRouter, "put">>(
-			route: TRoute,
-			...args: keyof ClientRequestGivenMethodAndPath<TRouter, "put", TRoute> extends never
-				? [request?: ClientRequestGivenMethodAndPath<TRouter, "put", TRoute>]
-				: [request: ClientRequestGivenMethodAndPath<TRouter, "put", TRoute>]
-		): Promise<ParsedResponseGivenMethodAndPath<TRouter, "put", TRoute>> {
-			return await executeMethod("put", route, (args[0] ?? {}) as Record<string, unknown>);
+		async put<TPath extends ClientPathsAvailableGivenMethod<TRouter, "put">>(
+			path: TPath,
+			...args: keyof ClientRequestInputGivenMethodAndPath<TRouter, "put", TPath> extends never
+				? [request?: ClientRequestInputGivenMethodAndPath<TRouter, "put", TPath>]
+				: [request: ClientRequestInputGivenMethodAndPath<TRouter, "put", TPath>]
+		): Promise<ClientOutputGivenPathAndMethod<TRouter, TPath, "put">> {
+			return await executeMethod("put", path, (args[0] ?? {}) as Record<string, unknown>);
 		},
 
-		async delete<TRoute extends ClientMethodRoute<TRouter, "delete">>(
-			route: TRoute,
-			...args: keyof ClientRequestGivenMethodAndPath<TRouter, "delete", TRoute> extends never
-				? [request?: ClientRequestGivenMethodAndPath<TRouter, "delete", TRoute>]
-				: [request: ClientRequestGivenMethodAndPath<TRouter, "delete", TRoute>]
-		): Promise<ParsedResponseGivenMethodAndPath<TRouter, "delete", TRoute>> {
-			return await executeMethod("delete", route, (args[0] ?? {}) as Record<string, unknown>);
+		async delete<TPath extends ClientPathsAvailableGivenMethod<TRouter, "delete">>(
+			path: TPath,
+			...args: keyof ClientRequestInputGivenMethodAndPath<
+				TRouter,
+				"delete",
+				TPath
+			> extends never
+				? [request?: ClientRequestInputGivenMethodAndPath<TRouter, "delete", TPath>]
+				: [request: ClientRequestInputGivenMethodAndPath<TRouter, "delete", TPath>]
+		): Promise<ClientOutputGivenPathAndMethod<TRouter, TPath, "delete">> {
+			return await executeMethod("delete", path, (args[0] ?? {}) as Record<string, unknown>);
 		},
 
-		async patch<TRoute extends ClientMethodRoute<TRouter, "patch">>(
-			route: TRoute,
-			...args: keyof ClientRequestGivenMethodAndPath<TRouter, "patch", TRoute> extends never
-				? [request?: ClientRequestGivenMethodAndPath<TRouter, "patch", TRoute>]
-				: [request: ClientRequestGivenMethodAndPath<TRouter, "patch", TRoute>]
-		): Promise<ParsedResponseGivenMethodAndPath<TRouter, "patch", TRoute>> {
-			return await executeMethod("patch", route, (args[0] ?? {}) as Record<string, unknown>);
+		async patch<TPath extends ClientPathsAvailableGivenMethod<TRouter, "patch">>(
+			path: TPath,
+			...args: keyof ClientRequestInputGivenMethodAndPath<
+				TRouter,
+				"patch",
+				TPath
+			> extends never
+				? [request?: ClientRequestInputGivenMethodAndPath<TRouter, "patch", TPath>]
+				: [request: ClientRequestInputGivenMethodAndPath<TRouter, "patch", TPath>]
+		): Promise<ClientOutputGivenPathAndMethod<TRouter, TPath, "patch">> {
+			return await executeMethod("patch", path, (args[0] ?? {}) as Record<string, unknown>);
 		},
 
-		async options<TRoute extends ClientMethodRoute<TRouter, "options">>(
-			route: TRoute,
-			...args: keyof ClientRequestGivenMethodAndPath<TRouter, "options", TRoute> extends never
-				? [request?: ClientRequestGivenMethodAndPath<TRouter, "options", TRoute>]
-				: [request: ClientRequestGivenMethodAndPath<TRouter, "options", TRoute>]
-		): Promise<ParsedResponseGivenMethodAndPath<TRouter, "options", TRoute>> {
-			return await executeMethod(
+		async options<TPath extends ClientPathsAvailableGivenMethod<TRouter, "options">>(
+			path: TPath,
+			...args: keyof ClientRequestInputGivenMethodAndPath<
+				TRouter,
 				"options",
-				route,
-				(args[0] ?? {}) as Record<string, unknown>,
-			);
+				TPath
+			> extends never
+				? [request?: ClientRequestInputGivenMethodAndPath<TRouter, "options", TPath>]
+				: [request: ClientRequestInputGivenMethodAndPath<TRouter, "options", TPath>]
+		): Promise<ClientOutputGivenPathAndMethod<TRouter, TPath, "options">> {
+			return await executeMethod("options", path, (args[0] ?? {}) as Record<string, unknown>);
 		},
 
-		async head<TRoute extends ClientMethodRoute<TRouter, "head">>(
-			route: TRoute,
-			...args: keyof ClientRequestGivenMethodAndPath<TRouter, "head", TRoute> extends never
-				? [request?: ClientRequestGivenMethodAndPath<TRouter, "head", TRoute>]
-				: [request: ClientRequestGivenMethodAndPath<TRouter, "head", TRoute>]
-		): Promise<ParsedResponseGivenMethodAndPath<TRouter, "head", TRoute>> {
-			return await executeMethod("head", route, (args[0] ?? {}) as Record<string, unknown>);
+		async head<TPath extends ClientPathsAvailableGivenMethod<TRouter, "head">>(
+			path: TPath,
+			...args: keyof ClientRequestInputGivenMethodAndPath<
+				TRouter,
+				"head",
+				TPath
+			> extends never
+				? [request?: ClientRequestInputGivenMethodAndPath<TRouter, "head", TPath>]
+				: [request: ClientRequestInputGivenMethodAndPath<TRouter, "head", TPath>]
+		): Promise<ClientOutputGivenPathAndMethod<TRouter, TPath, "head">> {
+			return await executeMethod("head", path, (args[0] ?? {}) as Record<string, unknown>);
 		},
 
 		async parseResponse<
 			TMethod extends ContractMethod,
-			TRoute extends ClientMethodRoute<TRouter, TMethod>,
+			TPath extends ClientPathsAvailableGivenMethod<TRouter, TMethod>,
 		>(
 			method: TMethod,
-			route: TRoute,
+			path: TPath,
 			response: Response,
-		): Promise<ParsedResponseGivenMethodAndPath<TRouter, TMethod, TRoute>> {
-			const contract = getContractForRouteMethod(router, method, route);
+		): Promise<ClientOutputGivenPathAndMethod<TRouter, TPath, TMethod>> {
+			const contract = getContractForRouteMethod(router, method, path);
 			const parsed = await parseIncomingResponse(
 				contract,
 				response,
 				options.bypassIncomingParse ?? false,
 			);
 
-			return parsed as ParsedResponseGivenMethodAndPath<TRouter, TMethod, TRoute>;
+			return parsed as ClientOutputGivenPathAndMethod<TRouter, TPath, TMethod>;
 		},
 	};
 

@@ -20,11 +20,11 @@ export type ContractHeaders = z.ZodObject<
 	Record<string, PossibleZodOptional<z.ZodType<string, string>>>
 >;
 
-export enum ContractResponseJsonContentType {
+export enum JsonContentType {
 	JSON = "application/json",
 }
 
-export enum ContractResponseTextContentType {
+export enum TextContentType {
 	PLAIN = "text/plain",
 	HTML = "text/html",
 	CSV = "text/csv",
@@ -33,32 +33,26 @@ export enum ContractResponseTextContentType {
 	CSS = "text/css",
 }
 
-export enum ContractResponseBytesContentType {
+export enum BytesContentType {
 	OCTET_STREAM = "application/octet-stream",
 	MSGPACK = "application/x-msgpack",
 	PROTOBUF = "application/x-protobuf",
 }
 
 export type ContractResponseJson = {
-	contentType:
-		| ContractResponseJsonContentType
-		| EnumValues<typeof ContractResponseJsonContentType>;
+	contentType: JsonContentType | EnumValues<typeof JsonContentType>;
 	body: z.ZodType<JSONValue, JSONValue>;
 	headers?: ContractHeaders;
 };
 
 export type ContractResponseText = {
-	contentType:
-		| ContractResponseTextContentType
-		| EnumValues<typeof ContractResponseTextContentType>;
+	contentType: TextContentType | EnumValues<typeof TextContentType>;
 	body: z.ZodType<string, string>;
 	headers?: ContractHeaders;
 };
 
 export type ContractResponseBytes = {
-	contentType:
-		| ContractResponseBytesContentType
-		| EnumValues<typeof ContractResponseBytesContentType>;
+	contentType: BytesContentType | EnumValues<typeof BytesContentType>;
 	body: z.ZodType<Uint8Array, Uint8Array>;
 	headers?: ContractHeaders;
 };

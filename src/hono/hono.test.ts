@@ -14,13 +14,13 @@ function expectType<T>(_value: T): void {}
 const router = createRouter(
 	{
 		users: {
-			type: "router",
-			router: {
+			TYPE: "router",
+			ROUTER: {
 				$id: {
-					type: "contract",
-					router: {
+					TYPE: "contract",
+					ROUTER: {
 						$postId: {
-							type: "contract",
+							TYPE: "contract",
 						},
 					},
 				},
@@ -30,7 +30,7 @@ const router = createRouter(
 	{
 		users: {
 			$id: {
-				contract: {
+				CONTRACT: {
 					get: {
 						pathParams: z.object({
 							id: z.string(),
@@ -73,7 +73,7 @@ const router = createRouter(
 				},
 				ROUTER: {
 					$postId: {
-						contract: {
+						CONTRACT: {
 							get: {
 								pathParams: z.object({
 									id: z.string(),
@@ -99,10 +99,10 @@ const router = createRouter(
 
 describe("initHono", () => {
 	it("provides strongly typed handler input and output", () => {
-		type UsersContract = NonNullable<typeof router.users.$id.contract.get>;
+		type UsersContract = NonNullable<typeof router.users.$id.CONTRACT.get>;
 		type UsersInput = ServerHandlerInput<UsersContract>;
 		type UsersOutput = ServerHandlerOutput<UsersContract>;
-		type CreateUserContract = NonNullable<typeof router.users.$id.contract.post>;
+		type CreateUserContract = NonNullable<typeof router.users.$id.CONTRACT.post>;
 		type CreateUserInput = ServerHandlerInput<CreateUserContract>;
 
 		const input: UsersInput = {
@@ -151,10 +151,11 @@ describe("initHono", () => {
 		expectType<string>(createInput.body.name);
 
 		const app = new Hono();
-		const handlers: ServerHandlerTree<typeof router, [Context]> = {
+		type MyHonoContext = [Context];
+		const handlers: ServerHandlerTree<typeof router, MyHonoContext> = {
 			users: {
 				$id: {
-					handler: {
+					HANDLER: {
 						get: async (data, c) => {
 							expectType<Context>(c);
 							return {
@@ -180,7 +181,7 @@ describe("initHono", () => {
 					},
 					ROUTER: {
 						$postId: {
-							handler: {
+							HANDLER: {
 								get: async (data) => {
 									return {
 										status: 200,
@@ -206,7 +207,7 @@ describe("initHono", () => {
 		initHono(app, router, {
 			users: {
 				$id: {
-					handler: {
+					HANDLER: {
 						get: async (data) => {
 							return {
 								status: 200,
@@ -231,7 +232,7 @@ describe("initHono", () => {
 					},
 					ROUTER: {
 						$postId: {
-							handler: {
+							HANDLER: {
 								get: async (data) => {
 									return {
 										status: 200,
@@ -293,10 +294,10 @@ describe("initHono", () => {
 		const bypassRouter = createRouter(
 			{
 				items: {
-					type: "router",
-					router: {
+					TYPE: "router",
+					ROUTER: {
 						$id: {
-							type: "contract",
+							TYPE: "contract",
 						},
 					},
 				},
@@ -304,7 +305,7 @@ describe("initHono", () => {
 			{
 				items: {
 					$id: {
-						contract: {
+						CONTRACT: {
 							get: {
 								pathParams: z.object({
 									id: z.string().regex(/^\d+$/),
@@ -332,7 +333,7 @@ describe("initHono", () => {
 			{
 				items: {
 					$id: {
-						handler: {
+						HANDLER: {
 							get: async (data) => ({
 								status: 200,
 								data: {
@@ -365,7 +366,7 @@ describe("initHono", () => {
 			{
 				users: {
 					$id: {
-						handler: {
+						HANDLER: {
 							get: async (data) => {
 								return {
 									status: 200,
@@ -388,7 +389,7 @@ describe("initHono", () => {
 								};
 							},
 						},
-						middleware: [
+						MIDDLEWARE: [
 							async (context, next) => {
 								context.header("x-route-middleware", "users-id");
 								await next();
@@ -396,7 +397,7 @@ describe("initHono", () => {
 						],
 						ROUTER: {
 							$postId: {
-								handler: {
+								HANDLER: {
 									get: async (data) => {
 										return {
 											status: 200,
@@ -450,7 +451,7 @@ describe("initHono", () => {
 					handler: {
 						get: async (
 							data: ServerHandlerInput<
-								NonNullable<typeof router.users.$id.contract.get>
+								NonNullable<typeof router.users.$id.CONTRACT.get>
 							>,
 						) => ({
 							status: 200,
@@ -469,7 +470,7 @@ describe("initHono", () => {
 								get: async (
 									data: ServerHandlerInput<
 										NonNullable<
-											typeof router.users.$id.ROUTER.$postId.contract.get
+											typeof router.users.$id.ROUTER.$postId.CONTRACT.get
 										>
 									>,
 								) => ({
@@ -495,12 +496,12 @@ describe("initHono", () => {
 		const formRouter = createRouter(
 			{
 				uploads: {
-					type: "contract",
+					TYPE: "contract",
 				},
 			},
 			{
 				uploads: {
-					contract: {
+					CONTRACT: {
 						post: {
 							body: z.instanceof(FormData),
 							responses: {
@@ -520,7 +521,7 @@ describe("initHono", () => {
 		const app = new Hono();
 		initHono(app, formRouter, {
 			uploads: {
-				handler: {
+				HANDLER: {
 					post: async (data) => ({
 						status: 200,
 						data: {
@@ -548,14 +549,14 @@ describe("initHono", () => {
 	it("encodes json/text/bytes/null responses based on response contentType", async () => {
 		const contentTypeRouter = createRouter(
 			{
-				json: { type: "contract" },
-				text: { type: "contract" },
-				bytes: { type: "contract" },
-				nullish: { type: "contract" },
+				json: { TYPE: "contract" },
+				text: { TYPE: "contract" },
+				bytes: { TYPE: "contract" },
+				nullish: { TYPE: "contract" },
 			},
 			{
 				json: {
-					contract: {
+					CONTRACT: {
 						get: {
 							responses: {
 								200: {
@@ -567,7 +568,7 @@ describe("initHono", () => {
 					},
 				},
 				text: {
-					contract: {
+					CONTRACT: {
 						get: {
 							responses: {
 								200: {
@@ -579,7 +580,7 @@ describe("initHono", () => {
 					},
 				},
 				bytes: {
-					contract: {
+					CONTRACT: {
 						get: {
 							responses: {
 								200: {
@@ -591,7 +592,7 @@ describe("initHono", () => {
 					},
 				},
 				nullish: {
-					contract: {
+					CONTRACT: {
 						get: {
 							responses: {
 								204: {
@@ -607,22 +608,22 @@ describe("initHono", () => {
 		const app = new Hono();
 		initHono(app, contentTypeRouter, {
 			json: {
-				handler: {
+				HANDLER: {
 					get: async () => ({ status: 200, data: { value: "ok" } }),
 				},
 			},
 			text: {
-				handler: {
+				HANDLER: {
 					get: async () => ({ status: 200, data: "hello" }),
 				},
 			},
 			bytes: {
-				handler: {
+				HANDLER: {
 					get: async () => ({ status: 200, data: Uint8Array.from([7, 8, 9]) }),
 				},
 			},
 			nullish: {
-				handler: {
+				HANDLER: {
 					get: async () => ({ status: 204 }),
 				},
 			},

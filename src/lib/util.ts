@@ -1,8 +1,8 @@
 import {
+	BytesContentType,
 	type ContractMethod,
-	ContractResponseBytesContentType,
-	ContractResponseJsonContentType,
-	ContractResponseTextContentType,
+	JsonContentType,
+	TextContentType,
 } from "~/contract/contract.types.js";
 
 export const CONTRACT_METHOD_ORDER: Array<ContractMethod> = [
@@ -19,14 +19,8 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
 }
 
-export const JSON_CONTENT_TYPES: Set<string> = new Set(
-	Object.values(ContractResponseJsonContentType),
-);
+export const JSON_CONTENT_TYPES: Set<string> = new Set(Object.values(JsonContentType));
 
-export const TEXT_CONTENT_TYPES: Set<string> = new Set(
-	Object.values(ContractResponseTextContentType),
-);
+export const TEXT_CONTENT_TYPES: Set<string> = new Set(Object.values(TextContentType));
 
-export const BYTES_CONTENT_TYPES: Set<string> = new Set(
-	Object.values(ContractResponseBytesContentType),
-);
+export const BYTES_CONTENT_TYPES: Set<string> = new Set(Object.values(BytesContentType));
