@@ -6,8 +6,9 @@ import type {
 	HeaderFactoryValue,
 	ParsedResponseForRouteMethod,
 } from "~/client/types.js";
-import type { Contract, ContractMethod } from "~/contract/types.js";
+import { type Contract, type ContractMethod } from "~/contract/types.js";
 import { getContractForRoutePathMethod } from "~/lib/router_runtime.js";
+import { BYTES_CONTENT_TYPES, JSON_CONTENT_TYPES, TEXT_CONTENT_TYPES } from "~/lib/util.js";
 
 function routeToSegments(route: string): Array<string> {
 	const withoutLeadingSlash = route.startsWith("/") ? route.slice(1) : route;
@@ -131,13 +132,15 @@ async function parseIncomingResponse<TContract extends Contract>(
 	}
 
 	let body: unknown;
-	if (statusDefinition.contentType === "application/json") {
+	if (statusDefinition.contentType === null) {
+		// Do nothing
+	} else if (JSON_CONTENT_TYPES.has(statusDefinition.contentType)) {
 		const rawBody = await response.clone().json();
 		body = bypassIncomingParse ? rawBody : await statusDefinition.body.parseAsync(rawBody);
-	} else if (statusDefinition.contentType === "text/plain") {
+	} else if (TEXT_CONTENT_TYPES.has(statusDefinition.contentType)) {
 		const rawBody = await response.clone().text();
 		body = bypassIncomingParse ? rawBody : await statusDefinition.body.parseAsync(rawBody);
-	} else if (statusDefinition.contentType === "application/octet-stream") {
+	} else if (BYTES_CONTENT_TYPES.has(statusDefinition.contentType)) {
 		const rawBody = await response.clone().bytes();
 		body = bypassIncomingParse ? rawBody : await statusDefinition.body.parseAsync(rawBody);
 	}

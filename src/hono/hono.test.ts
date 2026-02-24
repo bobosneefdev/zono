@@ -129,6 +129,16 @@ describe("initHono", () => {
 
 		expectType<200>(output.status);
 
+		// @ts-expect-error headers are required for this response schema
+		const outputWithoutHeaders: UsersOutput = {
+			status: 200,
+			data: {
+				id: "123",
+				name: "john",
+			},
+		};
+		void outputWithoutHeaders;
+
 		const createInput: CreateUserInput = {
 			pathParams: {
 				id: "123",
@@ -188,16 +198,6 @@ describe("initHono", () => {
 		};
 
 		initHono(app, router, handlers);
-
-		// @ts-expect-error headers are required for this response schema
-		const invalidOutput: UsersOutput = {
-			status: 200,
-			data: {
-				id: "123",
-				name: "john",
-			},
-		};
-		void invalidOutput;
 	});
 
 	it("registers nested routes and validates incoming and outgoing payloads", async () => {

@@ -1,6 +1,11 @@
 import type { Contract } from "~/contract/types.js";
 import type { ServerHandlerInput, ServerHandlerOutput } from "~/lib/server_types.js";
-import { isRecord } from "~/lib/util.js";
+import {
+	BYTES_CONTENT_TYPES,
+	isRecord,
+	JSON_CONTENT_TYPES,
+	TEXT_CONTENT_TYPES,
+} from "~/lib/util.js";
 
 export type RawContractInput = {
 	pathParams?: unknown;
@@ -58,17 +63,19 @@ export async function buildContractResponse<TContract extends Contract>(
 	const rawData = "data" in result ? result.data : undefined;
 
 	let encodedBody: BodyInit | null = null;
-	if (statusDefinition.contentType === "application/json") {
+	if (statusDefinition.contentType === null) {
+		// Do nothing
+	} else if (JSON_CONTENT_TYPES.has(statusDefinition.contentType)) {
 		const parsedBody = bypassOutgoingParse
 			? rawData
 			: await statusDefinition.body.parseAsync(rawData);
 		encodedBody = JSON.stringify(parsedBody);
-	} else if (statusDefinition.contentType === "text/plain") {
+	} else if (TEXT_CONTENT_TYPES.has(statusDefinition.contentType)) {
 		const parsedBody = bypassOutgoingParse
 			? rawData
 			: await statusDefinition.body.parseAsync(rawData);
 		encodedBody = String(parsedBody);
-	} else if (statusDefinition.contentType === "application/octet-stream") {
+	} else if (BYTES_CONTENT_TYPES.has(statusDefinition.contentType)) {
 		const parsedBody = bypassOutgoingParse
 			? rawData
 			: await statusDefinition.body.parseAsync(rawData);

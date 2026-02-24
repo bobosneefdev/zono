@@ -133,6 +133,11 @@ initHono(app, router, {
 										data: null,
 									};
 								},
+								post: async (_input) => {
+									return {
+										status: 204,
+									};
+								},
 							},
 						},
 					},
@@ -170,7 +175,7 @@ const client = createClient(router, {
 });
 
 (async () => {
-	const resp = await client.post("/users/$discordId/filters/$filterId", {
+	const _resp = await client.post("/users/$discordId/filters/$filterId", {
 		pathParams: {
 			discordId: "123",
 			filterId: "456",
