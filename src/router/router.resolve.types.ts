@@ -63,31 +63,31 @@ type ContractForMethod<
 	TMethod extends ContractMethod,
 > = Exclude<TContractMap[TMethod], undefined>;
 
-export type ContractMapForRoutePath<
+export type RouterPathContractMap<
 	TRouter,
-	TRoute extends RouterRoutePath<TRouter>,
+	TRoute extends RouterPath<TRouter>,
 > = ContractMapFromNode<ValueAtDotPath<TRouter, RoutePathToDotPath<TRoute>>> extends never
 	? ContractAtDotPath<TRouter, RoutePathToDotPath<TRoute>>
 	: ContractMapFromNode<ValueAtDotPath<TRouter, RoutePathToDotPath<TRoute>>>;
 
-export type RouterRoutePath<TRouter> = RoutePathsFromNode<TRouter>;
+export type RouterPath<TRouter> = RoutePathsFromNode<TRouter>;
 
-export type ContractMethodsForRoutePath<
+export type RouterMethodGivenPath<
 	TRouter,
-	TRoute extends RouterRoutePath<TRouter>,
-> = keyof ContractMapForRoutePath<TRouter, TRoute> & ContractMethod;
+	TRoute extends RouterPath<TRouter>,
+> = keyof RouterPathContractMap<TRouter, TRoute> & ContractMethod;
 
-export type ContractForRoutePath<
+export type RouterContractGivenPath<
 	TRouter,
-	TRoute extends RouterRoutePath<TRouter>,
-> = ContractMapForRoutePath<TRouter, TRoute> extends infer TContractMap extends ContractMethodMap
+	TRoute extends RouterPath<TRouter>,
+> = RouterPathContractMap<TRouter, TRoute> extends infer TContractMap extends ContractMethodMap
 	? ContractsFromMap<TContractMap>
 	: never;
 
-export type ContractForRoutePathMethod<
+export type RouterContractGivenPathAndMethod<
 	TRouter,
-	TRoute extends RouterRoutePath<TRouter>,
+	TRoute extends RouterPath<TRouter>,
 	TMethod extends ContractMethod,
-> = ContractMapForRoutePath<TRouter, TRoute> extends infer TContractMap extends ContractMethodMap
+> = RouterPathContractMap<TRouter, TRoute> extends infer TContractMap extends ContractMethodMap
 	? ContractForMethod<TContractMap, TMethod>
 	: never;

@@ -1,7 +1,7 @@
 import type { RequestEvent, RequestHandler } from "@sveltejs/kit";
 import type { Contract, ContractMethod, ContractMethodMap } from "~/contract/contract.types.js";
-import type { ContractMapForRoutePath, RouterRoutePath } from "~/lib/route.types.js";
 import type { ServerHandler } from "~/lib/server.types.js";
+import type { RouterPath, RouterPathContractMap } from "~/router/router.resolve.types.js";
 
 export type InitSvelteKitOptions<TParams extends Array<unknown>> = {
 	bypassIncomingParse?: boolean;
@@ -28,11 +28,11 @@ type SvelteKitExportMapForContractMap<TContractMap extends ContractMethodMap> = 
 };
 
 export type SvelteKitImplementer<TRouter, TParams extends Array<unknown>> = <
-	TRoute extends RouterRoutePath<TRouter>,
+	TRoute extends RouterPath<TRouter>,
 >(
 	route: TRoute,
 	handlersByMethod: SvelteKitHandlerMapForContractMap<
-		ContractMapForRoutePath<TRouter, TRoute>,
+		RouterPathContractMap<TRouter, TRoute>,
 		TParams
 	>,
-) => SvelteKitExportMapForContractMap<ContractMapForRoutePath<TRouter, TRoute>>;
+) => SvelteKitExportMapForContractMap<RouterPathContractMap<TRouter, TRoute>>;

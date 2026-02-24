@@ -3,8 +3,8 @@
 import { Hono } from "hono";
 import z from "zod";
 import { createClient } from "./client/index.js";
-import { createRouter } from "./contract/index.js";
 import { initHono } from "./hono/index.js";
+import { createRouter } from "./router/index.js";
 import { initSvelteKit } from "./sveltekit/index.js";
 
 const zUser = z.null(); // example/placeholder schema

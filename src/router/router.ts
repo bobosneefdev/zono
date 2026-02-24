@@ -1,4 +1,4 @@
-import { Router, RouterShape } from "./contract.types.js";
+import type { Router, RouterShape } from "~/router/router.types.js";
 
 export function createRouter<
 	TShape extends RouterShape,

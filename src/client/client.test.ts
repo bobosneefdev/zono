@@ -1,12 +1,8 @@
 import { afterEach, describe, expect, it, mock } from "bun:test";
 import z from "zod";
-import type {
-	ClientMethodRoute,
-	ClientRequestForRouteMethod,
-	ClientRoute,
-} from "~/client/client.types.js";
+import type { ClientMethodRoute, ClientRequestGivenMethodAndPath } from "~/client/client.types.js";
 import { createClient } from "~/client/index.js";
-import { createRouter } from "~/contract/index.js";
+import { createRouter, RouterPath } from "~/router/index.js";
 
 const router = createRouter(
 	{
@@ -105,7 +101,7 @@ describe("createClient", () => {
 			baseUrl: "http://localhost:3000",
 		});
 
-		const anyRoute = "/users/$id" as const satisfies ClientRoute<typeof router>;
+		const anyRoute = "/users/$id" as const satisfies RouterPath<typeof router>;
 		expectType<"/users/$id" | "/users/$id/posts">(anyRoute);
 
 		const getRoute = "/users/$id" as const satisfies ClientMethodRoute<typeof router, "get">;
@@ -125,7 +121,7 @@ describe("createClient", () => {
 		const invalidGetRoute: ClientMethodRoute<typeof router, "get"> = "/users/$id/posts";
 		void invalidGetRoute;
 
-		type UsersGetRequest = ClientRequestForRouteMethod<typeof router, "get", "/users/$id">;
+		type UsersGetRequest = ClientRequestGivenMethodAndPath<typeof router, "get", "/users/$id">;
 		const usersGetRequestOk: UsersGetRequest = {
 			pathParams: {
 				id: "123",
@@ -133,7 +129,11 @@ describe("createClient", () => {
 		};
 		expectType<UsersGetRequest>(usersGetRequestOk);
 
-		type UsersPostRequest = ClientRequestForRouteMethod<typeof router, "post", "/users/$id">;
+		type UsersPostRequest = ClientRequestGivenMethodAndPath<
+			typeof router,
+			"post",
+			"/users/$id"
+		>;
 		const usersPostRequestOk: UsersPostRequest = {
 			pathParams: {
 				id: "123",

@@ -1,13 +1,13 @@
 import { describe, expect, it } from "bun:test";
 import { Context, Hono } from "hono";
 import z from "zod";
-import { createRouter } from "~/contract/index.js";
 import { initHono } from "~/hono/index.js";
 import type {
 	ServerHandlerInput,
 	ServerHandlerOutput,
 	ServerHandlerTree,
 } from "~/lib/server.types.js";
+import { createRouter } from "~/router/index.js";
 
 function expectType<T>(_value: T): void {}
 

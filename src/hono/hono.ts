@@ -1,10 +1,10 @@
 import type { Context, Hono, MiddlewareHandler } from "hono";
 import type { Contract, ContractMethod, ContractMethodMap } from "~/contract/contract.types.js";
 import type { HonoServerHandlerTree, InitHonoOptions } from "~/hono/hono.types.js";
-import { dotPathToParamPath } from "~/lib/route.js";
 import { buildContractResponse, parseContractInput } from "~/lib/server.js";
 import type { ServerHandlerInput, ServerHandlerOutput } from "~/lib/server.types.js";
 import { CONTRACT_METHOD_ORDER, isRecord } from "~/lib/util.js";
+import { routerDotPathToParamPath } from "~/router/router.resolve.js";
 
 async function parseRequestBody(context: Context): Promise<unknown> {
 	const contentType = context.req.header("content-type") ?? "";
@@ -78,7 +78,7 @@ function collectRoutes(
 		}
 
 		if ("contract" in value && isRecord(value.contract) && "handler" in handlerNode) {
-			const path = dotPathToParamPath(nodePath);
+			const path = routerDotPathToParamPath(nodePath);
 			const contractMap = value.contract as ContractMethodMap;
 			const handlerMap = handlerNode.handler;
 			const middleware = handlerNode.middleware;

@@ -1,8 +1,8 @@
 import type { RequestHandler } from "@sveltejs/kit";
 import type { ContractMethod } from "~/contract/contract.types.js";
-import { getContractForRoutePathMethod } from "~/lib/route.js";
-import type { ContractForRoutePathMethod } from "~/lib/route.types.js";
 import { buildContractResponse, parseContractInput } from "~/lib/server.js";
+import { resolveRouteMethodContract } from "~/router/router.resolve.js";
+import type { RouterContractGivenPathAndMethod } from "~/router/router.resolve.types.js";
 import type {
 	InitSvelteKitOptions,
 	SvelteKitImplementer,
@@ -43,7 +43,7 @@ export function initSvelteKit<TRouter, TParams extends Array<unknown>>(
 	const implementer: SvelteKitImplementer<TRouter, TParams> = (route, handlersByMethod) => {
 		const routeExports: Partial<Record<SvelteKitMethodExport, RequestHandler>> = {};
 
-		type MethodContract<TMethod extends ContractMethod> = ContractForRoutePathMethod<
+		type MethodContract<TMethod extends ContractMethod> = RouterContractGivenPathAndMethod<
 			TRouter,
 			typeof route,
 			TMethod
@@ -57,7 +57,7 @@ export function initSvelteKit<TRouter, TParams extends Array<unknown>>(
 				return;
 			}
 
-			const contract = getContractForRoutePathMethod(router, route, method);
+			const contract = resolveRouteMethodContract(router, route, method);
 			routeExports[toSvelteKitMethodExport(method)] = async (event) => {
 				const input = await parseContractInput(
 					contract,

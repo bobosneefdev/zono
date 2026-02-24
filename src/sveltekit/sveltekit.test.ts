@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { RequestHandler } from "@sveltejs/kit";
 import z from "zod";
-import { createRouter } from "~/contract/index.js";
+import { createRouter } from "~/router/index.js";
 import { initSvelteKit } from "~/sveltekit/index.js";
 import type { SvelteKitImplementer } from "~/sveltekit/sveltekit.types.js";
 
