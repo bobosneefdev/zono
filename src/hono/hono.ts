@@ -1,6 +1,6 @@
 import type { Context, Hono, MiddlewareHandler } from "hono";
 import type { Contract, ContractMethod, ContractMethodMap } from "~/contract/contract.types.js";
-import type { HonoServerHandlerTree, InitHonoOptions } from "~/hono/hono.types.js";
+import type { InitHonoHandlers, InitHonoOptions } from "~/hono/hono.types.js";
 import { buildContractResponse, parseContractInput } from "~/lib/server.js";
 import type { ServerHandlerInput, ServerHandlerOutput } from "~/lib/server.types.js";
 import { CONTRACT_METHOD_ORDER, isRecord } from "~/lib/util.js";
@@ -77,10 +77,10 @@ function collectRoutes(
 			continue;
 		}
 
-		if ("contract" in value && isRecord(value.contract) && "handler" in handlerNode) {
+		if ("CONTRACT" in value && isRecord(value.CONTRACT) && "HANDLER" in handlerNode) {
 			const path = routerDotPathToParamPath(nodePath);
-			const contractMap = value.contract as ContractMethodMap;
-			const handlerMap = handlerNode.handler;
+			const contractMap = value.CONTRACT as ContractMethodMap;
+			const handlerMap = handlerNode.HANDLER;
 			const middleware = handlerNode.middleware;
 
 			if (!isRecord(handlerMap)) {
@@ -93,9 +93,7 @@ function collectRoutes(
 
 			for (const method of getContractMethods(contractMap)) {
 				const contract = contractMap[method];
-				if (!contract) {
-					continue;
-				}
+				if (!contract) continue;
 
 				const resolvedHandler = handlerMap[method];
 				if (typeof resolvedHandler !== "function") {
@@ -116,7 +114,7 @@ function collectRoutes(
 							context,
 							options.bypassIncomingParse,
 						);
-						const handlerParams = options.getHandlerParams(context);
+						const handlerParams = options.transformParams(context);
 						const result = await resolvedHandler(input, ...handlerParams);
 						return await buildResponse(
 							contract,
@@ -221,17 +219,14 @@ function registerRoute(
 export function initHono<TRouter, TParams extends Array<unknown> = [Context]>(
 	app: Hono,
 	router: TRouter,
-	handlers: HonoServerHandlerTree<TRouter, TParams>,
+	handlers: InitHonoHandlers<TRouter, TParams>,
 	options?: InitHonoOptions<TParams>,
 ): Hono {
 	const resolvedOptions: Required<InitHonoOptions<Array<unknown>>> = {
 		bypassIncomingParse: options?.bypassIncomingParse ?? false,
 		bypassOutgoingParse: options?.bypassOutgoingParse ?? false,
 		globalMiddleware: options?.globalMiddleware ?? [],
-		getHandlerParams: (context) =>
-			options?.getHandlerParams
-				? (options.getHandlerParams(context) as Array<unknown>)
-				: [context],
+		transformParams: options?.transformParams ?? ((...args) => args),
 	};
 
 	const registrations = collectRoutes(

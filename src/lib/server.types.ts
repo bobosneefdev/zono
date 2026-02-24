@@ -84,27 +84,49 @@ export type ServerHandler<TContract extends Contract, TParams extends Array<unkn
 	...args: TParams
 ) => PossiblePromise<ServerHandlerOutput<TContract>>;
 
+export type ServerHandlerGivenMethod<
+	TContract extends ContractMethodMap,
+	TParams extends Array<unknown>,
+	TMethod extends keyof TContract,
+> = ServerHandler<Extract<TContract[TMethod], Contract>, TParams>;
+
 type ServerHandlerMethodMap<
 	TContractMap extends ContractMethodMap,
 	TParams extends Array<unknown>,
 > = {
 	[TMethod in ContractMethod as TContractMap[TMethod] extends Contract
 		? TMethod
-		: never]: ServerHandler<Extract<TContractMap[TMethod], Contract>, TParams>;
+		: never]: ServerHandlerGivenMethod<TContractMap, TParams, TMethod>;
 };
 
-type HandlerNode<TNode, TParams extends Array<unknown>> = TNode extends {
-	contract: infer TContractMap extends ContractMethodMap;
-}
-	? {
-			handler: ServerHandlerMethodMap<TContractMap, TParams>;
-		} & (TNode extends { router: infer TRouter }
-			? { router: ServerHandlerTree<TRouter, TParams> }
-			: { router?: undefined })
-	: TNode extends Record<string, unknown>
-		? ServerHandlerTree<TNode, TParams>
-		: never;
+export type ServerHandlerTree<
+	TRouter,
+	TParams extends Array<unknown> = [],
+	TNodeAnd extends Record<string, unknown> = Record<string, unknown>,
+> = {
+	[K in keyof TRouter]?: HandlerNode<TRouter[K], TParams, TNodeAnd>;
+};
 
-export type ServerHandlerTree<TRouter, TParams extends Array<unknown> = []> = {
-	[K in keyof TRouter]: HandlerNode<TRouter[K], TParams>;
+type HandlerNode<
+	TNode,
+	TParams extends Array<unknown>,
+	TNodeAnd extends Record<string, unknown>,
+> = TNode extends { CONTRACT: infer TContractMap extends ContractMethodMap }
+	? { HANDLER: ServerHandlerMethodMap<TContractMap, TParams> } & TNodeAnd &
+			(TNode extends { ROUTER: infer TRouter }
+				? { ROUTER: ServerHandlerTree<TRouter, TParams, TNodeAnd> }
+				: { ROUTER?: undefined })
+	: TNode extends { ROUTER: infer TRouter }
+		? { ROUTER: ServerHandlerTree<TRouter, TParams, TNodeAnd> } & TNodeAnd
+		: TNode extends Record<string, unknown>
+			? ServerHandlerTree<TNode, TParams, TNodeAnd>
+			: never;
+
+export type ServerOptionsBase<
+	TInParams extends Array<unknown>,
+	TOutParams extends Array<unknown>,
+> = {
+	bypassIncomingParse?: boolean;
+	bypassOutgoingParse?: boolean;
+	transformParams?: (...args: TInParams) => TOutParams;
 };

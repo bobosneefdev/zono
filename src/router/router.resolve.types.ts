@@ -13,11 +13,11 @@ type RoutePathToDotPath<TPath extends string> =
 		: StripLeadingSlash<TPath>;
 
 type RoutePathsFromNode<TNode, TPrefix extends string = ""> = TNode extends {
-	contract: ContractMethodMap;
+	CONTRACT: ContractMethodMap;
 }
 	?
 			| DotPathToRoutePath<TPrefix>
-			| (TNode extends { router: infer TRouter }
+			| (TNode extends { ROUTER: infer TRouter }
 					? RoutePathsFromNode<TRouter, TPrefix>
 					: never)
 	: TNode extends Record<string, unknown>
@@ -34,7 +34,7 @@ type ValueAtDotPath<TValue, TPath extends string> = TPath extends `${infer TSegm
 		? TValue[TPath]
 		: never;
 
-type NextNodeForPath<TNode> = TNode extends { router: infer TRouter } ? TRouter : TNode;
+type NextNodeForPath<TNode> = TNode extends { ROUTER: infer TRouter } ? TRouter : TNode;
 
 type ContractAtDotPath<
 	TNode,
@@ -48,7 +48,7 @@ type ContractAtDotPath<
 		: never;
 
 type ContractMapFromNode<TNode> = TNode extends {
-	contract: infer TContractMap extends ContractMethodMap;
+	CONTRACT: infer TContractMap extends ContractMethodMap;
 }
 	? TContractMap
 	: never;

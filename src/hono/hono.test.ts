@@ -71,7 +71,7 @@ const router = createRouter(
 						},
 					},
 				},
-				router: {
+				ROUTER: {
 					$postId: {
 						contract: {
 							get: {
@@ -178,7 +178,7 @@ describe("initHono", () => {
 							};
 						},
 					},
-					router: {
+					ROUTER: {
 						$postId: {
 							handler: {
 								get: async (data) => {
@@ -229,7 +229,7 @@ describe("initHono", () => {
 							};
 						},
 					},
-					router: {
+					ROUTER: {
 						$postId: {
 							handler: {
 								get: async (data) => {
@@ -394,7 +394,7 @@ describe("initHono", () => {
 								await next();
 							},
 						],
-						router: {
+						ROUTER: {
 							$postId: {
 								handler: {
 									get: async (data) => {
@@ -469,7 +469,7 @@ describe("initHono", () => {
 								get: async (
 									data: ServerHandlerInput<
 										NonNullable<
-											typeof router.users.$id.router.$postId.contract.get
+											typeof router.users.$id.ROUTER.$postId.contract.get
 										>
 									>,
 								) => ({

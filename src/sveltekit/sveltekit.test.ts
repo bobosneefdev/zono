@@ -89,7 +89,7 @@ const router = createRouter(
 						},
 					},
 				},
-				router: {
+				ROUTER: {
 					$postId: {
 						contract: {
 							get: {

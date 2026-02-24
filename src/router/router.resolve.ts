@@ -60,14 +60,14 @@ export function resolveRouteContractMap<TRouter, TRoute extends RouterPath<TRout
 	if (
 		typeof current !== "object" ||
 		current === null ||
-		!("contract" in current) ||
-		typeof current.contract !== "object" ||
-		current.contract === null
+		!("CONTRACT" in current) ||
+		typeof current.CONTRACT !== "object" ||
+		current.CONTRACT === null
 	) {
 		throw new Error(`Route does not resolve to a contract: ${routePath}`);
 	}
 
-	return current.contract as RouterPathContractMap<TRouter, TRoute> & ContractMethodMap;
+	return current.CONTRACT as RouterPathContractMap<TRouter, TRoute> & ContractMethodMap;
 }
 
 export function resolveRouteContract<TRouter, TRoute extends RouterPath<TRouter>>(

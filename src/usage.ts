@@ -1,28 +1,71 @@
 // NOT A MODULE, JUST A SANDBOX FOR TESTING AS I DEVELOP
 
-import { Hono } from "hono";
+import { Context, Hono } from "hono";
 import z from "zod";
-import { createClient } from "./client/index.js";
+import { createClient } from "./client/client.js";
 import { initHono } from "./hono/index.js";
+import { ServerHandlerGivenMethod } from "./lib/server.types.js";
 import { createRouter } from "./router/index.js";
-import { initSvelteKit } from "./sveltekit/index.js";
 
-const zUser = z.null(); // example/placeholder schema
-const zFilter = z.null(); // example/placeholder schema
+// CONTRACT/SCHEMA
+const zId = z.uuid();
+
+const zTimestamp = z.number().int();
+
+const zUserBase = z.object({
+	first: z.string(),
+	last: z.string(),
+	email: z.email(),
+	dob: z.iso.date(),
+});
+
+const zUser = zUserBase.extend({
+	id: zId,
+	createdAt: zTimestamp,
+});
+
+const zComment = z.object({
+	id: zId,
+	createdAt: zTimestamp,
+	updatedAt: zTimestamp,
+	authorId: zId,
+	postId: zId,
+	content: z.string(),
+});
+
+const zPost = z.object({
+	id: zId,
+	createdAt: zTimestamp,
+	updatedAt: z.number().int(),
+	authorId: zId,
+	title: z.string(),
+	description: z.string(),
+});
 
 const router = createRouter(
 	{
 		users: {
-			type: "router",
-			router: {
-				$discordId: {
-					type: "contract",
-					router: {
-						filters: {
-							type: "contract",
-							router: {
-								$filterId: {
-									type: "contract",
+			TYPE: "router",
+			ROUTER: {
+				register: {
+					TYPE: "contract",
+				},
+				$userId: {
+					TYPE: "contract",
+					ROUTER: {
+						posts: {
+							TYPE: "contract",
+							ROUTER: {
+								$postId: {
+									TYPE: "contract",
+								},
+							},
+						},
+						comments: {
+							TYPE: "contract",
+							ROUTER: {
+								$commentId: {
+									TYPE: "contract",
 								},
 							},
 						},
@@ -33,11 +76,24 @@ const router = createRouter(
 	},
 	{
 		users: {
-			$discordId: {
-				contract: {
+			register: {
+				CONTRACT: {
+					post: {
+						body: zUserBase,
+						responses: {
+							201: {
+								contentType: "application/json",
+								body: zUser,
+							},
+						},
+					},
+				},
+			},
+			$userId: {
+				CONTRACT: {
 					get: {
 						pathParams: z.object({
-							discordId: z.string(),
+							userId: zId,
 						}),
 						responses: {
 							200: {
@@ -47,45 +103,66 @@ const router = createRouter(
 						},
 					},
 				},
-				router: {
-					filters: {
-						contract: {
+				ROUTER: {
+					posts: {
+						CONTRACT: {
 							get: {
 								pathParams: z.object({
-									discordId: z.string(),
+									userId: zId,
 								}),
 								responses: {
 									200: {
 										contentType: "application/json",
-										body: z.array(zFilter),
+										body: z.array(zPost),
 									},
 								},
 							},
 						},
-						router: {
-							$filterId: {
-								contract: {
+						ROUTER: {
+							$postId: {
+								CONTRACT: {
 									get: {
 										pathParams: z.object({
-											discordId: z.string(),
-											filterId: z.string(),
+											userId: zId,
+											postId: zId,
 										}),
 										responses: {
 											200: {
 												contentType: "application/json",
-												body: zFilter,
+												body: zPost,
 											},
 										},
 									},
-									post: {
+								},
+							},
+						},
+					},
+					comments: {
+						CONTRACT: {
+							get: {
+								pathParams: z.object({
+									userId: zId,
+								}),
+								responses: {
+									200: {
+										contentType: "application/json",
+										body: z.array(zComment),
+									},
+								},
+							},
+						},
+						ROUTER: {
+							$commentId: {
+								CONTRACT: {
+									get: {
 										pathParams: z.object({
-											discordId: z.string(),
-											filterId: z.string(),
+											userId: zId,
+											commentId: zId,
 										}),
-										body: zFilter,
 										responses: {
-											204: {
-												contentType: null,
+											200: {
+												contentType: "application/json",
+												body: zComment,
 											},
 										},
 									},
@@ -99,45 +176,154 @@ const router = createRouter(
 	},
 );
 
-// HONO
+// SERVER
+type MyHonoContext = [Context];
+
+const handlePost_users_register: ServerHandlerGivenMethod<
+	typeof router.users.register.CONTRACT,
+	MyHonoContext,
+	"post"
+> = async (data, _c) => {
+	return {
+		status: 201,
+		data: {
+			...data.body,
+			id: crypto.randomUUID(),
+			createdAt: Date.now(),
+		},
+	};
+};
+
+const handleGet_users_$userId: ServerHandlerGivenMethod<
+	typeof router.users.$userId.CONTRACT,
+	MyHonoContext,
+	"get"
+> = async (data, _c) => {
+	return {
+		status: 200,
+		data: {
+			id: data.pathParams.userId,
+			first: "John",
+			last: "Doe",
+			email: "john.doe@example.com",
+			dob: "1990-01-01",
+			createdAt: Date.now(),
+		},
+	};
+};
+
+const handleGet_users_$userId_posts: ServerHandlerGivenMethod<
+	typeof router.users.$userId.ROUTER.posts.CONTRACT,
+	MyHonoContext,
+	"get"
+> = async (data, _c) => {
+	return {
+		status: 200,
+		data: [
+			{
+				id: crypto.randomUUID(),
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+				authorId: data.pathParams.userId,
+				title: "Post Title",
+				description: "Post Description",
+			},
+		],
+	};
+};
+
+const handleGet_users_$userId_posts_$postId: ServerHandlerGivenMethod<
+	typeof router.users.$userId.ROUTER.posts.ROUTER.$postId.CONTRACT,
+	MyHonoContext,
+	"get"
+> = async (data, _c) => {
+	return {
+		status: 200,
+		data: {
+			id: data.pathParams.postId,
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+			authorId: data.pathParams.userId,
+			title: "Post Title",
+			description: "Post Description",
+		},
+	};
+};
+
+const handleGet_users_$userId_comments: ServerHandlerGivenMethod<
+	typeof router.users.$userId.ROUTER.comments.CONTRACT,
+	MyHonoContext,
+	"get"
+> = async (data, _c) => {
+	return {
+		status: 200,
+		data: [
+			{
+				id: crypto.randomUUID(),
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+				authorId: data.pathParams.userId,
+				postId: crypto.randomUUID(),
+				content: "Comment Content",
+			},
+		],
+	};
+};
+
+const handleGet_users_$userId_comments_$commentId: ServerHandlerGivenMethod<
+	typeof router.users.$userId.ROUTER.comments.ROUTER.$commentId.CONTRACT,
+	MyHonoContext,
+	"get"
+> = async (data, _c) => {
+	return {
+		status: 200,
+		data: {
+			id: data.pathParams.commentId,
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+			authorId: data.pathParams.userId,
+			postId: crypto.randomUUID(),
+			content: "Comment Content",
+		},
+	};
+};
 
 const app = new Hono();
 
-initHono(app, router, {
-	users: {
-		$discordId: {
-			handler: {
-				get: async (_input) => {
-					return {
-						status: 200,
-						data: null,
-					};
+initHono(
+	app,
+	router,
+	{
+		users: {
+			register: {
+				MIDDLEWARE: [
+					async (_c, next) => {
+						// We could for example put a fingerprint middleware here to prevent abuse
+						await next();
+					},
+				],
+				HANDLER: {
+					post: handlePost_users_register,
 				},
 			},
-			router: {
-				filters: {
-					handler: {
-						get: async (_input) => {
-							return {
-								status: 200,
-								data: [null],
-							};
+			$userId: {
+				HANDLER: {
+					get: handleGet_users_$userId,
+				},
+				ROUTER: {
+					posts: {
+						HANDLER: { get: handleGet_users_$userId_posts },
+						ROUTER: {
+							$postId: {
+								HANDLER: { get: handleGet_users_$userId_posts_$postId },
+							},
 						},
 					},
-					router: {
-						$filterId: {
-							handler: {
-								get: async (_input) => {
-									return {
-										status: 200,
-										data: null,
-									};
-								},
-								post: async (_input) => {
-									return {
-										status: 204,
-									};
-								},
+					comments: {
+						HANDLER: { get: handleGet_users_$userId_comments },
+						ROUTER: {
+							$commentId: {
+								HANDLER: { get: handleGet_users_$userId_comments_$commentId },
 							},
 						},
 					},
@@ -145,41 +331,41 @@ initHono(app, router, {
 			},
 		},
 	},
-});
+	{
+		globalMiddleware: [
+			async (_c, next) => {
+				// We could for example put a CORS middleware here to allow cross-origin requests
+				// Or a rate limiting middleware to prevent abuse
+				console.log("global middleware");
+				await next();
+			},
+		],
+	},
+);
 
 Bun.serve({
 	fetch: app.fetch,
 	port: 3000,
 });
 
-console.log("Server is running on http://localhost:3000");
-
-// SVELTEKIT
-const implement = initSvelteKit(router, {
-	getHandlerParams: (event) => [event],
-});
-
-implement("/users/$discordId", {
-	get: async (_data) => {
-		return {
-			status: 200,
-			data: null,
-		};
+// CLIENT
+const client = createClient(router, {
+	baseUrl: "http://localhost:3000",
+	defaultHeaders: {
+		"static-header": "static-value",
+		"dynamic-header": () => "dynamic-value",
+		"async-header": async () => "async-value",
 	},
 });
 
-// CLIENT
-
-const client = createClient(router, {
-	baseUrl: "http://localhost:3000",
-});
-
 (async () => {
-	const _resp = await client.post("/users/$discordId/filters/$filterId", {
-		pathParams: {
-			discordId: "123",
-			filterId: "456",
+	const response = await client.post("/users/register", {
+		body: {
+			first: "John",
+			last: "Porkchop",
+			email: "john.porkchop@email.com",
+			dob: "1776-07-04",
 		},
-		body: null,
 	});
+	console.log(response);
 })();

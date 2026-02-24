@@ -62,7 +62,7 @@ const router = createRouter(
 						},
 					},
 				},
-				router: {
+				ROUTER: {
 					posts: {
 						contract: {
 							post: {

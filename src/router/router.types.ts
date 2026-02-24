@@ -19,23 +19,23 @@ export interface RouterShape {
 }
 
 export type RouterRouterNode = {
-	type: "router";
-	router: RouterShape;
+	TYPE: "router";
+	ROUTER: RouterShape;
 };
 
 export type RouterContractNode = {
-	type: "contract";
-	router?: RouterShape;
+	TYPE: "contract";
+	ROUTER?: RouterShape;
 };
 
 export type Router<TShape extends RouterShape, TPath extends string = ""> = {
 	[K in keyof TShape]: TShape[K] extends RouterRouterNode
-		? Router<TShape[K]["router"], JoinPath<TPath, Extract<K, string>>>
+		? Router<TShape[K]["ROUTER"], JoinPath<TPath, Extract<K, string>>>
 		: {
-				contract: ContractMethodMap<ContractForPath<JoinPath<TPath, Extract<K, string>>>>;
-			} & (TShape[K]["router"] extends RouterShape
-				? { router: Router<TShape[K]["router"], JoinPath<TPath, Extract<K, string>>> }
-				: { router?: undefined });
+				CONTRACT: ContractMethodMap<ContractForPath<JoinPath<TPath, Extract<K, string>>>>;
+			} & (TShape[K]["ROUTER"] extends RouterShape
+				? { ROUTER: Router<TShape[K]["ROUTER"], JoinPath<TPath, Extract<K, string>>> }
+				: { ROUTER?: undefined });
 };
 
 type ContractForPath<TPath extends string> = Contract &
