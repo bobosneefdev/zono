@@ -35,7 +35,9 @@ type ParsedBodyForStatus<
 	TStatus extends ContractResponseStatuses<TContract>,
 > = TContract["responses"][TStatus] extends { body: infer TBody extends z.ZodType }
 	? SchemaOutput<TBody>
-	: undefined;
+	: TContract["responses"][TStatus] extends { schema: infer TSchema extends z.ZodType }
+		? SchemaOutput<TSchema>
+		: undefined;
 
 type ParsedHeadersForStatus<
 	TContract extends Contract,

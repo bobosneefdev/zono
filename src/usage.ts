@@ -79,11 +79,14 @@ const router = createRouter(
 			register: {
 				CONTRACT: {
 					post: {
-						payload: zUserBase,
+						payload: {
+							contentType: "application/json",
+							schema: zUserBase,
+						},
 						responses: {
 							201: {
 								contentType: "application/json",
-								body: zUser,
+								schema: zUser,
 							},
 						},
 					},
@@ -98,7 +101,7 @@ const router = createRouter(
 						responses: {
 							200: {
 								contentType: "application/json",
-								body: zUser,
+								schema: zUser,
 							},
 						},
 					},
@@ -113,7 +116,7 @@ const router = createRouter(
 								responses: {
 									200: {
 										contentType: "application/json",
-										body: z.array(zPost),
+										schema: z.array(zPost),
 									},
 								},
 							},
@@ -129,7 +132,7 @@ const router = createRouter(
 										responses: {
 											200: {
 												contentType: "application/json",
-												body: zPost,
+												schema: zPost,
 											},
 										},
 									},
@@ -146,7 +149,7 @@ const router = createRouter(
 								responses: {
 									200: {
 										contentType: "application/json",
-										body: z.array(zComment),
+										schema: z.array(zComment),
 									},
 								},
 							},
@@ -162,7 +165,7 @@ const router = createRouter(
 										responses: {
 											200: {
 												contentType: "application/json",
-												body: zComment,
+												schema: zComment,
 											},
 										},
 									},
@@ -187,7 +190,7 @@ const handlePost_users_register: ServerHandlerGivenMethod<
 	return {
 		status: 201,
 		data: {
-			...data.body,
+			...data.payload,
 			id: crypto.randomUUID(),
 			createdAt: Date.now(),
 		},
@@ -360,7 +363,7 @@ const client = createClient(router, {
 
 (async () => {
 	const response = await client.post("/users/register", {
-		body: {
+		payload: {
 			first: "John",
 			last: "Porkchop",
 			email: "john.porkchop@email.com",

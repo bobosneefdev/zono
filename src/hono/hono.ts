@@ -26,7 +26,7 @@ async function parseRequestInput<TContract extends Contract>(
 			pathParams: context.req.param(),
 			query: context.req.query(),
 			headers: Object.fromEntries(context.req.raw.headers.entries()),
-			body: contract.payload ? await parseRequestBody(context) : undefined,
+			payload: contract.payload ? await parseRequestBody(context) : undefined,
 		},
 		bypassIncomingParse,
 	);

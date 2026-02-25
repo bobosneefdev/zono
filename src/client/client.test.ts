@@ -51,12 +51,15 @@ const router = createRouter(
 							id: z.string(),
 						}),
 						payload: {
-							contentType: ""
+							contentType: "application/json",
+							schema: z.object({
+								name: z.string(),
+							}),
 						},
 						responses: {
 							201: {
 								contentType: "application/json",
-								body: z.object({
+								schema: z.object({
 									ok: z.literal(true),
 								}),
 							},
@@ -70,13 +73,16 @@ const router = createRouter(
 								pathParams: z.object({
 									id: z.string(),
 								}),
-								payload: z.object({
-									title: z.string(),
-								}),
+								payload: {
+									contentType: "application/json",
+									schema: z.object({
+										title: z.string(),
+									}),
+								},
 								responses: {
 									201: {
 										contentType: "application/json",
-										body: z.object({
+										schema: z.object({
 											ok: z.literal(true),
 										}),
 									},
@@ -147,7 +153,7 @@ describe("createClient", () => {
 			pathParams: {
 				id: "123",
 			},
-			body: {
+			payload: {
 				name: "Jake",
 			},
 		};
@@ -227,6 +233,34 @@ describe("createClient", () => {
 	});
 
 	it("sends FormData bodies without forcing JSON content-type", async () => {
+		const formRouter = createRouter(
+			{
+				uploads: {
+					TYPE: "contract",
+				},
+			},
+			{
+				uploads: {
+					CONTRACT: {
+						post: {
+							payload: {
+								contentType: "multipart/form-data",
+								schema: z.instanceof(FormData),
+							},
+							responses: {
+								201: {
+									contentType: "application/json",
+									schema: z.object({
+										ok: z.literal(true),
+									}),
+								},
+							},
+						},
+					},
+				},
+			},
+		);
+
 		const fetchMock = mock(async () => {
 			return new Response(JSON.stringify({ ok: true }), {
 				status: 201,
@@ -237,7 +271,7 @@ describe("createClient", () => {
 		});
 		globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-		const client = createClient(router, {
+		const client = createClient(formRouter, {
 			baseUrl: "http://localhost:3000",
 			bypassOutgoingParse: true,
 		});
@@ -245,11 +279,8 @@ describe("createClient", () => {
 		const formData = new FormData();
 		formData.set("name", "Jake");
 
-		const parsed = await client.post("/users/$id", {
-			pathParams: {
-				id: "123",
-			},
-			body: formData,
+		const parsed = await client.post("/uploads", {
+			payload: formData,
 		});
 
 		expect(parsed.status).toBe(201);
@@ -279,7 +310,7 @@ describe("createClient", () => {
 							responses: {
 								200: {
 									contentType: "application/json",
-									body: z.object({ ok: z.literal(true) }),
+									schema: z.object({ ok: z.literal(true) }),
 								},
 							},
 						},
@@ -291,7 +322,7 @@ describe("createClient", () => {
 							responses: {
 								200: {
 									contentType: "text/plain",
-									body: z.string(),
+									schema: z.string(),
 								},
 							},
 						},
@@ -303,7 +334,7 @@ describe("createClient", () => {
 							responses: {
 								200: {
 									contentType: "application/octet-stream",
-									body: z.instanceof(Uint8Array),
+									schema: z.instanceof(Uint8Array),
 								},
 							},
 						},

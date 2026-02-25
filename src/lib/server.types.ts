@@ -12,12 +12,16 @@ type IncludePathParams<TContract extends Contract> = TContract["pathParams"] ext
 	? { pathParams: SchemaInput<TContract["pathParams"]> }
 	: EmptyObject;
 
-type IncludeBody<TContract extends Contract> = TContract["payload"] extends z.ZodType
-	? { body: SchemaInput<TContract["payload"]> }
+type IncludePayload<TContract extends Contract> = TContract["payload"] extends {
+	schema: infer TSchema extends z.ZodType;
+}
+	? { payload: SchemaInput<TSchema> }
 	: EmptyObject;
 
-type IncludeQuery<TContract extends Contract> = TContract["query"] extends z.ZodType
-	? { query: SchemaInput<TContract["query"]> }
+type IncludeQuery<TContract extends Contract> = TContract["query"] extends {
+	schema: infer TSchema extends z.ZodType;
+}
+	? { query: SchemaInput<TSchema> }
 	: EmptyObject;
 
 type IncludeHeaders<TContract extends Contract> = TContract["headers"] extends z.ZodType
@@ -25,7 +29,7 @@ type IncludeHeaders<TContract extends Contract> = TContract["headers"] extends z
 	: EmptyObject;
 
 export type ServerHandlerInput<TContract extends Contract> = IncludePathParams<TContract> &
-	IncludeBody<TContract> &
+	IncludePayload<TContract> &
 	IncludeQuery<TContract> &
 	IncludeHeaders<TContract>;
 
@@ -39,7 +43,9 @@ type ResponseBodyForStatus<
 	TStatus extends ContractResponseStatuses<TContract>,
 > = TContract["responses"][TStatus] extends { body: infer TBody extends z.ZodType }
 	? SchemaOutput<TBody>
-	: undefined;
+	: TContract["responses"][TStatus] extends { schema: infer TSchema extends z.ZodType }
+		? SchemaOutput<TSchema>
+		: undefined;
 
 type ResponseContentTypeForStatus<
 	TContract extends Contract,

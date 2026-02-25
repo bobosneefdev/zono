@@ -6,7 +6,11 @@ import type {
 	ClientPathsAvailableGivenMethod,
 	ClientRequestInputGivenMethodAndPath,
 } from "~/client/client.types.js";
-import { type Contract, type ContractMethod } from "~/contract/contract.types.js";
+import {
+	type Contract,
+	type ContractMethod,
+	type ContractQuery,
+} from "~/contract/contract.types.js";
 import { BYTES_CONTENT_TYPES, JSON_CONTENT_TYPES, TEXT_CONTENT_TYPES } from "~/lib/util.js";
 import { resolveRouteMethodContract } from "~/router/router.resolve.js";
 
@@ -43,7 +47,9 @@ function buildPathWithParams(pathTemplate: string, pathParams?: Record<string, s
 	return `/${mappedSegments.join("/")}`;
 }
 
-function buildQueryString(query?: Record<string, string | undefined>): string {
+function buildQueryStringStandard(
+	query?: Record<string, string | Array<string> | undefined>,
+): string {
 	if (!query) {
 		return "";
 	}
@@ -53,10 +59,30 @@ function buildQueryString(query?: Record<string, string | undefined>): string {
 		if (typeof value === "string") {
 			searchParams.append(key, value);
 		}
+
+		if (Array.isArray(value)) {
+			for (const inner of value) {
+				if (typeof inner === "string") {
+					searchParams.append(key, inner);
+				}
+			}
+		}
 	}
 
 	const serialized = searchParams.toString();
 	return serialized.length > 0 ? `?${serialized}` : "";
+}
+
+function buildQueryString(queryContract: ContractQuery | undefined, query: unknown): string {
+	if (!queryContract || query === undefined) {
+		return "";
+	}
+
+	if (queryContract.type === "json") {
+		return `?${new URLSearchParams({ json: JSON.stringify(query) }).toString()}`;
+	}
+
+	return buildQueryStringStandard(query as Record<string, string | Array<string> | undefined>);
 }
 
 async function resolveHeaderValue(value: ClientOptionsDefaultHeaderValue): Promise<string> {
@@ -102,7 +128,7 @@ async function parseOutgoingRequest(
 	}
 
 	if (contract.payload) {
-		parsed.body = await contract.payload.schema.parseAsync(rawRequest.body);
+		parsed.payload = await contract.payload.schema.parseAsync(rawRequest.payload);
 	}
 
 	if (contract.query) {
@@ -189,8 +215,8 @@ export function createClient<TRouter>(router: TRouter, options: ClientOptions): 
 		}
 
 		if (
-			parsedRequest.body !== undefined &&
-			!isFormDataBody(parsedRequest.body) &&
+			parsedRequest.payload !== undefined &&
+			!isFormDataBody(parsedRequest.payload) &&
 			!resolvedHeaders.has("content-type")
 		) {
 			resolvedHeaders.set("content-type", "application/json");
@@ -201,7 +227,7 @@ export function createClient<TRouter>(router: TRouter, options: ClientOptions): 
 			routePath,
 			parsedRequest.pathParams as Record<string, string>,
 		);
-		const query = buildQueryString(parsedRequest.query as Record<string, string | undefined>);
+		const query = buildQueryString(contract.query, parsedRequest.query);
 		const normalizedBaseUrl = options.baseUrl.endsWith("/")
 			? options.baseUrl.slice(0, -1)
 			: options.baseUrl;
@@ -211,10 +237,10 @@ export function createClient<TRouter>(router: TRouter, options: ClientOptions): 
 			headers: resolvedHeaders,
 		};
 
-		if (parsedRequest.body !== undefined) {
-			init.body = isFormDataBody(parsedRequest.body)
-				? parsedRequest.body
-				: JSON.stringify(parsedRequest.body);
+		if (parsedRequest.payload !== undefined) {
+			init.body = isFormDataBody(parsedRequest.payload)
+				? parsedRequest.payload
+				: JSON.stringify(parsedRequest.payload);
 		}
 
 		return [`${normalizedBaseUrl}${fullpath}${query}`, init];

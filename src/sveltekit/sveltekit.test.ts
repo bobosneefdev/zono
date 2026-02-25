@@ -59,7 +59,7 @@ const router = createRouter(
 						responses: {
 							200: {
 								contentType: "application/json",
-								body: z.object({
+								schema: z.object({
 									id: z.string(),
 									name: z
 										.string()
@@ -75,13 +75,16 @@ const router = createRouter(
 						pathParams: z.object({
 							id: z.string(),
 						}),
-						payload: z.object({
-							name: z.string(),
-						}),
+						payload: {
+							contentType: "application/json",
+							schema: z.object({
+								name: z.string(),
+							}),
+						},
 						responses: {
 							201: {
 								contentType: "application/json",
-								body: z.object({
+								schema: z.object({
 									id: z.string(),
 									name: z.string(),
 								}),
@@ -100,7 +103,7 @@ const router = createRouter(
 								responses: {
 									200: {
 										contentType: "application/json",
-										body: z.object({
+										schema: z.object({
 											id: z.string(),
 											title: z
 												.string()
@@ -148,13 +151,13 @@ describe("initSvelteKit", () => {
 			},
 			post: async (data) => {
 				expectType<string>(data.pathParams.id);
-				expectType<string>(data.body.name);
+				expectType<string>(data.payload.name);
 
 				return {
 					status: 201 as const,
 					data: {
 						id: data.pathParams.id,
-						name: data.body.name,
+						name: data.payload.name,
 					},
 				};
 			},
@@ -242,7 +245,7 @@ describe("initSvelteKit", () => {
 				status: 201 as const,
 				data: {
 					id: data.pathParams.id,
-					name: data.body.name,
+					name: data.payload.name,
 				},
 			};
 		};
@@ -297,7 +300,7 @@ describe("initSvelteKit", () => {
 				status: 201 as const,
 				data: {
 					id: data.pathParams.id,
-					name: data.body.name,
+					name: data.payload.name,
 				},
 			};
 		};
@@ -375,7 +378,7 @@ describe("initSvelteKit", () => {
 								responses: {
 									200: {
 										contentType: "application/json",
-										body: z.object({
+										schema: z.object({
 											id: z
 												.string()
 												.transform(async (value) => value.toUpperCase()),
@@ -432,11 +435,14 @@ describe("initSvelteKit", () => {
 				uploads: {
 					CONTRACT: {
 						post: {
-							payload: z.instanceof(FormData),
+							payload: {
+								contentType: "multipart/form-data",
+								schema: z.instanceof(FormData),
+							},
 							responses: {
 								200: {
 									contentType: "application/json",
-									body: z.object({
+									schema: z.object({
 										name: z.string(),
 									}),
 								},
@@ -455,7 +461,7 @@ describe("initSvelteKit", () => {
 			post: async (data) => ({
 				status: 200 as const,
 				data: {
-					name: String(data.body.get("name") ?? ""),
+					name: String(data.payload.get("name") ?? ""),
 				},
 			}),
 		});

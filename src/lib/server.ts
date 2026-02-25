@@ -9,10 +9,31 @@ import {
 
 export type RawContractInput = {
 	pathParams?: unknown;
-	body?: unknown;
+	payload?: unknown;
 	query?: unknown;
 	headers?: unknown;
 };
+
+function parseRawQuery(contract: Contract, rawQuery: unknown): unknown {
+	if (!contract.query) {
+		return rawQuery;
+	}
+
+	if (contract.query.type === "json") {
+		if (typeof rawQuery !== "object" || rawQuery === null) {
+			return rawQuery;
+		}
+
+		const encoded = (rawQuery as Record<string, unknown>).json;
+		if (typeof encoded !== "string") {
+			return undefined;
+		}
+
+		return JSON.parse(encoded);
+	}
+
+	return rawQuery;
+}
 
 export async function parseContractInput<TContract extends Contract>(
 	contract: TContract,
@@ -28,9 +49,10 @@ export async function parseContractInput<TContract extends Contract>(
 	}
 
 	if (contract.query) {
+		const rawQuery = parseRawQuery(contract, rawInput.query);
 		parsed.query = bypassIncomingParse
-			? rawInput.query
-			: await contract.query.schema.parseAsync(rawInput.query);
+			? rawQuery
+			: await contract.query.schema.parseAsync(rawQuery);
 	}
 
 	if (contract.headers) {
@@ -40,9 +62,9 @@ export async function parseContractInput<TContract extends Contract>(
 	}
 
 	if (contract.payload) {
-		parsed.body = bypassIncomingParse
-			? rawInput.body
-			: await contract.payload.schema.parseAsync(rawInput.body);
+		parsed.payload = bypassIncomingParse
+			? rawInput.payload
+			: await contract.payload.schema.parseAsync(rawInput.payload);
 	}
 
 	return parsed as ServerHandlerInput<TContract>;

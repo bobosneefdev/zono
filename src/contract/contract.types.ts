@@ -93,8 +93,7 @@ export type ContractQueryStandard = {
 };
 
 export type ContractQueryStandardValue = PossibleZodOptional<
-	| z.ZodType<string, string>
-	| z.ZodType<Array<string>, Array<string>>
+	z.ZodType<string, string> | z.ZodType<Array<string>, Array<string>>
 >;
 
 export type ContractHeaders = z.ZodObject<

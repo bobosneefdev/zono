@@ -41,7 +41,7 @@ const router = createRouter(
 						responses: {
 							200: {
 								contentType: "application/json",
-								body: z.object({
+								schema: z.object({
 									id: z.string(),
 									name: z
 										.string()
@@ -57,13 +57,16 @@ const router = createRouter(
 						pathParams: z.object({
 							id: z.string(),
 						}),
-						payload: z.object({
-							name: z.string(),
-						}),
+						payload: {
+							contentType: "application/json",
+							schema: z.object({
+								name: z.string(),
+							}),
+						},
 						responses: {
 							201: {
 								contentType: "application/json",
-								body: z.object({
+								schema: z.object({
 									id: z.string(),
 									name: z.string(),
 								}),
@@ -82,7 +85,7 @@ const router = createRouter(
 								responses: {
 									200: {
 										contentType: "application/json",
-										body: z.object({
+										schema: z.object({
 											id: z.string(),
 											title: z.string(),
 										}),
@@ -143,12 +146,12 @@ describe("initHono", () => {
 			pathParams: {
 				id: "123",
 			},
-			body: {
+			payload: {
 				name: "john",
 			},
 		};
 
-		expectType<string>(createInput.body.name);
+		expectType<string>(createInput.payload.name);
 
 		const app = new Hono();
 		type MyHonoContext = [Context];
@@ -174,7 +177,7 @@ describe("initHono", () => {
 								status: 201,
 								data: {
 									id: data.pathParams.id,
-									name: data.body.name,
+									name: data.payload.name,
 								},
 							};
 						},
@@ -225,7 +228,7 @@ describe("initHono", () => {
 								status: 201,
 								data: {
 									id: data.pathParams.id,
-									name: data.body.name,
+									name: data.payload.name,
 								},
 							};
 						},
@@ -313,7 +316,7 @@ describe("initHono", () => {
 								responses: {
 									200: {
 										contentType: "application/json",
-										body: z.object({
+										schema: z.object({
 											id: z.string(),
 										}),
 									},
@@ -384,7 +387,7 @@ describe("initHono", () => {
 									status: 201,
 									data: {
 										id: data.pathParams.id,
-										name: data.body.name,
+										name: data.payload.name,
 									},
 								};
 							},
@@ -503,11 +506,14 @@ describe("initHono", () => {
 				uploads: {
 					CONTRACT: {
 						post: {
-							payload: z.instanceof(FormData),
+							payload: {
+								contentType: "multipart/form-data",
+								schema: z.instanceof(FormData),
+							},
 							responses: {
 								200: {
 									contentType: "application/json",
-									body: z.object({
+									schema: z.object({
 										name: z.string(),
 									}),
 								},
@@ -525,7 +531,7 @@ describe("initHono", () => {
 					post: async (data) => ({
 						status: 200,
 						data: {
-							name: String(data.body.get("name") ?? ""),
+							name: String(data.payload.get("name") ?? ""),
 						},
 					}),
 				},
@@ -561,7 +567,7 @@ describe("initHono", () => {
 							responses: {
 								200: {
 									contentType: "application/json",
-									body: z.object({ value: z.string() }),
+									schema: z.object({ value: z.string() }),
 								},
 							},
 						},
@@ -573,7 +579,7 @@ describe("initHono", () => {
 							responses: {
 								200: {
 									contentType: "text/plain",
-									body: z.string(),
+									schema: z.string(),
 								},
 							},
 						},
@@ -585,7 +591,7 @@ describe("initHono", () => {
 							responses: {
 								200: {
 									contentType: "application/octet-stream",
-									body: z.instanceof(Uint8Array),
+									schema: z.instanceof(Uint8Array),
 								},
 							},
 						},
