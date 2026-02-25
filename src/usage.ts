@@ -16,7 +16,7 @@ const zUserBase = z.object({
 	first: z.string(),
 	last: z.string(),
 	email: z.email(),
-	dob: z.iso.date(),
+	age: z.number().int().min(13),
 });
 
 const zUser = zUserBase.extend({
@@ -78,9 +78,9 @@ const router = createRouter(
 		users: {
 			register: {
 				CONTRACT: {
-					post: {
-						payload: {
-							contentType: "application/json",
+					get: {
+						query: {
+							type: "json",
 							schema: zUserBase,
 						},
 						responses: {
@@ -182,15 +182,15 @@ const router = createRouter(
 // SERVER
 type MyHonoContext = [Context];
 
-const handlePost_users_register: ServerHandlerGivenMethod<
+const handleGet_users_register: ServerHandlerGivenMethod<
 	typeof router.users.register.CONTRACT,
 	MyHonoContext,
-	"post"
+	"get"
 > = async (data, _c) => {
 	return {
 		status: 201,
 		data: {
-			...data.payload,
+			...data.query,
 			id: crypto.randomUUID(),
 			createdAt: Date.now(),
 		},
@@ -207,9 +207,9 @@ const handleGet_users_$userId: ServerHandlerGivenMethod<
 		data: {
 			id: data.pathParams.userId,
 			first: "John",
-			last: "Doe",
-			email: "john.doe@example.com",
-			dob: "1990-01-01",
+			last: "Porkchop",
+			email: "john@porkmail.com",
+			age: 13,
 			createdAt: Date.now(),
 		},
 	};
@@ -306,7 +306,7 @@ initHono(
 					},
 				],
 				HANDLER: {
-					post: handlePost_users_register,
+					get: handleGet_users_register,
 				},
 			},
 			$userId: {
@@ -362,12 +362,12 @@ const client = createClient(router, {
 });
 
 (async () => {
-	const response = await client.post("/users/register", {
-		payload: {
+	const response = await client.get("/users/register", {
+		query: {
 			first: "John",
 			last: "Porkchop",
-			email: "john.porkchop@email.com",
-			dob: "1776-07-04",
+			email: "john@porkmail.com",
+			age: 13,
 		},
 	});
 	console.log(response);
