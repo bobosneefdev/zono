@@ -1,10 +1,8 @@
 import type z from "zod";
-import type { Contract, ContractMethod, ContractMethodMap } from "~/contract/contract.types.js";
-import type { PossiblePromise } from "~/lib/util.types.js";
+import type { Contract, ContractMethod, ContractMethodMap, ContractResponseStatuses } from "~/contract/contract.types.js";
+import type { PossiblePromise, SchemaOutput } from "~/lib/util.types.js";
 
 type SchemaInput<TSchema> = TSchema extends z.ZodType ? z.input<TSchema> : never;
-
-type SchemaOutput<TSchema> = TSchema extends z.ZodType ? z.output<TSchema> : never;
 
 type IncludePathParams<TContract extends Contract> = TContract["pathParams"] extends z.ZodType
 	? { pathParams: SchemaInput<TContract["pathParams"]> }
@@ -30,11 +28,6 @@ export type ServerHandlerInput<TContract extends Contract> = IncludePathParams<T
 	IncludePayload<TContract> &
 	IncludeQuery<TContract> &
 	IncludeHeaders<TContract>;
-
-type ContractResponseStatuses<TContract extends Contract> = Extract<
-	keyof TContract["responses"],
-	number
->;
 
 type ResponseBodyForStatus<
 	TContract extends Contract,

@@ -101,3 +101,8 @@ export type ContractHeaders = z.ZodObject<
 >;
 
 export type ContractPathParams = z.ZodType<Record<string, string>, Record<string, string>>;
+
+export type ContractResponseStatuses<TContract extends Contract> = Extract<
+	keyof TContract["responses"],
+	number
+>;

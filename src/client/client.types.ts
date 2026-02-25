@@ -1,5 +1,5 @@
 import z from "zod";
-import type { Contract, ContractMethod } from "~/contract/contract.types.js";
+import type { Contract, ContractMethod, ContractResponseStatuses } from "~/contract/contract.types.js";
 import type { ServerHandlerInput } from "~/lib/server.types.js";
 import type { PossiblePromise, SchemaOutput } from "~/lib/util.types.js";
 import type {
@@ -22,11 +22,6 @@ export type ClientRequestInputGivenMethodAndPath<
 	TMethod extends ContractMethod,
 	TPath extends ClientPathsAvailableGivenMethod<TRouter, TMethod>,
 > = ClientRequestInput<RouterContractGivenPathAndMethod<TRouter, TPath, TMethod>>;
-
-type ContractResponseStatuses<TContract extends Contract> = Extract<
-	keyof TContract["responses"],
-	number
->;
 
 type ParsedBodyForStatus<
 	TContract extends Contract,
