@@ -1,13 +1,12 @@
-// NOT A MODULE, JUST A SANDBOX FOR TESTING AS I DEVELOP
-
 import { Context, Hono } from "hono";
 import z from "zod";
 import { createClient } from "./client/index.js";
 import { initHono } from "./hono/index.js";
 import { ServerHandlerGivenMethod } from "./lib/server.types.js";
-import { createRouter } from "./router/index.js";
+import { createRouter, RouterShape, RouterShapeContractGivenPath } from "./router/index.js";
 
-// CONTRACT/SCHEMA
+// NOT A MODULE, JUST A SANDBOX FOR TESTING/EXAMPLES THROUGHOUT DEVELOPMENT
+
 const zId = z.uuid();
 
 const zTimestamp = z.number().int();
@@ -42,134 +41,30 @@ const zPost = z.object({
 	description: z.string(),
 });
 
-const router = createRouter(
-	{
-		users: {
-			TYPE: "router",
-			ROUTER: {
-				register: {
-					TYPE: "contract",
-				},
-				$userId: {
-					TYPE: "contract",
-					ROUTER: {
-						posts: {
-							TYPE: "contract",
-							ROUTER: {
-								$postId: {
-									TYPE: "contract",
-								},
-							},
-						},
-						comments: {
-							TYPE: "contract",
-							ROUTER: {
-								$commentId: {
-									TYPE: "contract",
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	},
-	{
-		users: {
+// ./contract.ts
+const exampleShape = {
+	users: {
+		TYPE: "router",
+		ROUTER: {
 			register: {
-				CONTRACT: {
-					get: {
-						query: {
-							type: "json",
-							schema: zUserBase,
-						},
-						responses: {
-							201: {
-								contentType: "application/json",
-								schema: zUser,
-							},
-						},
-					},
-				},
+				TYPE: "contract",
 			},
 			$userId: {
-				CONTRACT: {
-					get: {
-						pathParams: z.object({
-							userId: zId,
-						}),
-						responses: {
-							200: {
-								contentType: "application/json",
-								schema: zUser,
-							},
-						},
-					},
-				},
+				TYPE: "contract",
 				ROUTER: {
 					posts: {
-						CONTRACT: {
-							get: {
-								pathParams: z.object({
-									userId: zId,
-								}),
-								responses: {
-									200: {
-										contentType: "application/json",
-										schema: z.array(zPost),
-									},
-								},
-							},
-						},
+						TYPE: "contract",
 						ROUTER: {
 							$postId: {
-								CONTRACT: {
-									get: {
-										pathParams: z.object({
-											userId: zId,
-											postId: zId,
-										}),
-										responses: {
-											200: {
-												contentType: "application/json",
-												schema: zPost,
-											},
-										},
-									},
-								},
+								TYPE: "contract",
 							},
 						},
 					},
 					comments: {
-						CONTRACT: {
-							get: {
-								pathParams: z.object({
-									userId: zId,
-								}),
-								responses: {
-									200: {
-										contentType: "application/json",
-										schema: z.array(zComment),
-									},
-								},
-							},
-						},
+						TYPE: "contract",
 						ROUTER: {
 							$commentId: {
-								CONTRACT: {
-									get: {
-										pathParams: z.object({
-											userId: zId,
-											commentId: zId,
-										}),
-										responses: {
-											200: {
-												contentType: "application/json",
-												schema: zComment,
-											},
-										},
-									},
-								},
+								TYPE: "contract",
 							},
 						},
 					},
@@ -177,11 +72,137 @@ const router = createRouter(
 			},
 		},
 	},
-);
+} satisfies RouterShape;
 
-// SERVER
+type ExampleShape = typeof exampleShape;
+
+// ./users/register/contract.ts
+const usersRegisterContract = {
+	get: {
+		query: {
+			type: "json",
+			schema: zUserBase,
+		},
+		responses: {
+			201: {
+				contentType: "application/json",
+				schema: zUser,
+			},
+		},
+	},
+} satisfies RouterShapeContractGivenPath<ExampleShape, "users.register">;
+
+// ./users/$userId/contract.ts
+const usersUserIdContract = {
+	get: {
+		pathParams: z.object({
+			userId: zId,
+		}),
+		responses: {
+			200: {
+				contentType: "application/json",
+				schema: zUser,
+			},
+		},
+	},
+} satisfies RouterShapeContractGivenPath<ExampleShape, "users.$userId">;
+
+// ./users/$userId/posts/contract.ts
+const usersUserIdPostsContract = {
+	get: {
+		pathParams: z.object({
+			userId: zId,
+		}),
+		responses: {
+			200: {
+				contentType: "application/json",
+				schema: z.array(zPost),
+			},
+		},
+	},
+} satisfies RouterShapeContractGivenPath<ExampleShape, "users.$userId.posts">;
+
+// ./users/$userId/posts/$postId/contract.ts
+const usersUserIdPostsPostIdContract = {
+	get: {
+		pathParams: z.object({
+			userId: zId,
+			postId: zId,
+		}),
+		responses: {
+			200: {
+				contentType: "application/json",
+				schema: zPost,
+			},
+		},
+	},
+} satisfies RouterShapeContractGivenPath<ExampleShape, "users.$userId.posts.$postId">;
+
+// ./users/$userId/comments/contract.ts
+const usersUserIdCommentsContract = {
+	get: {
+		pathParams: z.object({
+			userId: zId,
+		}),
+		responses: {
+			200: {
+				contentType: "application/json",
+				schema: z.array(zComment),
+			},
+		},
+	},
+} satisfies RouterShapeContractGivenPath<ExampleShape, "users.$userId.comments">;
+
+// ./users/$userId/comments/$commentId/contract.ts
+const usersUserIdCommentsCommentIdContract = {
+	get: {
+		pathParams: z.object({
+			userId: zId,
+			commentId: zId,
+		}),
+		responses: {
+			200: {
+				contentType: "application/json",
+				schema: zComment,
+			},
+		},
+	},
+} satisfies RouterShapeContractGivenPath<ExampleShape, "users.$userId.comments.$commentId">;
+
+// ./contract.ts
+const router = createRouter(exampleShape, {
+	users: {
+		register: {
+			CONTRACT: usersRegisterContract,
+		},
+		$userId: {
+			CONTRACT: usersUserIdContract,
+			ROUTER: {
+				posts: {
+					CONTRACT: usersUserIdPostsContract,
+					ROUTER: {
+						$postId: {
+							CONTRACT: usersUserIdPostsPostIdContract,
+						},
+					},
+				},
+				comments: {
+					CONTRACT: usersUserIdCommentsContract,
+					ROUTER: {
+						$commentId: {
+							CONTRACT: usersUserIdCommentsCommentIdContract,
+						},
+					},
+				},
+			},
+		},
+	},
+});
+
+// ./server.ts
 type MyHonoContext = [Context];
 
+// ./users/register/handler.ts
 const handleGet_users_register: ServerHandlerGivenMethod<
 	typeof router.users.register.CONTRACT,
 	MyHonoContext,
@@ -197,6 +218,7 @@ const handleGet_users_register: ServerHandlerGivenMethod<
 	};
 };
 
+// ./users/$userId/handler.ts
 const handleGet_users_$userId: ServerHandlerGivenMethod<
 	typeof router.users.$userId.CONTRACT,
 	MyHonoContext,
@@ -215,6 +237,7 @@ const handleGet_users_$userId: ServerHandlerGivenMethod<
 	};
 };
 
+// ./users/$userId/posts/handler.ts
 const handleGet_users_$userId_posts: ServerHandlerGivenMethod<
 	typeof router.users.$userId.ROUTER.posts.CONTRACT,
 	MyHonoContext,
@@ -235,6 +258,7 @@ const handleGet_users_$userId_posts: ServerHandlerGivenMethod<
 	};
 };
 
+// ./users/$userId/posts/$postId/handler.ts
 const handleGet_users_$userId_posts_$postId: ServerHandlerGivenMethod<
 	typeof router.users.$userId.ROUTER.posts.ROUTER.$postId.CONTRACT,
 	MyHonoContext,
@@ -253,6 +277,7 @@ const handleGet_users_$userId_posts_$postId: ServerHandlerGivenMethod<
 	};
 };
 
+// ./users/$userId/comments/handler.ts
 const handleGet_users_$userId_comments: ServerHandlerGivenMethod<
 	typeof router.users.$userId.ROUTER.comments.CONTRACT,
 	MyHonoContext,
@@ -273,6 +298,7 @@ const handleGet_users_$userId_comments: ServerHandlerGivenMethod<
 	};
 };
 
+// ./users/$userId/comments/$commentId/handler.ts
 const handleGet_users_$userId_comments_$commentId: ServerHandlerGivenMethod<
 	typeof router.users.$userId.ROUTER.comments.ROUTER.$commentId.CONTRACT,
 	MyHonoContext,
@@ -291,6 +317,7 @@ const handleGet_users_$userId_comments_$commentId: ServerHandlerGivenMethod<
 	};
 };
 
+// ./server.ts
 const app = new Hono();
 
 initHono(
@@ -351,7 +378,7 @@ Bun.serve({
 	port: 3000,
 });
 
-// CLIENT
+// ./client.ts
 const client = createClient(router, {
 	baseUrl: "http://localhost:3000",
 	defaultHeaders: {

@@ -33,7 +33,7 @@
 	},
     "sideEffects": false,
     "scripts": {
-        "lint": "biome check --fix --unsafe",
+        "lint": "biome check --fix",
         "format": "biome format --write .",
         "check": "tsc --noEmit",
         "check:full": "bun run lint && bun run format && bun run check",

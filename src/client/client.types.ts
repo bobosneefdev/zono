@@ -1,5 +1,9 @@
 import z from "zod";
-import type { Contract, ContractMethod, ContractResponseStatuses } from "~/contract/contract.types.js";
+import type {
+	Contract,
+	ContractMethod,
+	ContractResponseStatuses,
+} from "~/contract/contract.types.js";
 import type { ServerHandlerInput } from "~/lib/server.types.js";
 import type { PossiblePromise, SchemaOutput } from "~/lib/util.types.js";
 import type {

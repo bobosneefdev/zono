@@ -1,5 +1,10 @@
 import type z from "zod";
-import type { Contract, ContractMethod, ContractMethodMap, ContractResponseStatuses } from "~/contract/contract.types.js";
+import type {
+	Contract,
+	ContractMethod,
+	ContractMethodMap,
+	ContractResponseStatuses,
+} from "~/contract/contract.types.js";
 import type { PossiblePromise, SchemaOutput } from "~/lib/util.types.js";
 
 type SchemaInput<TSchema> = TSchema extends z.ZodType ? z.input<TSchema> : never;
