@@ -45,12 +45,12 @@ export function resolveRouteContractMap<TRouter, TPath extends RouterPath<TRoute
 		}
 
 		if (
-			"router" in currentRecord &&
-			typeof currentRecord.router === "object" &&
-			currentRecord.router !== null &&
-			key in (currentRecord.router as Record<string, unknown>)
+			"ROUTER" in currentRecord &&
+			typeof currentRecord.ROUTER === "object" &&
+			currentRecord.ROUTER !== null &&
+			key in (currentRecord.ROUTER as Record<string, unknown>)
 		) {
-			current = (currentRecord.router as Record<string, unknown>)[key];
+			current = (currentRecord.ROUTER as Record<string, unknown>)[key];
 			continue;
 		}
 

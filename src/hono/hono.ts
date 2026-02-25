@@ -127,16 +127,16 @@ function collectRoutes(
 		}
 
 		const routerChild =
-			"contract" in value
-				? "router" in value && isRecord(value.router)
-					? value.router
+			"CONTRACT" in value
+				? "ROUTER" in value && isRecord(value.ROUTER)
+					? value.ROUTER
 					: undefined
 				: value;
 
 		const handlerChild =
-			"handler" in handlerNode
-				? "router" in handlerNode && isRecord(handlerNode.router)
-					? handlerNode.router
+			"HANDLER" in handlerNode
+				? "ROUTER" in handlerNode && isRecord(handlerNode.ROUTER)
+					? handlerNode.ROUTER
 					: undefined
 				: handlerNode;
 
