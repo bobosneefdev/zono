@@ -1,6 +1,6 @@
 import type { RequestEvent, RequestHandler } from "@sveltejs/kit";
 import type { Contract, ContractMethod, ContractMethodMap } from "~/contract/contract.types.js";
-import type { ServerHandler } from "~/lib/server.types.js";
+import type { ServerHandler } from "~/internal/server.types.js";
 import type { RouterPath, RouterPathContractMap } from "~/router/router.resolve.types.js";
 
 export type InitSvelteKitOptions<TParams extends Array<unknown>> = {

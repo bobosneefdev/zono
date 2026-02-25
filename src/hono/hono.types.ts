@@ -1,5 +1,5 @@
 import type { Context, MiddlewareHandler } from "hono";
-import type { ServerHandlerTree, ServerOptionsBase } from "~/lib/server.types.js";
+import type { ServerHandlerTree, ServerOptionsBase } from "~/internal/server.types.js";
 
 export type HonoHandlers<TRouter, TParams extends Array<unknown> = [Context]> = ServerHandlerTree<
 	TRouter,

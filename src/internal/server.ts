@@ -1,11 +1,11 @@
 import type { Contract } from "~/contract/contract.types.js";
-import type { ServerHandlerInput, ServerHandlerOutput } from "~/lib/server.types.js";
+import type { ServerHandlerInput, ServerHandlerOutput } from "~/internal/server.types.js";
 import {
 	BYTES_CONTENT_TYPES,
 	isRecord,
 	JSON_CONTENT_TYPES,
 	TEXT_CONTENT_TYPES,
-} from "~/lib/util.js";
+} from "~/internal/util.js";
 
 export type RawContractInput = {
 	pathParams?: unknown;

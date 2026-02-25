@@ -4,9 +4,9 @@ import type {
 	ClientPathsAvailableGivenMethod,
 	ClientRequestInputGivenMethodAndPath,
 } from "~/client/client.types.js";
-import { ServerHandlerOutput } from "~/lib/index.js";
 import { createRouter, RouterPath } from "~/router/index.js";
 import { createClient } from "./client.js";
+import { ServerHandlerOutput } from "~/internal/server.types.js";
 
 const router = createRouter(
 	{

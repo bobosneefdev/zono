@@ -1,5 +1,5 @@
 import type { Contract, ContractMethod, ContractMethodMap } from "~/contract/contract.types.js";
-import { CONTRACT_METHOD_ORDER } from "~/lib/util.js";
+import { CONTRACT_METHOD_ORDER } from "~/internal/util.js";
 import type {
 	RouterContractGivenPath,
 	RouterContractGivenPathAndMethod,

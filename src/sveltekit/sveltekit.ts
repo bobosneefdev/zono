@@ -1,6 +1,6 @@
 import type { RequestHandler } from "@sveltejs/kit";
 import type { ContractMethod } from "~/contract/contract.types.js";
-import { buildContractResponse, parseContractInput } from "~/lib/server.js";
+import { buildContractResponse, parseContractInput } from "~/internal/server.js";
 import { resolveRouteMethodContract } from "~/router/router.resolve.js";
 import type { RouterContractGivenPathAndMethod } from "~/router/router.resolve.types.js";
 import type {

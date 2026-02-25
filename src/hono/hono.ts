@@ -1,9 +1,9 @@
 import type { Context, Hono, MiddlewareHandler } from "hono";
 import type { Contract, ContractMethod, ContractMethodMap } from "~/contract/contract.types.js";
 import type { HonoHandlers, HonoOptions } from "~/hono/hono.types.js";
-import { buildContractResponse, parseContractInput } from "~/lib/server.js";
-import type { ServerHandlerInput, ServerHandlerOutput } from "~/lib/server.types.js";
-import { CONTRACT_METHOD_ORDER, isRecord } from "~/lib/util.js";
+import { buildContractResponse, parseContractInput } from "~/internal/server.js";
+import type { ServerHandlerInput, ServerHandlerOutput } from "~/internal/server.types.js";
+import { CONTRACT_METHOD_ORDER, isRecord } from "~/internal/util.js";
 import { routerDotPathToParamPath } from "~/router/router.resolve.js";
 
 async function parseRequestBody(context: Context): Promise<unknown> {

@@ -16,7 +16,7 @@ import {
 	JSON_CONTENT_TYPES,
 	routeToSegments,
 	TEXT_CONTENT_TYPES,
-} from "~/lib/util.js";
+} from "~/internal/util.js";
 import { resolveRouteMethodContract } from "~/router/router.resolve.js";
 
 function getContractForRouteMethod<

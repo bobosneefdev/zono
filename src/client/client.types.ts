@@ -4,8 +4,8 @@ import type {
 	ContractMethod,
 	ContractResponseStatuses,
 } from "~/contract/contract.types.js";
-import type { ServerHandlerInput } from "~/lib/server.types.js";
-import type { PossiblePromise, SchemaOutput } from "~/lib/util.types.js";
+import type { ServerHandlerInput } from "~/internal/server.types.js";
+import type { PossiblePromise, SchemaOutput } from "~/internal/util.types.js";
 import type {
 	RouterContractGivenPath,
 	RouterContractGivenPathAndMethod,

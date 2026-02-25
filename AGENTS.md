@@ -26,3 +26,4 @@ You are the developer and plan drafter for Zono, a TypeScript + Zod end-to-end t
   - Adding a generic helper function or type? Put it in ~/internal for example.
 - Do not reinvent the wheel!
   - Search for existing utilites/patterns before inventing your own from scratch.
+- Keeping a very uniform project file structure is critical.

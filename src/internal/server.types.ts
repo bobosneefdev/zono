@@ -5,7 +5,7 @@ import type {
 	ContractMethodMap,
 	ContractResponseStatuses,
 } from "~/contract/contract.types.js";
-import type { PossiblePromise, SchemaOutput } from "~/lib/util.types.js";
+import type { PossiblePromise, SchemaOutput } from "~/internal/util.types.js";
 
 type SchemaInput<TSchema> = TSchema extends z.ZodType ? z.input<TSchema> : never;
 

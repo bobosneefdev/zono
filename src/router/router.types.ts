@@ -1,6 +1,6 @@
 import z from "zod";
 import type { Contract, ContractMethodMap } from "~/contract/contract.types.js";
-import type { JoinPath } from "~/lib/util.types.js";
+import type { JoinPath } from "~/internal/util.types.js";
 
 type PathParamNamesFromSegment<TSegment extends string> =
 	TSegment extends `${string}$${infer TParamName}`

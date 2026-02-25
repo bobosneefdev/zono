@@ -6,7 +6,7 @@ import type {
 	ServerHandlerInput,
 	ServerHandlerOutput,
 	ServerHandlerTree,
-} from "~/lib/server.types.js";
+} from "~/internal/server.types.js";
 import { createRouter } from "~/router/index.js";
 
 function expectType<T>(_value: T): void {}
