@@ -448,7 +448,7 @@ describe("initHono", () => {
 		const handlersWithMissingPostMethod = {
 			users: {
 				$id: {
-					handler: {
+					HANDLER: {
 						get: async (
 							data: ServerHandlerInput<
 								NonNullable<typeof router.users.$id.CONTRACT.get>
@@ -464,9 +464,9 @@ describe("initHono", () => {
 							},
 						}),
 					},
-					router: {
+					ROUTER: {
 						$postId: {
-							handler: {
+							HANDLER: {
 								get: async (
 									data: ServerHandlerInput<
 										NonNullable<

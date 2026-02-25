@@ -81,7 +81,7 @@ function collectRoutes(
 			const path = routerDotPathToParamPath(nodePath);
 			const contractMap = value.CONTRACT as ContractMethodMap;
 			const handlerMap = handlerNode.HANDLER;
-			const middleware = handlerNode.middleware;
+			const middleware = handlerNode.MIDDLEWARE;
 
 			if (!isRecord(handlerMap)) {
 				throw new Error(`Missing handler map for path ${path}`);
