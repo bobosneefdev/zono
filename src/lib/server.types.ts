@@ -2,31 +2,29 @@ import type z from "zod";
 import type { Contract, ContractMethod, ContractMethodMap } from "~/contract/contract.types.js";
 import type { PossiblePromise } from "~/lib/util.types.js";
 
-type EmptyObject = object;
-
 type SchemaInput<TSchema> = TSchema extends z.ZodType ? z.input<TSchema> : never;
 
 type SchemaOutput<TSchema> = TSchema extends z.ZodType ? z.output<TSchema> : never;
 
 type IncludePathParams<TContract extends Contract> = TContract["pathParams"] extends z.ZodType
 	? { pathParams: SchemaInput<TContract["pathParams"]> }
-	: EmptyObject;
+	: object;
 
 type IncludePayload<TContract extends Contract> = TContract["payload"] extends {
 	schema: infer TSchema extends z.ZodType;
 }
 	? { payload: SchemaInput<TSchema> }
-	: EmptyObject;
+	: object;
 
 type IncludeQuery<TContract extends Contract> = TContract["query"] extends {
 	schema: infer TSchema extends z.ZodType;
 }
 	? { query: SchemaInput<TSchema> }
-	: EmptyObject;
+	: object;
 
 type IncludeHeaders<TContract extends Contract> = TContract["headers"] extends z.ZodType
 	? { headers: SchemaInput<TContract["headers"]> }
-	: EmptyObject;
+	: object;
 
 export type ServerHandlerInput<TContract extends Contract> = IncludePathParams<TContract> &
 	IncludePayload<TContract> &

@@ -1,7 +1,7 @@
 import z from "zod";
 import type { Contract, ContractMethod } from "~/contract/contract.types.js";
 import type { ServerHandlerInput } from "~/lib/server.types.js";
-import type { PossiblePromise } from "~/lib/util.types.js";
+import type { PossiblePromise, SchemaOutput } from "~/lib/util.types.js";
 import type {
 	RouterContractGivenPath,
 	RouterContractGivenPathAndMethod,
@@ -14,8 +14,6 @@ export type ClientPathsAvailableGivenMethod<TRouter, TMethod extends ContractMet
 		? TPath
 		: never;
 }[RouterPath<TRouter>];
-
-type SchemaOutput<TSchema> = TSchema extends z.ZodType ? z.output<TSchema> : never;
 
 export type ClientRequestInput<TContract extends Contract> = ServerHandlerInput<TContract>;
 

@@ -11,13 +11,13 @@ import {
 	type ContractMethod,
 	type ContractQuery,
 } from "~/contract/contract.types.js";
-import { BYTES_CONTENT_TYPES, JSON_CONTENT_TYPES, TEXT_CONTENT_TYPES } from "~/lib/util.js";
+import {
+	BYTES_CONTENT_TYPES,
+	JSON_CONTENT_TYPES,
+	routeToSegments,
+	TEXT_CONTENT_TYPES,
+} from "~/lib/util.js";
 import { resolveRouteMethodContract } from "~/router/router.resolve.js";
-
-function routeToSegments(route: string): Array<string> {
-	const withoutLeadingSlash = route.startsWith("/") ? route.slice(1) : route;
-	return withoutLeadingSlash.split("/").filter(Boolean);
-}
 
 function getContractForRouteMethod<
 	TRouter,

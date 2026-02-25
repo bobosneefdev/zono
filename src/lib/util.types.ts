@@ -4,6 +4,8 @@ export type PossiblePromise<T> = T | Promise<T>;
 
 export type PossibleZodOptional<T extends z.ZodType> = T | z.ZodOptional<T>;
 
+export type SchemaOutput<TSchema> = TSchema extends z.ZodType ? z.output<TSchema> : never;
+
 export type JoinPath<TPrefix extends string, TSegment extends string> = TPrefix extends ""
 	? TSegment
 	: `${TPrefix}.${TSegment}`;
