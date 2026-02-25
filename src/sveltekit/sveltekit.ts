@@ -65,7 +65,7 @@ export function initSvelteKit<TRouter, TParams extends Array<unknown>>(
 						pathParams: event.params,
 						query: getRequestQuery(event),
 						headers: getRequestHeaders(event),
-						body: contract.body ? await parseRequestBody(event) : undefined,
+						body: contract.payload ? await parseRequestBody(event) : undefined,
 					},
 					defaultBypassIncomingParse,
 				);

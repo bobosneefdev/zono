@@ -57,7 +57,7 @@ const router = createRouter(
 						pathParams: z.object({
 							id: z.string(),
 						}),
-						body: z.object({
+						payload: z.object({
 							name: z.string(),
 						}),
 						responses: {
@@ -503,7 +503,7 @@ describe("initHono", () => {
 				uploads: {
 					CONTRACT: {
 						post: {
-							body: z.instanceof(FormData),
+							payload: z.instanceof(FormData),
 							responses: {
 								200: {
 									contentType: "application/json",

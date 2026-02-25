@@ -79,7 +79,7 @@ const router = createRouter(
 			register: {
 				CONTRACT: {
 					post: {
-						body: zUserBase,
+						payload: zUserBase,
 						responses: {
 							201: {
 								contentType: "application/json",

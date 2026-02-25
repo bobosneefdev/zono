@@ -12,8 +12,8 @@ type IncludePathParams<TContract extends Contract> = TContract["pathParams"] ext
 	? { pathParams: SchemaInput<TContract["pathParams"]> }
 	: EmptyObject;
 
-type IncludeBody<TContract extends Contract> = TContract["body"] extends z.ZodType
-	? { body: SchemaInput<TContract["body"]> }
+type IncludeBody<TContract extends Contract> = TContract["payload"] extends z.ZodType
+	? { body: SchemaInput<TContract["payload"]> }
 	: EmptyObject;
 
 type IncludeQuery<TContract extends Contract> = TContract["query"] extends z.ZodType

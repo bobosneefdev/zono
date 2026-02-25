@@ -30,7 +30,7 @@ export async function parseContractInput<TContract extends Contract>(
 	if (contract.query) {
 		parsed.query = bypassIncomingParse
 			? rawInput.query
-			: await contract.query.parseAsync(rawInput.query);
+			: await contract.query.schema.parseAsync(rawInput.query);
 	}
 
 	if (contract.headers) {
@@ -39,10 +39,10 @@ export async function parseContractInput<TContract extends Contract>(
 			: await contract.headers.parseAsync(rawInput.headers);
 	}
 
-	if (contract.body) {
+	if (contract.payload) {
 		parsed.body = bypassIncomingParse
 			? rawInput.body
-			: await contract.body.parseAsync(rawInput.body);
+			: await contract.payload.schema.parseAsync(rawInput.body);
 	}
 
 	return parsed as ServerHandlerInput<TContract>;
@@ -68,17 +68,17 @@ export async function buildContractResponse<TContract extends Contract>(
 	} else if (JSON_CONTENT_TYPES.has(statusDefinition.contentType)) {
 		const parsedBody = bypassOutgoingParse
 			? rawData
-			: await statusDefinition.body.parseAsync(rawData);
+			: await statusDefinition.schema.parseAsync(rawData);
 		encodedBody = JSON.stringify(parsedBody);
 	} else if (TEXT_CONTENT_TYPES.has(statusDefinition.contentType)) {
 		const parsedBody = bypassOutgoingParse
 			? rawData
-			: await statusDefinition.body.parseAsync(rawData);
+			: await statusDefinition.schema.parseAsync(rawData);
 		encodedBody = String(parsedBody);
 	} else if (BYTES_CONTENT_TYPES.has(statusDefinition.contentType)) {
 		const parsedBody = bypassOutgoingParse
 			? rawData
-			: await statusDefinition.body.parseAsync(rawData);
+			: await statusDefinition.schema.parseAsync(rawData);
 		encodedBody = parsedBody as BodyInit;
 	}
 

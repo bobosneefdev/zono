@@ -37,7 +37,7 @@ const router = createRouter(
 						responses: {
 							200: {
 								contentType: "application/json",
-								body: z.object({
+								schema: z.object({
 									id: z.string(),
 									name: z
 										.string()
@@ -50,12 +50,9 @@ const router = createRouter(
 						pathParams: z.object({
 							id: z.string(),
 						}),
-						body: z.union([
-							z.object({
-								name: z.string(),
-							}),
-							z.instanceof(FormData),
-						]),
+						payload: {
+							contentType: ""
+						},
 						responses: {
 							201: {
 								contentType: "application/json",
@@ -73,7 +70,7 @@ const router = createRouter(
 								pathParams: z.object({
 									id: z.string(),
 								}),
-								body: z.object({
+								payload: z.object({
 									title: z.string(),
 								}),
 								responses: {

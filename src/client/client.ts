@@ -101,12 +101,12 @@ async function parseOutgoingRequest(
 		parsed.pathParams = await contract.pathParams.parseAsync(rawRequest.pathParams);
 	}
 
-	if (contract.body) {
-		parsed.body = await contract.body.parseAsync(rawRequest.body);
+	if (contract.payload) {
+		parsed.body = await contract.payload.schema.parseAsync(rawRequest.body);
 	}
 
 	if (contract.query) {
-		parsed.query = await contract.query.parseAsync(rawRequest.query);
+		parsed.query = await contract.query.schema.parseAsync(rawRequest.query);
 	}
 
 	if (contract.headers) {
@@ -136,13 +136,13 @@ async function parseIncomingResponse<TContract extends Contract>(
 		// Do nothing
 	} else if (JSON_CONTENT_TYPES.has(statusDefinition.contentType)) {
 		const rawBody = await response.clone().json();
-		body = bypassIncomingParse ? rawBody : await statusDefinition.body.parseAsync(rawBody);
+		body = bypassIncomingParse ? rawBody : await statusDefinition.schema.parseAsync(rawBody);
 	} else if (TEXT_CONTENT_TYPES.has(statusDefinition.contentType)) {
 		const rawBody = await response.clone().text();
-		body = bypassIncomingParse ? rawBody : await statusDefinition.body.parseAsync(rawBody);
+		body = bypassIncomingParse ? rawBody : await statusDefinition.schema.parseAsync(rawBody);
 	} else if (BYTES_CONTENT_TYPES.has(statusDefinition.contentType)) {
 		const rawBody = await response.clone().bytes();
-		body = bypassIncomingParse ? rawBody : await statusDefinition.body.parseAsync(rawBody);
+		body = bypassIncomingParse ? rawBody : await statusDefinition.schema.parseAsync(rawBody);
 	}
 
 	let headers: unknown;
