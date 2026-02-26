@@ -1,11 +1,14 @@
-import z from "zod";
 import type {
 	Contract,
 	ContractMethod,
 	ContractResponseStatuses,
 } from "~/contract/contract.types.js";
 import type { ServerHandlerInput } from "~/internal/server.types.js";
-import type { PossiblePromise, SchemaOutput } from "~/internal/util.types.js";
+import type {
+	PossiblePromise,
+	ResponseBodyForStatus,
+	ResponseHeadersForStatus,
+} from "~/internal/util.types.js";
 import type {
 	RouterContractGivenPath,
 	RouterContractGivenPathAndMethod,
@@ -27,27 +30,11 @@ export type ClientRequestInputGivenMethodAndPath<
 	TPath extends ClientPathsAvailableGivenMethod<TRouter, TMethod>,
 > = ClientRequestInput<RouterContractGivenPathAndMethod<TRouter, TPath, TMethod>>;
 
-type ParsedBodyForStatus<
-	TContract extends Contract,
-	TStatus extends ContractResponseStatuses<TContract>,
-> = TContract["responses"][TStatus] extends { body: infer TBody extends z.ZodType }
-	? SchemaOutput<TBody>
-	: TContract["responses"][TStatus] extends { schema: infer TSchema extends z.ZodType }
-		? SchemaOutput<TSchema>
-		: undefined;
-
-type ParsedHeadersForStatus<
-	TContract extends Contract,
-	TStatus extends ContractResponseStatuses<TContract>,
-> = TContract["responses"][TStatus]["headers"] extends z.ZodType
-	? SchemaOutput<TContract["responses"][TStatus]["headers"]>
-	: undefined;
-
 export type ClientOutput<TContract extends Contract> = {
 	[TStatus in ContractResponseStatuses<TContract>]: {
 		status: TStatus;
-		body: ParsedBodyForStatus<TContract, TStatus>;
-		headers: ParsedHeadersForStatus<TContract, TStatus>;
+		body: ResponseBodyForStatus<TContract, TStatus>;
+		headers: ResponseHeadersForStatus<TContract, TStatus>;
 		response: Response;
 	};
 }[ContractResponseStatuses<TContract>];

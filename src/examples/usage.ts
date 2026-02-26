@@ -1,9 +1,9 @@
+import { createClient } from "@bobosneefdev/zono/client";
+import { createRouter, RouterShape, RouterShapeContractGivenPath } from "@bobosneefdev/zono/contract";
+import { initHono } from "@bobosneefdev/zono/hono";
+import { ServerHandlerGivenMethod } from "@bobosneefdev/zono/server";
 import { Context, Hono } from "hono";
 import z from "zod";
-import { createClient } from "./client/index.js";
-import { initHono } from "./hono/index.js";
-import { ServerHandlerGivenMethod } from "./internal/server.types.js";
-import { createRouter, RouterShape, RouterShapeContractGivenPath } from "./router/index.js";
 
 // NOT A MODULE, JUST A SANDBOX FOR TESTING/EXAMPLES THROUGHOUT DEVELOPMENT
 

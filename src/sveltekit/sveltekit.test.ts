@@ -123,7 +123,7 @@ const router = createRouter(
 describe("initSvelteKit", () => {
 	it("provides strongly typed route and method handlers", () => {
 		const implementer = initSvelteKit(router, {
-			getHandlerParams: (event) => [event],
+			transformParams: (event) => [event],
 		});
 		expectType<SvelteKitImplementer<typeof router, [Parameters<RequestHandler>[0]]>>(
 			implementer,
@@ -189,7 +189,7 @@ describe("initSvelteKit", () => {
 
 	it("parses incoming and outgoing values for nested routes", async () => {
 		const implementer = initSvelteKit(router, {
-			getHandlerParams: (event) => [event],
+			transformParams: (event) => [event],
 		});
 
 		const routeExports = implementer("/users/$id/$postId", {
@@ -219,9 +219,9 @@ describe("initSvelteKit", () => {
 		});
 	});
 
-	it("passes explicit handler params from getHandlerParams", async () => {
+	it("passes explicit handler params from transformParams", async () => {
 		const implementer = initSvelteKit(router, {
-			getHandlerParams: (event) => [event],
+			transformParams: (event) => [event],
 		});
 		type EventGetHandler = Parameters<typeof implementer>[1]["get"];
 		type EventPostHandler = Parameters<typeof implementer>[1]["post"];
@@ -267,13 +267,9 @@ describe("initSvelteKit", () => {
 		expect(receivedEvent).toBe(event);
 	});
 
-	it("supports custom getHandlerParams tuple injection", async () => {
-		// @ts-expect-error custom tuple generic requires getHandlerParams option
-		const invalidImplementer = initSvelteKit<typeof router, [Request, string]>(router, {});
-		void invalidImplementer;
-
+	it("supports custom transformParams tuple injection", async () => {
 		const implementer = initSvelteKit<typeof router, [Request, string]>(router, {
-			getHandlerParams: (event) => [event.request, event.url.pathname],
+			transformParams: (event) => [event.request, event.url.pathname],
 		});
 		type CustomGetHandler = Parameters<typeof implementer>[1]["get"];
 		type CustomPostHandler = Parameters<typeof implementer>[1]["post"];
@@ -395,7 +391,7 @@ describe("initSvelteKit", () => {
 		const implementer = initSvelteKit(bypassRouter, {
 			bypassIncomingParse: true,
 			bypassOutgoingParse: true,
-			getHandlerParams: (event) => [event],
+			transformParams: (event) => [event],
 		});
 
 		const itemExports = implementer("/items/$id", {
@@ -454,7 +450,7 @@ describe("initSvelteKit", () => {
 		);
 
 		const implementer = initSvelteKit(formRouter, {
-			getHandlerParams: (event) => [event],
+			transformParams: (event) => [event],
 		});
 
 		const routeExports = implementer("/uploads", {

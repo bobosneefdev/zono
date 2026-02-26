@@ -3,7 +3,7 @@ import type { Contract, ContractMethod, ContractMethodMap } from "~/contract/con
 import type { HonoHandlers, HonoOptions } from "~/hono/hono.types.js";
 import { buildContractResponse, parseContractInput } from "~/internal/server.js";
 import type { ServerHandlerInput, ServerHandlerOutput } from "~/internal/server.types.js";
-import { CONTRACT_METHOD_ORDER, isRecord } from "~/internal/util.js";
+import { CONTRACT_METHOD_ORDER, isContractNode, isRecord, isRouterNode } from "~/internal/util.js";
 import { routerDotPathToParamPath } from "~/router/router.resolve.js";
 
 async function parseRequestBody(context: Context): Promise<unknown> {
@@ -77,7 +77,7 @@ function collectRoutes(
 			continue;
 		}
 
-		if ("CONTRACT" in value && isRecord(value.CONTRACT) && "HANDLER" in handlerNode) {
+		if (isContractNode(value) && "HANDLER" in handlerNode) {
 			const path = routerDotPathToParamPath(nodePath);
 			const contractMap = value.CONTRACT as ContractMethodMap;
 			const handlerMap = handlerNode.HANDLER;
@@ -90,6 +90,10 @@ function collectRoutes(
 			if (middleware !== undefined && !Array.isArray(middleware)) {
 				throw new Error(`Middleware for route must be an array: ${path}`);
 			}
+
+			const validatedMiddleware: Array<MiddlewareHandler> = Array.isArray(middleware)
+				? middleware
+				: [];
 
 			for (const method of getContractMethods(contractMap)) {
 				const contract = contractMap[method];
@@ -104,7 +108,7 @@ function collectRoutes(
 					path,
 					method,
 					contract,
-					middleware: (middleware ?? []) as Array<MiddlewareHandler>,
+					middleware: validatedMiddleware,
 					handler: async (
 						context: Context,
 						options: Required<HonoOptions<Array<unknown>>>,
@@ -126,16 +130,15 @@ function collectRoutes(
 			}
 		}
 
-		const routerChild =
-			"CONTRACT" in value
-				? "ROUTER" in value && isRecord(value.ROUTER)
-					? value.ROUTER
-					: undefined
-				: value;
+		const routerChild = isContractNode(value)
+			? isRouterNode(value)
+				? value.ROUTER
+				: undefined
+			: value;
 
 		const handlerChild =
 			"HANDLER" in handlerNode
-				? "ROUTER" in handlerNode && isRecord(handlerNode.ROUTER)
+				? isRouterNode(handlerNode)
 					? handlerNode.ROUTER
 					: undefined
 				: handlerNode;

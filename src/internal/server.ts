@@ -20,11 +20,11 @@ function parseRawQuery(contract: Contract, rawQuery: unknown): unknown {
 	}
 
 	if (contract.query.type === "json") {
-		if (typeof rawQuery !== "object" || rawQuery === null) {
+		if (!isRecord(rawQuery)) {
 			return rawQuery;
 		}
 
-		const encoded = (rawQuery as Record<string, unknown>).json;
+		const encoded = rawQuery.json;
 		if (typeof encoded !== "string") {
 			return undefined;
 		}

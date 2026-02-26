@@ -18,10 +18,10 @@ type PathParamsShape<TPath extends string> = {
 };
 
 export interface RouterShape {
-	[key: string]: RouterRouterNode | RouterContractNode;
+	[key: string]: RouterGroupNode | RouterContractNode;
 }
 
-export type RouterRouterNode = {
+export type RouterGroupNode = {
 	TYPE: "router";
 	ROUTER: RouterShape;
 };
@@ -32,7 +32,7 @@ export type RouterContractNode = {
 };
 
 export type Router<TShape extends RouterShape, TPath extends string = ""> = {
-	[K in keyof TShape]: TShape[K] extends RouterRouterNode
+	[K in keyof TShape]: TShape[K] extends RouterGroupNode
 		? Router<TShape[K]["ROUTER"], JoinPath<TPath, Extract<K, string>>>
 		: {
 				CONTRACT: ContractMethodMap<ContractForPath<JoinPath<TPath, Extract<K, string>>>>;
@@ -56,7 +56,7 @@ type PathsFromShape<TShape extends RouterShape, TPrefix extends string = ""> = {
 								TPrefix extends "" ? K : JoinPath<TPrefix, K>
 							>
 						: never)
-		: TShape[K] extends RouterRouterNode
+		: TShape[K] extends RouterGroupNode
 			? PathsFromShape<TShape[K]["ROUTER"], JoinPath<TPrefix, K>>
 			: never;
 }[keyof TShape & string];
@@ -67,7 +67,7 @@ type ContractFromPath<
 	TShape extends RouterShape,
 	TPath extends RouterShapePath<TShape>,
 > = TPath extends `${infer TPrefix}.${infer TSuffix}`
-	? TShape[TPrefix] extends RouterRouterNode
+	? TShape[TPrefix] extends RouterGroupNode
 		? ContractFromPath<
 				TShape[TPrefix]["ROUTER"],
 				TSuffix & RouterShapePath<TShape[TPrefix]["ROUTER"]>

@@ -5,9 +5,12 @@ import type {
 	ContractMethodMap,
 	ContractResponseStatuses,
 } from "~/contract/contract.types.js";
-import type { PossiblePromise, SchemaOutput } from "~/internal/util.types.js";
-
-type SchemaInput<TSchema> = TSchema extends z.ZodType ? z.input<TSchema> : never;
+import type {
+	PossiblePromise,
+	ResponseBodyForStatus,
+	ResponseHeadersForStatus,
+	SchemaInput,
+} from "~/internal/util.types.js";
 
 type IncludePathParams<TContract extends Contract> = TContract["pathParams"] extends z.ZodType
 	? { pathParams: SchemaInput<TContract["pathParams"]> }
@@ -34,26 +37,10 @@ export type ServerHandlerInput<TContract extends Contract> = IncludePathParams<T
 	IncludeQuery<TContract> &
 	IncludeHeaders<TContract>;
 
-type ResponseBodyForStatus<
-	TContract extends Contract,
-	TStatus extends ContractResponseStatuses<TContract>,
-> = TContract["responses"][TStatus] extends { body: infer TBody extends z.ZodType }
-	? SchemaOutput<TBody>
-	: TContract["responses"][TStatus] extends { schema: infer TSchema extends z.ZodType }
-		? SchemaOutput<TSchema>
-		: undefined;
-
 type ResponseContentTypeForStatus<
 	TContract extends Contract,
 	TStatus extends ContractResponseStatuses<TContract>,
 > = TContract["responses"][TStatus]["contentType"];
-
-type ResponseHeadersForStatus<
-	TContract extends Contract,
-	TStatus extends ContractResponseStatuses<TContract>,
-> = TContract["responses"][TStatus]["headers"] extends z.ZodType
-	? SchemaOutput<TContract["responses"][TStatus]["headers"]>
-	: undefined;
 
 type IncludeOutputData<
 	TContract extends Contract,
@@ -92,7 +79,7 @@ export type ServerHandlerGivenMethod<
 	TMethod extends keyof TContract,
 > = ServerHandler<Extract<TContract[TMethod], Contract>, TParams>;
 
-type ServerHandlerMethodMap<
+export type ServerHandlerMethodMap<
 	TContractMap extends ContractMethodMap,
 	TParams extends Array<unknown>,
 > = {

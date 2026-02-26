@@ -1,5 +1,5 @@
 import type { Contract, ContractMethod, ContractMethodMap } from "~/contract/contract.types.js";
-import { CONTRACT_METHOD_ORDER } from "~/internal/util.js";
+import { CONTRACT_METHOD_ORDER, isContractNode, isRecord, isRouterNode } from "~/internal/util.js";
 import type {
 	RouterContractGivenPath,
 	RouterContractGivenPathAndMethod,
@@ -34,36 +34,24 @@ export function resolveRouteContractMap<TRouter, TPath extends RouterPath<TRoute
 
 	let current: unknown = router;
 	for (const key of keys) {
-		if (typeof current !== "object" || current === null) {
+		if (!isRecord(current)) {
 			throw new Error(`Unknown path ${routePath}`);
 		}
 
-		const currentRecord = current as Record<string, unknown>;
-		if (key in currentRecord) {
-			current = currentRecord[key];
+		if (key in current) {
+			current = current[key];
 			continue;
 		}
 
-		if (
-			"ROUTER" in currentRecord &&
-			typeof currentRecord.ROUTER === "object" &&
-			currentRecord.ROUTER !== null &&
-			key in (currentRecord.ROUTER as Record<string, unknown>)
-		) {
-			current = (currentRecord.ROUTER as Record<string, unknown>)[key];
+		if (isRouterNode(current) && key in current.ROUTER) {
+			current = current.ROUTER[key];
 			continue;
 		}
 
 		throw new Error(`Unknown path ${routePath}`);
 	}
 
-	if (
-		typeof current !== "object" ||
-		current === null ||
-		!("CONTRACT" in current) ||
-		typeof current.CONTRACT !== "object" ||
-		current.CONTRACT === null
-	) {
+	if (!isContractNode(current)) {
 		throw new Error(`Route does not resolve to a contract: ${routePath}`);
 	}
 

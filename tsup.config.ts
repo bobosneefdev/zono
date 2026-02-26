@@ -5,6 +5,7 @@ export default defineConfig({
 	entry: {
 		contract: "src/contract.ts",
 		client: "src/client/index.ts",
+		server: "src/server/index.ts",
 		hono: "src/hono/index.ts",
 		sveltekit: "src/sveltekit/index.ts",
 	},
