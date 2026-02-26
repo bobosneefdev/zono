@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, mock } from "bun:test";
+import { JsonContentType } from "@bobosneefdev/zono/contract.js";
 import z from "zod";
 import type {
 	ClientPathsAvailableGivenMethod,
@@ -99,7 +100,10 @@ const router = createRouter(
 
 function expectType<T>(_value: T): void {}
 
+const originalFetch = globalThis.fetch;
+
 afterEach(() => {
+	globalThis.fetch = originalFetch;
 	mock.restore();
 });
 
@@ -463,5 +467,75 @@ describe("createClient", () => {
 		await expect(client.parseResponse("get", "/users/$id", response)).rejects.toThrow(
 			"Unexpected response status: 400",
 		);
+	});
+
+	it("calls real public HTTP API (chuck norris API)", async () => {
+		const jsonPlaceholderRouter = createRouter(
+			{
+				random: {
+					TYPE: "contract",
+				},
+				categories: {
+					TYPE: "contract",
+				},
+			},
+			{
+				random: {
+					CONTRACT: {
+						get: {
+							query: {
+								type: "standard",
+								schema: z.object({
+									category: z.string().optional(),
+								}),
+							},
+							responses: {
+								200: {
+									contentType: JsonContentType.JSON,
+									schema: z.object({
+										categories: z.array(z.string()),
+										created_at: z
+											.string()
+											.regex(
+												/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6}$/,
+												"Invalid timestamp format",
+											),
+									}),
+								},
+							},
+						},
+					},
+				},
+				categories: {
+					CONTRACT: {
+						get: {
+							responses: {
+								200: {
+									contentType: "application/json",
+									schema: z.any(),
+								},
+							},
+						},
+					},
+				},
+			},
+		);
+
+		const client = createClient(jsonPlaceholderRouter, {
+			baseUrl: "https://api.chucknorris.io/jokes",
+		});
+
+		const categories = await client.get("/categories");
+		console.log(JSON.stringify(categories.body, null, 2), categories.response);
+		const randomCategory = categories.body[Math.floor(Math.random() * categories.body.length)];
+
+		// expect random category
+
+		const resp = await client.get("/random", {
+			query: { category: randomCategory },
+		});
+		console.log(JSON.stringify(resp, null, 2));
+
+		// expect 200 resp
 	});
 });

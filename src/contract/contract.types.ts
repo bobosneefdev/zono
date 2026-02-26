@@ -92,9 +92,7 @@ export type ContractQueryStandard = {
 	schema: z.ZodType<Record<string, ContractQueryStandardValue>>;
 };
 
-export type ContractQueryStandardValue = PossibleZodOptional<
-	z.ZodType<string, string> | z.ZodType<Array<string>, Array<string>>
->;
+export type ContractQueryStandardValue = string | Array<string> | undefined;
 
 export type ContractHeaders = z.ZodObject<
 	Record<string, PossibleZodOptional<z.ZodType<string, string>>>
