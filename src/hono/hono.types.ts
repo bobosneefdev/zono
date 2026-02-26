@@ -11,5 +11,6 @@ export type HonoOptions<TParams extends Array<unknown> = [Context]> = ServerOpti
 	[Context],
 	TParams
 > & {
+	basePath?: string;
 	globalMiddleware?: Array<MiddlewareHandler>;
 };

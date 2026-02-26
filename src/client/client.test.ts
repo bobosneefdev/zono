@@ -469,6 +469,195 @@ describe("createClient", () => {
 		);
 	});
 
+	it("throws when required path param is missing", async () => {
+		const client = createClient(router, {
+			baseUrl: "http://localhost:3000",
+			bypassOutgoingParse: true,
+		});
+
+		await expect(client.get("/users/$id", { pathParams: {} } as never)).rejects.toThrow(
+			"Missing required path param: id",
+		);
+	});
+
+	it("builds query string with array values for standard query", async () => {
+		const queryRouter = createRouter(
+			{
+				search: { TYPE: "contract" },
+			},
+			{
+				search: {
+					CONTRACT: {
+						get: {
+							query: {
+								type: "standard",
+								schema: z.object({
+									tags: z.array(z.string()),
+								}),
+							},
+							responses: {
+								200: {
+									contentType: "application/json",
+									schema: z.object({ results: z.array(z.any()) }),
+								},
+							},
+						},
+					},
+				},
+			},
+		);
+
+		const fetchMock = mock(async (url: string) => {
+			expect(url).toContain("tags=a");
+			expect(url).toContain("tags=b");
+			return new Response(JSON.stringify({ results: [] }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			});
+		});
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+		const client = createClient(queryRouter, { baseUrl: "http://localhost:3000" });
+		await client.get("/search", { query: { tags: ["a", "b"] } });
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	it("builds query string with json type", async () => {
+		const jsonQueryRouter = createRouter(
+			{
+				query: { TYPE: "contract" },
+			},
+			{
+				query: {
+					CONTRACT: {
+						get: {
+							query: {
+								type: "json",
+								schema: z.object({ filter: z.string() }),
+							},
+							responses: {
+								200: {
+									contentType: "application/json",
+									schema: z.object({ ok: z.boolean() }),
+								},
+							},
+						},
+					},
+				},
+			},
+		);
+
+		const fetchMock = mock(async (url: string) => {
+			expect(url).toContain("json=");
+			expect(url).toContain(encodeURIComponent(JSON.stringify({ filter: "active" })));
+			return new Response(JSON.stringify({ ok: true }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			});
+		});
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+		const client = createClient(jsonQueryRouter, { baseUrl: "http://localhost:3000" });
+		await client.get("/query", { query: { filter: "active" } });
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	it("parses response with headers schema", async () => {
+		const headersRouter = createRouter(
+			{
+				item: { TYPE: "contract" },
+			},
+			{
+				item: {
+					CONTRACT: {
+						get: {
+							responses: {
+								200: {
+									contentType: "application/json",
+									schema: z.object({ value: z.string() }),
+									headers: z.object({ "x-custom": z.string() }),
+								},
+							},
+						},
+					},
+				},
+			},
+		);
+
+		const client = createClient(headersRouter, { baseUrl: "http://localhost:3000" });
+		const parsed = await client.parseResponse(
+			"get",
+			"/item",
+			new Response(JSON.stringify({ value: "ok" }), {
+				status: 200,
+				headers: { "content-type": "application/json", "x-custom": "custom-value" },
+			}),
+		);
+		expect(parsed.status).toBe(200);
+		if (parsed.status === 200) {
+			expect(parsed.body).toEqual({ value: "ok" });
+			expect(parsed.headers).toEqual({ "x-custom": "custom-value" });
+		}
+	});
+
+	it("merges request headers into outgoing request", async () => {
+		let capturedInit: RequestInit | undefined;
+		const fetchMock = mock(async (_url: string, init?: RequestInit) => {
+			capturedInit = init;
+			return new Response(JSON.stringify({ pong: "ok" }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			});
+		});
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+		const headerOnlyRouter = createRouter(
+			{
+				ping: { TYPE: "contract" },
+			},
+			{
+				ping: {
+					CONTRACT: {
+						get: {
+							headers: z.object({ "x-ping-header": z.string() }),
+							responses: {
+								200: {
+									contentType: "application/json",
+									schema: z.object({ pong: z.string() }),
+								},
+							},
+						},
+					},
+				},
+			},
+		);
+
+		const client = createClient(headerOnlyRouter, { baseUrl: "http://localhost:3000" });
+		await client.get("/ping", { headers: { "x-ping-header": "request-value" } });
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(capturedInit?.headers).toBeInstanceOf(Headers);
+		expect((capturedInit?.headers as Headers).get("x-ping-header")).toBe("request-value");
+	});
+
+	it("sets content-type application/json when sending JSON payload without explicit header", async () => {
+		const fetchMock = mock(async (_url: string, init?: RequestInit) => {
+			const headers = init?.headers as Headers;
+			expect(headers?.get("content-type")).toBe("application/json");
+			return new Response(JSON.stringify({ ok: true }), {
+				status: 201,
+				headers: { "content-type": "application/json" },
+			});
+		});
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+		const client = createClient(router, { baseUrl: "http://localhost:3000" });
+		await client.post("/users/$id", {
+			pathParams: { id: "1" },
+			payload: { name: "Jake" },
+		});
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
 	it("calls real public HTTP API (chuck norris API)", async () => {
 		const jsonPlaceholderRouter = createRouter(
 			{

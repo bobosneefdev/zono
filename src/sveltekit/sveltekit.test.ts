@@ -479,4 +479,38 @@ describe("initSvelteKit", () => {
 			name: "Jane",
 		});
 	});
+
+	it("parses JSON request body when content-type is application/json", async () => {
+		const implementer = initSvelteKit(router, {
+			transformParams: (event) => [event],
+		});
+
+		const routeExports = implementer("/users/$id", {
+			get: async (data) => ({
+				status: 200 as const,
+				data: { id: data.pathParams.id, name: "placeholder" },
+				headers: { "x-output-header": "ok" },
+			}),
+			post: async (data) => ({
+				status: 201 as const,
+				data: {
+					id: data.pathParams.id,
+					name: data.payload.name,
+				},
+			}),
+		});
+
+		const response = await routeExports.POST(
+			createEvent({
+				url: "http://localhost/users/123",
+				method: "POST",
+				params: { id: "123" },
+				body: { name: "Alice" },
+				headers: { "content-type": "application/json" },
+			}),
+		);
+
+		expect(response.status).toBe(201);
+		expect(await response.json()).toEqual({ id: "123", name: "Alice" });
+	});
 });

@@ -293,6 +293,77 @@ describe("initHono", () => {
 		});
 	});
 
+	it("supports basePath option", async () => {
+		const app = new Hono();
+
+		initHono(
+			app,
+			router,
+			{
+				users: {
+					$id: {
+						HANDLER: {
+							get: async (data) => ({
+								status: 200,
+								data: {
+									id: data.pathParams.id,
+									name: "john",
+								},
+								headers: { "x-custom-header": "ok" },
+							}),
+							post: async (data) => ({
+								status: 201,
+								data: {
+									id: data.pathParams.id,
+									name: data.payload.name,
+								},
+							}),
+						},
+						ROUTER: {
+							$postId: {
+								HANDLER: {
+									get: async (data) => ({
+										status: 200,
+										data: {
+											id: data.pathParams.postId,
+											title: "post",
+										},
+									}),
+								},
+							},
+						},
+					},
+				},
+			},
+			{ basePath: "/api" },
+		);
+
+		const withBasePath = await app.request("http://localhost/api/users/123", {
+			method: "GET",
+			headers: { "x-input-header": "ok" },
+		});
+		expect(withBasePath.status).toBe(200);
+		expect(await withBasePath.json()).toEqual({
+			id: "123",
+			name: "JOHN",
+		});
+
+		const withoutBasePath = await app.request("http://localhost/users/123", {
+			method: "GET",
+			headers: { "x-input-header": "ok" },
+		});
+		expect(withoutBasePath.status).toBe(404);
+
+		const nestedWithBasePath = await app.request("http://localhost/api/users/123/abc", {
+			method: "GET",
+		});
+		expect(nestedWithBasePath.status).toBe(200);
+		expect(await nestedWithBasePath.json()).toEqual({
+			id: "abc",
+			title: "post",
+		});
+	});
+
 	it("supports bypassIncomingParse option", async () => {
 		const bypassRouter = createRouter(
 			{
@@ -444,6 +515,118 @@ describe("initHono", () => {
 		expect(postsResponse.status).toBe(200);
 		expect(postsResponse.headers.get("x-global-middleware")).toBe("enabled");
 		expect(postsResponse.headers.get("x-route-middleware")).toBeNull();
+	});
+
+	it("throws when handler map is not a record", () => {
+		const app = new Hono();
+		const handlersWithNullHandlerMap = {
+			users: {
+				$id: {
+					HANDLER: null,
+					ROUTER: {
+						$postId: {
+							HANDLER: {
+								get: async (
+									data: ServerHandlerInput<
+										NonNullable<
+											typeof router.users.$id.ROUTER.$postId.CONTRACT.get
+										>
+									>,
+								) => ({
+									status: 200,
+									data: {
+										id: data.pathParams.postId,
+										title: "post",
+									},
+								}),
+							},
+						},
+					},
+				},
+			},
+		} as unknown as ServerHandlerTree<typeof router, [Context]>;
+
+		expect(() => initHono(app, router, handlersWithNullHandlerMap)).toThrow(
+			"Missing handler map for path /users/:id",
+		);
+	});
+
+	it("throws when middleware is not an array", () => {
+		const app = new Hono();
+		const handlersWithInvalidMiddleware = {
+			users: {
+				$id: {
+					HANDLER: {
+						get: async (
+							data: ServerHandlerInput<
+								NonNullable<typeof router.users.$id.CONTRACT.get>
+							>,
+						) => ({
+							status: 200,
+							data: { id: data.pathParams.id, name: "john" },
+							headers: { "x-custom-header": "ok" },
+						}),
+					},
+					MIDDLEWARE: "not-an-array",
+					ROUTER: {
+						$postId: {
+							HANDLER: {
+								get: async (
+									data: ServerHandlerInput<
+										NonNullable<
+											typeof router.users.$id.ROUTER.$postId.CONTRACT.get
+										>
+									>,
+								) => ({
+									status: 200,
+									data: {
+										id: data.pathParams.postId,
+										title: "post",
+									},
+								}),
+							},
+						},
+					},
+				},
+			},
+		} as unknown as ServerHandlerTree<typeof router, [Context]>;
+
+		expect(() => initHono(app, router, handlersWithInvalidMiddleware)).toThrow(
+			"Middleware for route must be an array: /users/:id",
+		);
+	});
+
+	it("registers options method route", async () => {
+		const methodsRouter = createRouter(
+			{
+				ping: { TYPE: "contract" },
+			},
+			{
+				ping: {
+					CONTRACT: {
+						options: {
+							responses: {
+								204: { contentType: null },
+							},
+						},
+					},
+				},
+			},
+		);
+
+		const app = new Hono();
+		initHono(app, methodsRouter, {
+			ping: {
+				HANDLER: {
+					options: async () => ({ status: 204 }),
+				},
+			},
+		});
+
+		const optionsResponse = await app.request("http://localhost/ping", {
+			method: "OPTIONS",
+		});
+		expect(optionsResponse.status).toBe(204);
 	});
 
 	it("throws deterministic error when method contract is missing matching handler", () => {

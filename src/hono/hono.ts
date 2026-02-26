@@ -10,6 +10,13 @@ import type { ErrorMode, ServerHandlerOutput } from "~/internal/server.types.js"
 import { CONTRACT_METHOD_ORDER, isContractNode, isRecord, isRouterNode } from "~/internal/util.js";
 import { routerDotPathToParamPath } from "~/router/router.resolve.js";
 
+function normalizeBasePath(basePath: string | undefined): string {
+	if (basePath == null || basePath === "") return "";
+	const trimmed = basePath.trim().replace(/\/+$/, "");
+	if (trimmed === "") return "";
+	return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+}
+
 async function parseRequestBody(context: Context): Promise<unknown> {
 	const contentType = context.req.header("content-type") ?? "";
 	if (contentType.toLowerCase().includes("application/json")) {
@@ -44,7 +51,10 @@ async function buildResponse<TContract extends Contract>(
 	return await buildContractResponse(contract, result, defaultBypassOutgoingParse);
 }
 
-type ResolvedHonoOptions = Required<HonoOptions<Array<unknown>>> & { errorMode: ErrorMode };
+type ResolvedHonoOptions = Required<Omit<HonoOptions<Array<unknown>>, "basePath">> & {
+	basePath: string;
+	errorMode: ErrorMode;
+};
 
 type RouteRegistration = {
 	path: string;
@@ -198,27 +208,29 @@ function registerRoute(
 		throw new Error("Middleware chain completed without producing a response");
 	};
 
+	const path = options.basePath ? `${options.basePath}${registration.path}` : registration.path;
+
 	switch (registration.method) {
 		case "get":
-			app.get(registration.path, routeHandler);
+			app.get(path, routeHandler);
 			return;
 		case "post":
-			app.post(registration.path, routeHandler);
+			app.post(path, routeHandler);
 			return;
 		case "put":
-			app.put(registration.path, routeHandler);
+			app.put(path, routeHandler);
 			return;
 		case "delete":
-			app.delete(registration.path, routeHandler);
+			app.delete(path, routeHandler);
 			return;
 		case "patch":
-			app.patch(registration.path, routeHandler);
+			app.patch(path, routeHandler);
 			return;
 		case "options":
-			app.options(registration.path, routeHandler);
+			app.options(path, routeHandler);
 			return;
 		case "head":
-			app.on("HEAD", registration.path, routeHandler);
+			app.on("HEAD", path, routeHandler);
 			return;
 		default:
 			throw new Error(`Unsupported HTTP method: ${registration.method}`);
@@ -232,6 +244,7 @@ export function initHono<TRouter, TParams extends Array<unknown> = [Context]>(
 	options?: HonoOptions<TParams>,
 ): Hono {
 	const resolvedOptions: ResolvedHonoOptions = {
+		basePath: normalizeBasePath(options?.basePath),
 		bypassIncomingParse: options?.bypassIncomingParse ?? false,
 		bypassOutgoingParse: options?.bypassOutgoingParse ?? false,
 		errorMode: options?.errorMode ?? "hidden",
