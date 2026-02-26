@@ -3,8 +3,9 @@ import z from "zod";
 import type {
 	ClientPathsAvailableGivenMethod,
 	ClientRequestInputGivenMethodAndPath,
+	ClientValidationErrorResponse,
 } from "~/client/client.types.js";
-import { ServerHandlerOutput } from "~/internal/server.types.js";
+import type { ServerHandlerOutput } from "~/internal/server.types.js";
 import { createRouter, RouterPath } from "~/router/index.js";
 import { createClient } from "./client.js";
 
@@ -402,5 +403,65 @@ describe("createClient", () => {
 		const nullResponseWithUndefinedData: NullResponse = { status: 204, data: undefined };
 		expectType<204>(nullResponseOk.status);
 		expectType<204>(nullResponseWithUndefinedData.status);
+	});
+
+	it("parses 400 validation errors with serverErrorMode 'public'", async () => {
+		const issuesPayload = [
+			{ code: "invalid_type", expected: "string", path: ["id"], message: "Expected string" },
+		];
+		const client = createClient(router, {
+			baseUrl: "http://localhost:3000",
+			serverErrorMode: "public",
+		});
+
+		const response = new Response(JSON.stringify({ issues: issuesPayload }), {
+			status: 400,
+			headers: { "content-type": "application/json" },
+		});
+
+		const parsed = await client.parseResponse("get", "/users/$id", response);
+
+		expect(parsed.status).toBe(400);
+		if (parsed.status === 400) {
+			expectType<ClientValidationErrorResponse<"public">>(parsed);
+			expect(Array.isArray(parsed.body.issues)).toBe(true);
+			expect(parsed.body.issues.length).toBe(1);
+			expect(parsed.body.issues[0].code).toBe("invalid_type");
+		}
+	});
+
+	it("parses 400 validation errors with serverErrorMode 'hidden'", async () => {
+		const client = createClient(router, {
+			baseUrl: "http://localhost:3000",
+			serverErrorMode: "hidden",
+		});
+
+		const response = new Response(JSON.stringify({ issues: 3 }), {
+			status: 400,
+			headers: { "content-type": "application/json" },
+		});
+
+		const parsed = await client.parseResponse("get", "/users/$id", response);
+
+		expect(parsed.status).toBe(400);
+		if (parsed.status === 400) {
+			expectType<ClientValidationErrorResponse<"hidden">>(parsed);
+			expect(parsed.body.issues).toBe(3);
+		}
+	});
+
+	it("throws on unexpected 400 when serverErrorMode is not set", async () => {
+		const client = createClient(router, {
+			baseUrl: "http://localhost:3000",
+		});
+
+		const response = new Response(JSON.stringify({ issues: [] }), {
+			status: 400,
+			headers: { "content-type": "application/json" },
+		});
+
+		await expect(client.parseResponse("get", "/users/$id", response)).rejects.toThrow(
+			"Unexpected response status: 400",
+		);
 	});
 });

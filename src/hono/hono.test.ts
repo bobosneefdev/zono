@@ -552,6 +552,99 @@ describe("initHono", () => {
 		});
 	});
 
+	it("returns hidden validation errors by default on invalid input", async () => {
+		const app = new Hono();
+
+		initHono(app, router, {
+			users: {
+				$id: {
+					HANDLER: {
+						get: async (data) => ({
+							status: 200,
+							data: { id: data.pathParams.id, name: "john" },
+							headers: { "x-custom-header": "ok" },
+						}),
+						post: async (data) => ({
+							status: 201,
+							data: { id: data.pathParams.id, name: data.payload.name },
+						}),
+					},
+					ROUTER: {
+						$postId: {
+							HANDLER: {
+								get: async (data) => ({
+									status: 200,
+									data: { id: data.pathParams.postId, title: "post" },
+								}),
+							},
+						},
+					},
+				},
+			},
+		});
+
+		const response = await app.request("http://localhost/users/123", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ name: 12345 }),
+		});
+
+		expect(response.status).toBe(400);
+		const body = await response.json();
+		expect(typeof body.issues).toBe("number");
+		expect(body.issues).toBeGreaterThan(0);
+	});
+
+	it("returns public validation errors when errorMode is 'public'", async () => {
+		const app = new Hono();
+
+		initHono(
+			app,
+			router,
+			{
+				users: {
+					$id: {
+						HANDLER: {
+							get: async (data) => ({
+								status: 200,
+								data: { id: data.pathParams.id, name: "john" },
+								headers: { "x-custom-header": "ok" },
+							}),
+							post: async (data) => ({
+								status: 201,
+								data: { id: data.pathParams.id, name: data.payload.name },
+							}),
+						},
+						ROUTER: {
+							$postId: {
+								HANDLER: {
+									get: async (data) => ({
+										status: 200,
+										data: { id: data.pathParams.postId, title: "post" },
+									}),
+								},
+							},
+						},
+					},
+				},
+			},
+			{ errorMode: "public" },
+		);
+
+		const response = await app.request("http://localhost/users/123", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ name: 12345 }),
+		});
+
+		expect(response.status).toBe(400);
+		const body = await response.json();
+		expect(Array.isArray(body.issues)).toBe(true);
+		expect(body.issues.length).toBeGreaterThan(0);
+		expect(body.issues[0]).toHaveProperty("code");
+		expect(body.issues[0]).toHaveProperty("message");
+	});
+
 	it("encodes json/text/bytes/null responses based on response contentType", async () => {
 		const contentTypeRouter = createRouter(
 			{

@@ -12,6 +12,16 @@ import type {
 	SchemaInput,
 } from "~/internal/util.types.js";
 
+export type ErrorMode = "public" | "hidden";
+
+export type ValidationErrorBodyPublic = { issues: Array<z.core.$ZodIssue> };
+
+export type ValidationErrorBodyHidden = { issues: number };
+
+export type ValidationErrorBody<TMode extends ErrorMode> = TMode extends "public"
+	? ValidationErrorBodyPublic
+	: ValidationErrorBodyHidden;
+
 type IncludePathParams<TContract extends Contract> = TContract["pathParams"] extends z.ZodType
 	? { pathParams: SchemaInput<TContract["pathParams"]> }
 	: object;
@@ -117,5 +127,6 @@ export type ServerOptionsBase<
 > = {
 	bypassIncomingParse?: boolean;
 	bypassOutgoingParse?: boolean;
+	errorMode?: ErrorMode;
 	transformParams?: (...args: TInParams) => TOutParams;
 };

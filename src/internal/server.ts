@@ -1,5 +1,12 @@
+import type z from "zod";
 import type { Contract } from "~/contract/contract.types.js";
-import type { ServerHandlerInput, ServerHandlerOutput } from "~/internal/server.types.js";
+import type {
+	ErrorMode,
+	ServerHandlerInput,
+	ServerHandlerOutput,
+	ValidationErrorBodyHidden,
+	ValidationErrorBodyPublic,
+} from "~/internal/server.types.js";
 import {
 	BYTES_CONTENT_TYPES,
 	isRecord,
@@ -35,39 +42,81 @@ function parseRawQuery(contract: Contract, rawQuery: unknown): unknown {
 	return rawQuery;
 }
 
+export type ParseContractResult<TContract extends Contract> =
+	| { success: true; data: ServerHandlerInput<TContract> }
+	| { success: false; issues: Array<z.core.$ZodIssue> };
+
 export async function parseContractInput<TContract extends Contract>(
 	contract: TContract,
 	rawInput: RawContractInput,
 	bypassIncomingParse: boolean,
-): Promise<ServerHandlerInput<TContract>> {
+): Promise<ParseContractResult<TContract>> {
 	const parsed: Record<string, unknown> = {};
 
+	if (bypassIncomingParse) {
+		if (contract.pathParams) parsed.pathParams = rawInput.pathParams;
+		if (contract.query) parsed.query = parseRawQuery(contract, rawInput.query);
+		if (contract.headers) parsed.headers = rawInput.headers;
+		if (contract.payload) parsed.payload = rawInput.payload;
+		return { success: true, data: parsed as ServerHandlerInput<TContract> };
+	}
+
+	const allIssues: Array<z.core.$ZodIssue> = [];
+
 	if (contract.pathParams) {
-		parsed.pathParams = bypassIncomingParse
-			? rawInput.pathParams
-			: await contract.pathParams.parseAsync(rawInput.pathParams);
+		const result = await contract.pathParams.safeParseAsync(rawInput.pathParams);
+		if (result.success) {
+			parsed.pathParams = result.data;
+		} else {
+			allIssues.push(...result.error.issues);
+		}
 	}
 
 	if (contract.query) {
 		const rawQuery = parseRawQuery(contract, rawInput.query);
-		parsed.query = bypassIncomingParse
-			? rawQuery
-			: await contract.query.schema.parseAsync(rawQuery);
+		const result = await contract.query.schema.safeParseAsync(rawQuery);
+		if (result.success) {
+			parsed.query = result.data;
+		} else {
+			allIssues.push(...result.error.issues);
+		}
 	}
 
 	if (contract.headers) {
-		parsed.headers = bypassIncomingParse
-			? rawInput.headers
-			: await contract.headers.parseAsync(rawInput.headers);
+		const result = await contract.headers.safeParseAsync(rawInput.headers);
+		if (result.success) {
+			parsed.headers = result.data;
+		} else {
+			allIssues.push(...result.error.issues);
+		}
 	}
 
 	if (contract.payload) {
-		parsed.payload = bypassIncomingParse
-			? rawInput.payload
-			: await contract.payload.schema.parseAsync(rawInput.payload);
+		const result = await contract.payload.schema.safeParseAsync(rawInput.payload);
+		if (result.success) {
+			parsed.payload = result.data;
+		} else {
+			allIssues.push(...result.error.issues);
+		}
 	}
 
-	return parsed as ServerHandlerInput<TContract>;
+	if (allIssues.length > 0) {
+		return { success: false, issues: allIssues };
+	}
+
+	return { success: true, data: parsed as ServerHandlerInput<TContract> };
+}
+
+export function buildValidationErrorResponse(
+	issues: Array<z.core.$ZodIssue>,
+	errorMode: ErrorMode,
+): Response {
+	const body: ValidationErrorBodyPublic | ValidationErrorBodyHidden =
+		errorMode === "public" ? { issues } : { issues: issues.length };
+	return new Response(JSON.stringify(body), {
+		status: 400,
+		headers: { "content-type": "application/json" },
+	});
 }
 
 export async function buildContractResponse<TContract extends Contract>(

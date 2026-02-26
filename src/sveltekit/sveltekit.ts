@@ -1,6 +1,10 @@
 import type { RequestHandler } from "@sveltejs/kit";
 import type { Contract, ContractMethod } from "~/contract/contract.types.js";
-import { buildContractResponse, parseContractInput } from "~/internal/server.js";
+import {
+	buildContractResponse,
+	buildValidationErrorResponse,
+	parseContractInput,
+} from "~/internal/server.js";
 import type { ServerHandler } from "~/internal/server.types.js";
 import { CONTRACT_METHOD_ORDER } from "~/internal/util.js";
 import { resolveRouteMethodContract } from "~/router/router.resolve.js";
@@ -35,6 +39,7 @@ export function initSvelteKit<TRouter, TParams extends Array<unknown>>(
 ): SvelteKitImplementer<TRouter, TParams> {
 	const defaultBypassIncomingParse = options.bypassIncomingParse ?? false;
 	const defaultBypassOutgoingParse = options.bypassOutgoingParse ?? false;
+	const errorMode = options.errorMode ?? "hidden";
 	const transformParams = options.transformParams ?? ((...args) => args);
 
 	const implementer: SvelteKitImplementer<TRouter, TParams> = (route, handlersByMethod) => {
@@ -52,7 +57,7 @@ export function initSvelteKit<TRouter, TParams extends Array<unknown>>(
 
 			const contract: Contract = resolveRouteMethodContract(router, route, method);
 			routeExports[toSvelteKitMethodExport(method)] = async (event) => {
-				const input = await parseContractInput(
+				const parseResult = await parseContractInput(
 					contract,
 					{
 						pathParams: event.params,
@@ -63,8 +68,12 @@ export function initSvelteKit<TRouter, TParams extends Array<unknown>>(
 					defaultBypassIncomingParse,
 				);
 
+				if (!parseResult.success) {
+					return buildValidationErrorResponse(parseResult.issues, errorMode);
+				}
+
 				const handlerParams = transformParams(event);
-				const result = await handler(input, ...handlerParams);
+				const result = await handler(parseResult.data, ...handlerParams);
 				return await buildContractResponse(contract, result, defaultBypassOutgoingParse);
 			};
 		}

@@ -1,5 +1,9 @@
 import { createClient } from "@bobosneefdev/zono/client";
-import { createRouter, RouterShape, RouterShapeContractGivenPath } from "@bobosneefdev/zono/contract";
+import {
+	createRouter,
+	RouterShape,
+	RouterShapeContractGivenPath,
+} from "@bobosneefdev/zono/contract";
 import { initHono } from "@bobosneefdev/zono/hono";
 import { ServerHandlerGivenMethod } from "@bobosneefdev/zono/server";
 import { Context, Hono } from "hono";
@@ -370,6 +374,7 @@ initHono(
 				await next();
 			},
 		],
+		errorMode: "public",
 	},
 );
 
@@ -386,6 +391,7 @@ const client = createClient(router, {
 		"dynamic-header": () => "dynamic-value",
 		"async-header": async () => "async-value",
 	},
+	serverErrorMode: "public",
 });
 
 (async () => {
@@ -397,5 +403,9 @@ const client = createClient(router, {
 			age: 13,
 		},
 	});
-	console.log(response);
+	if (response.status === 400) {
+		console.log(JSON.stringify(response.body, null, 2));
+	} else {
+		console.log("OK");
+	}
 })();

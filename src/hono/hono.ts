@@ -1,8 +1,12 @@
 import type { Context, Hono, MiddlewareHandler } from "hono";
 import type { Contract, ContractMethod, ContractMethodMap } from "~/contract/contract.types.js";
 import type { HonoHandlers, HonoOptions } from "~/hono/hono.types.js";
-import { buildContractResponse, parseContractInput } from "~/internal/server.js";
-import type { ServerHandlerInput, ServerHandlerOutput } from "~/internal/server.types.js";
+import {
+	buildContractResponse,
+	buildValidationErrorResponse,
+	parseContractInput,
+} from "~/internal/server.js";
+import type { ErrorMode, ServerHandlerOutput } from "~/internal/server.types.js";
 import { CONTRACT_METHOD_ORDER, isContractNode, isRecord, isRouterNode } from "~/internal/util.js";
 import { routerDotPathToParamPath } from "~/router/router.resolve.js";
 
@@ -15,11 +19,11 @@ async function parseRequestBody(context: Context): Promise<unknown> {
 	return await context.req.formData();
 }
 
-async function parseRequestInput<TContract extends Contract>(
-	contract: TContract,
+async function parseRequestInput(
+	contract: Contract,
 	context: Context,
 	bypassIncomingParse: boolean,
-): Promise<ServerHandlerInput<TContract>> {
+) {
 	return await parseContractInput(
 		contract,
 		{
@@ -40,15 +44,14 @@ async function buildResponse<TContract extends Contract>(
 	return await buildContractResponse(contract, result, defaultBypassOutgoingParse);
 }
 
+type ResolvedHonoOptions = Required<HonoOptions<Array<unknown>>> & { errorMode: ErrorMode };
+
 type RouteRegistration = {
 	path: string;
 	method: ContractMethod;
 	contract: Contract;
 	middleware: Array<MiddlewareHandler>;
-	handler: (
-		context: Context,
-		options: Required<HonoOptions<Array<unknown>>>,
-	) => Promise<Response>;
+	handler: (context: Context, options: ResolvedHonoOptions) => Promise<Response>;
 };
 
 function getContractMethods(contractMap: ContractMethodMap): Array<ContractMethod> {
@@ -109,17 +112,20 @@ function collectRoutes(
 					method,
 					contract,
 					middleware: validatedMiddleware,
-					handler: async (
-						context: Context,
-						options: Required<HonoOptions<Array<unknown>>>,
-					) => {
-						const input = await parseRequestInput(
+					handler: async (context: Context, options: ResolvedHonoOptions) => {
+						const parseResult = await parseRequestInput(
 							contract,
 							context,
 							options.bypassIncomingParse,
 						);
+						if (!parseResult.success) {
+							return buildValidationErrorResponse(
+								parseResult.issues,
+								options.errorMode,
+							);
+						}
 						const handlerParams = options.transformParams(context);
-						const result = await resolvedHandler(input, ...handlerParams);
+						const result = await resolvedHandler(parseResult.data, ...handlerParams);
 						return await buildResponse(
 							contract,
 							result as ServerHandlerOutput<Contract>,
@@ -154,7 +160,7 @@ function collectRoutes(
 function registerRoute(
 	app: Hono,
 	registration: RouteRegistration,
-	options: Required<HonoOptions<Array<unknown>>>,
+	options: ResolvedHonoOptions,
 ): void {
 	const middlewareChain = [...options.globalMiddleware, ...registration.middleware];
 	const routeHandler = async (context: Context): Promise<Response> => {
@@ -225,9 +231,10 @@ export function initHono<TRouter, TParams extends Array<unknown> = [Context]>(
 	handlers: HonoHandlers<TRouter, TParams>,
 	options?: HonoOptions<TParams>,
 ): Hono {
-	const resolvedOptions: Required<HonoOptions<Array<unknown>>> = {
+	const resolvedOptions: ResolvedHonoOptions = {
 		bypassIncomingParse: options?.bypassIncomingParse ?? false,
 		bypassOutgoingParse: options?.bypassOutgoingParse ?? false,
+		errorMode: options?.errorMode ?? "hidden",
 		globalMiddleware: options?.globalMiddleware ?? [],
 		transformParams: options?.transformParams ?? ((...args) => args),
 	};
