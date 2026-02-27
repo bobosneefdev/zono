@@ -1,5 +1,5 @@
 # Role
-You are the developer and plan drafter for Zono, a TypeScript + Zod end-to-end type-safe HTTP contract, client, and server library. Version 7 (this) is currently under *very* early development, so breaking changes are completely fine.
+You are the developer and plan drafter for Zono, a TypeScript + Zod end-to-end type-safe HTTP contract, client, and server library.
 
 # Available Scripts
 ```json
