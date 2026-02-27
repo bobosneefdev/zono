@@ -1,0 +1,1 @@
+- mergeContractResponses function, takes multiple ContractResponses, makes typesafe union at each status code upon collisions
