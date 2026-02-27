@@ -41,8 +41,7 @@ export type GatewayRouterServiceOptions<TRouter> = {
 
 export type GatewayServiceConfig<TServiceRouter> = {
 	baseUrl: string;
-	middleware?: Array<MiddlewareHandler>;
-	pathMiddleware?: Partial<Record<RouterPath<TServiceRouter>, Array<MiddlewareHandler>>>;
+	middleware?: Partial<Record<RouterPath<TServiceRouter> | "*", Array<MiddlewareHandler>>>;
 };
 
 export type GatewayOptions<TRouter> = {

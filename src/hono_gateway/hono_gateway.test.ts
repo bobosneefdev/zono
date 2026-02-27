@@ -196,7 +196,7 @@ describe("initHonoGateway", () => {
 		expect(withoutBasePath.status).toBe(404);
 	});
 
-	it("executes middleware in order: global -> service -> path", async () => {
+	it("executes middleware in order: global -> service[*] -> service[path]", async () => {
 		const order: Array<string> = [];
 		const gatewayRouter = createGatewayRouter({ svc: serviceRouter });
 		const app = new Hono();
@@ -204,13 +204,13 @@ describe("initHonoGateway", () => {
 			services: {
 				svc: {
 					baseUrl: `http://localhost:${upstreamPort}`,
-					middleware: [
-						async (_c, next) => {
-							order.push("service");
-							await next();
-						},
-					],
-					pathMiddleware: {
+					middleware: {
+						"*": [
+							async (_c, next) => {
+								order.push("service");
+								await next();
+							},
+						],
 						"/items/$id": [
 							(async (_c, next) => {
 								order.push("path");

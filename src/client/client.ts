@@ -10,6 +10,7 @@ import {
 	type Contract,
 	type ContractMethod,
 	type ContractQuery,
+	type ContractResponses,
 } from "~/contract/contract.types.js";
 import {
 	BYTES_CONTENT_TYPES,
@@ -136,6 +137,7 @@ async function parseIncomingResponse<TContract extends Contract>(
 	response: Response,
 	bypassIncomingParse: boolean,
 	serverErrorMode: ErrorMode | undefined,
+	additionalResponses: ContractResponses | undefined,
 ): Promise<{
 	status: number;
 	body: unknown;
@@ -147,7 +149,8 @@ async function parseIncomingResponse<TContract extends Contract>(
 		return { status: 400, body, headers: undefined, response };
 	}
 
-	const statusDefinition = contract.responses[response.status];
+	const statusDefinition =
+		contract.responses[response.status] ?? additionalResponses?.[response.status];
 	if (!statusDefinition) {
 		throw new Error(`Unexpected response status: ${response.status}`);
 	}
@@ -182,10 +185,14 @@ async function parseIncomingResponse<TContract extends Contract>(
 	};
 }
 
-export function createClient<TRouter, TErrorMode extends ErrorMode | undefined = undefined>(
+export function createClient<
+	TRouter,
+	TErrorMode extends ErrorMode | undefined = undefined,
+	TAdditionalResponses extends ContractResponses = Record<never, never>,
+>(
 	router: TRouter,
-	options: ClientOptions<TErrorMode>,
-): Client<TRouter, TErrorMode> {
+	options: ClientOptions<TErrorMode, TAdditionalResponses>,
+): Client<TRouter, TErrorMode, TAdditionalResponses> {
 	async function fetchConfigForMethod<
 		TMethod extends ContractMethod,
 		TPath extends ClientPathsAvailableGivenMethod<TRouter, TMethod>,
@@ -265,6 +272,7 @@ export function createClient<TRouter, TErrorMode extends ErrorMode | undefined =
 			response,
 			options.bypassIncomingParse ?? false,
 			options.serverErrorMode,
+			options.additionalResponses,
 		);
 	}
 
@@ -293,9 +301,10 @@ export function createClient<TRouter, TErrorMode extends ErrorMode | undefined =
 				response,
 				options.bypassIncomingParse ?? false,
 				options.serverErrorMode,
+				options.additionalResponses,
 			);
 		},
-	} as Client<TRouter, TErrorMode>;
+	} as Client<TRouter, TErrorMode, TAdditionalResponses>;
 
 	return client;
 }

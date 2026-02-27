@@ -5,14 +5,14 @@ import {
 	RouterShapeContractGivenPath,
 } from "@bobosneefdev/zono/contract";
 import { initHono } from "@bobosneefdev/zono/hono";
+import { ServerHandlerGivenMethod } from "@bobosneefdev/zono/server";
+import { type Context, Hono, type MiddlewareHandler } from "hono";
+import z from "zod";
 import {
 	createGatewayRouter,
 	createGatewayRouterService,
 	initHonoGateway,
-} from "@bobosneefdev/zono/hono-gateway";
-import { ServerHandlerGivenMethod } from "@bobosneefdev/zono/server";
-import { type Context, Hono, type MiddlewareHandler } from "hono";
-import z from "zod";
+} from "~/hono_gateway/index.js";
 
 // NOT A MODULE, JUST A SANDBOX FOR TESTING/EXAMPLES THROUGHOUT DEVELOPMENT
 
@@ -411,7 +411,7 @@ const socialClient = createClient(socialRouter, {
 	if (response.status === 400) {
 		console.log(JSON.stringify(response.body, null, 2));
 	} else {
-		console.log("OK");
+		console.log(`Social: ${response.status}`);
 	}
 })();
 
@@ -442,13 +442,13 @@ initHonoGateway(gatewayApp, gatewayRouter, {
 	services: {
 		social: {
 			baseUrl: "http://localhost:3000",
-			middleware: [
-				async (_c, next) => {
-					console.log("social service middleware");
-					await next();
-				},
-			],
-			pathMiddleware: {
+			middleware: {
+				"*": [
+					async (_c, next) => {
+						console.log("social service middleware");
+						await next();
+					},
+				],
 				"/users/register": [
 					(async (_c, next) => {
 						console.log("rate limit on register");
@@ -483,6 +483,15 @@ Bun.serve({
 // ./gateway/client.ts
 const gatewayClient = createClient(gatewayRouter, {
 	baseUrl: "http://localhost:3001/v1",
+	defaultHeaders: {
+		Authorization: () => `Bearer ${crypto.randomUUID()}`,
+	},
+	additionalResponses: {
+		401: {
+			contentType: "application/json",
+			schema: z.object({ error: z.string() }),
+		},
+	},
 });
 
 (async () => {
@@ -491,5 +500,5 @@ const gatewayClient = createClient(gatewayRouter, {
 			userId: crypto.randomUUID(),
 		},
 	});
-	console.log("OK: gateway client", response.status);
+	console.log(`Gateway: ${response.status}`);
 })();

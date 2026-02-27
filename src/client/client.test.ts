@@ -6,6 +6,7 @@ import type {
 	ClientRequestInputGivenMethodAndPath,
 	ClientValidationErrorResponse,
 } from "~/client/client.types.js";
+import type { ContractResponses } from "~/contract/contract.types.js";
 import type { ServerHandlerOutput } from "~/internal/handler.types.js";
 import { createRouter, RouterPath } from "~/router/index.js";
 import { createClient } from "./client.js";
@@ -234,6 +235,72 @@ describe("createClient", () => {
 
 		if (parsed.status === 200) {
 			expectType<{ id: string; name: string }>(parsed.body);
+		}
+	});
+
+	it("supports additionalResponses typing and parses additional runtime statuses", async () => {
+		const additionalRouter = createRouter(
+			{
+				status: { TYPE: "contract" },
+			},
+			{
+				status: {
+					CONTRACT: {
+						get: {
+							responses: {
+								200: {
+									contentType: "application/json",
+									schema: z.object({ ok: z.literal(true) }),
+								},
+							},
+						},
+					},
+				},
+			},
+		);
+
+		const additionalResponses = {
+			200: {
+				contentType: "application/json",
+				schema: z.number(),
+			},
+			418: {
+				contentType: "application/json",
+				schema: z.object({ reason: z.string() }),
+			},
+		} satisfies ContractResponses;
+
+		const client = createClient(additionalRouter, {
+			baseUrl: "http://localhost:3000",
+			additionalResponses,
+		});
+
+		const parsed200 = await client.parseResponse(
+			"get",
+			"/status",
+			new Response(JSON.stringify({ ok: true }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			}),
+		);
+		if (parsed200.status === 200) {
+			expectType<{ ok: true } | number>(parsed200.body);
+			expect(parsed200.body).toEqual({ ok: true });
+		}
+
+		const parsed418 = await client.parseResponse(
+			"get",
+			"/status",
+			new Response(JSON.stringify({ reason: "teapot" }), {
+				status: 418,
+				headers: { "content-type": "application/json" },
+			}),
+		);
+
+		expect(parsed418.status).toBe(418);
+		if (parsed418.status === 418) {
+			expectType<{ reason: string }>(parsed418.body);
+			expect(parsed418.body).toEqual({ reason: "teapot" });
 		}
 	});
 

@@ -161,8 +161,7 @@ export function initHonoGateway<TRouter extends Record<string, unknown>>(
 		string,
 		{
 			baseUrl: string;
-			middleware?: Array<MiddlewareHandler>;
-			pathMiddleware?: Record<string, Array<MiddlewareHandler>>;
+			middleware?: Record<string, Array<MiddlewareHandler>>;
 		}
 	>;
 
@@ -174,8 +173,8 @@ export function initHonoGateway<TRouter extends Record<string, unknown>>(
 			throw new Error(`Missing service config for namespace: ${registration.namespace}`);
 		}
 
-		const serviceMiddleware = serviceConfig.middleware ?? [];
-		const pathMiddleware = serviceConfig.pathMiddleware?.[registration.serviceRouterPath] ?? [];
+		const serviceMiddleware = serviceConfig.middleware?.["*"] ?? [];
+		const pathMiddleware = serviceConfig.middleware?.[registration.serviceRouterPath] ?? [];
 
 		const middlewareChain = [...globalMiddleware, ...serviceMiddleware, ...pathMiddleware];
 
