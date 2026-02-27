@@ -4,20 +4,20 @@ import type {
 	ClientOptionsDefaultHeaderValue,
 	ClientPathsAvailableGivenMethod,
 } from "~/client/client.types.js";
+import type { ErrorMode } from "~/contract/contract.error.js";
+import { parseContractFields } from "~/contract/contract.parse.js";
 import {
 	type Contract,
 	type ContractMethod,
 	type ContractQuery,
 } from "~/contract/contract.types.js";
-import type { ErrorMode } from "~/internal/server.types.js";
 import {
 	BYTES_CONTENT_TYPES,
 	CONTRACT_METHOD_ORDER,
 	JSON_CONTENT_TYPES,
-	routeToSegments,
 	TEXT_CONTENT_TYPES,
 } from "~/internal/util.js";
-import { resolveRouteMethodContract } from "~/router/router.resolve.js";
+import { resolveRouteMethodContract, routeToSegments } from "~/router/router.resolve.js";
 
 function getContractForRouteMethod<
 	TRouter,
@@ -117,29 +117,18 @@ async function parseOutgoingRequest(
 	rawRequest: Record<string, unknown>,
 	bypassOutgoingParse: boolean,
 ): Promise<Record<string, unknown>> {
-	if (bypassOutgoingParse) {
-		return rawRequest;
+	const rawInput = {
+		pathParams: rawRequest.pathParams,
+		payload: rawRequest.payload,
+		query: rawRequest.query,
+		headers: rawRequest.headers,
+	};
+	const result = await parseContractFields(contract, rawInput, bypassOutgoingParse);
+	if (!result.success) {
+		const message = result.issues.map((i) => i.message).join("; ");
+		throw new Error(`Contract validation failed: ${message}`);
 	}
-
-	const parsed: Record<string, unknown> = {};
-
-	if (contract.pathParams) {
-		parsed.pathParams = await contract.pathParams.parseAsync(rawRequest.pathParams);
-	}
-
-	if (contract.payload) {
-		parsed.payload = await contract.payload.schema.parseAsync(rawRequest.payload);
-	}
-
-	if (contract.query) {
-		parsed.query = await contract.query.schema.parseAsync(rawRequest.query);
-	}
-
-	if (contract.headers) {
-		parsed.headers = await contract.headers.parseAsync(rawRequest.headers);
-	}
-
-	return parsed;
+	return result.data as Record<string, unknown>;
 }
 
 async function parseIncomingResponse<TContract extends Contract>(

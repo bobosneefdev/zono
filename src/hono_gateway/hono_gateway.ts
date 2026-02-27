@@ -1,15 +1,11 @@
 import type { Context, Hono, MiddlewareHandler } from "hono";
 import type { ContractMethod, ContractMethodMap } from "~/contract/contract.types.js";
+import { executeMiddlewareChain, normalizeBasePath, registerHonoRoute } from "~/hono/hono.util.js";
 import type {
 	FilteredRouter,
 	GatewayOptions,
 	IncludeShape,
 } from "~/hono_gateway/hono_gateway.types.js";
-import {
-	executeMiddlewareChain,
-	normalizeBasePath,
-	registerHonoRoute,
-} from "~/internal/hono.util.js";
 import { getContractMethods, isContractNode, isRecord, isRouterNode } from "~/internal/util.js";
 
 type GatewayRouteRegistration = {

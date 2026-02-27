@@ -1,11 +1,9 @@
 import type { RequestHandler } from "@sveltejs/kit";
+import { parseContractFields } from "~/contract/contract.parse.js";
 import type { Contract, ContractMethod } from "~/contract/contract.types.js";
-import {
-	buildContractResponse,
-	buildValidationErrorResponse,
-	parseContractInput,
-} from "~/internal/server.js";
-import type { ServerHandler } from "~/internal/server.types.js";
+import type { ServerHandler } from "~/internal/handler.types.js";
+import { resolveRequestBody } from "~/internal/request_body.util.js";
+import { buildContractResponse, buildValidationErrorResponse } from "~/internal/server.js";
 import { CONTRACT_METHOD_ORDER } from "~/internal/util.js";
 import { resolveRouteMethodContract } from "~/router/router.resolve.js";
 import type { SvelteKitImplementer, SvelteKitOptions } from "~/sveltekit/sveltekit.types.js";
@@ -26,11 +24,11 @@ function toSvelteKitMethodExport(method: ContractMethod): SvelteKitMethodExport 
 
 async function parseRequestBody(event: Parameters<RequestHandler>[0]): Promise<unknown> {
 	const contentType = event.request.headers.get("content-type") ?? "";
-	if (contentType.toLowerCase().includes("application/json")) {
-		return await event.request.json();
-	}
-
-	return await event.request.formData();
+	return resolveRequestBody(
+		contentType,
+		() => event.request.json(),
+		() => event.request.formData(),
+	);
 }
 
 export function initSvelteKit<TRouter, TParams extends Array<unknown>>(
@@ -57,7 +55,7 @@ export function initSvelteKit<TRouter, TParams extends Array<unknown>>(
 
 			const contract: Contract = resolveRouteMethodContract(router, route, method);
 			routeExports[toSvelteKitMethodExport(method)] = async (event) => {
-				const parseResult = await parseContractInput(
+				const parseResult = await parseContractFields(
 					contract,
 					{
 						pathParams: event.params,

@@ -1,27 +1,22 @@
 import type { Context, Hono, MiddlewareHandler } from "hono";
+import type { ErrorMode } from "~/contract/contract.error.js";
+import { parseContractFields } from "~/contract/contract.parse.js";
 import type { Contract, ContractMethod, ContractMethodMap } from "~/contract/contract.types.js";
 import type { HonoHandlers, HonoOptions } from "~/hono/hono.types.js";
-import {
-	executeMiddlewareChain,
-	normalizeBasePath,
-	registerHonoRoute,
-} from "~/internal/hono.util.js";
-import {
-	buildContractResponse,
-	buildValidationErrorResponse,
-	parseContractInput,
-} from "~/internal/server.js";
-import type { ErrorMode, ServerHandlerOutput } from "~/internal/server.types.js";
+import type { ServerHandlerOutput } from "~/internal/handler.types.js";
+import { resolveRequestBody } from "~/internal/request_body.util.js";
+import { buildContractResponse, buildValidationErrorResponse } from "~/internal/server.js";
 import { getContractMethods, isContractNode, isRecord, isRouterNode } from "~/internal/util.js";
 import { routerDotPathToParamPath } from "~/router/router.resolve.js";
+import { executeMiddlewareChain, normalizeBasePath, registerHonoRoute } from "./hono.util.js";
 
 async function parseRequestBody(context: Context): Promise<unknown> {
 	const contentType = context.req.header("content-type") ?? "";
-	if (contentType.toLowerCase().includes("application/json")) {
-		return await context.req.json();
-	}
-
-	return await context.req.formData();
+	return resolveRequestBody(
+		contentType,
+		() => context.req.json(),
+		() => context.req.formData(),
+	);
 }
 
 async function parseRequestInput(
@@ -29,7 +24,7 @@ async function parseRequestInput(
 	context: Context,
 	bypassIncomingParse: boolean,
 ) {
-	return await parseContractInput(
+	return await parseContractFields(
 		contract,
 		{
 			pathParams: context.req.param(),

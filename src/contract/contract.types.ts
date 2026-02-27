@@ -1,6 +1,8 @@
-import { JSONValue } from "hono/utils/types";
 import z from "zod";
-import type { EnumValues, PossibleZodOptional } from "~/internal/util.types.js";
+import type { JsonValue } from "~/internal/util.types.js";
+
+type EnumValues<T extends Record<string, string>> = `${T[keyof T]}`;
+type PossibleZodOptional<T extends z.ZodType> = T | z.ZodOptional<T>;
 
 export type Contract = {
 	responses: ContractResponses;
@@ -25,7 +27,7 @@ export enum JsonContentType {
 
 export type ContractJsonBody = {
 	contentType: EnumValues<typeof JsonContentType>;
-	schema: z.ZodType<JSONValue, JSONValue>;
+	schema: z.ZodType<JsonValue, JsonValue>;
 };
 
 export enum TextContentType {
@@ -84,7 +86,7 @@ export type ContractQuery = ContractQueryStandard | ContractQueryJson;
 
 export type ContractQueryJson = {
 	type: "json";
-	schema: z.ZodType<JSONValue, JSONValue>;
+	schema: z.ZodType<JsonValue, JsonValue>;
 };
 
 export type ContractQueryStandard = {

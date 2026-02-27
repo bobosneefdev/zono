@@ -1,9 +1,15 @@
 import z from "zod";
 import type { Contract, ContractResponseStatuses } from "~/contract/contract.types.js";
 
-export type PossiblePromise<T> = T | Promise<T>;
+export type JsonValue =
+	| string
+	| number
+	| boolean
+	| null
+	| Array<JsonValue>
+	| { [key: string]: JsonValue };
 
-export type PossibleZodOptional<T extends z.ZodType> = T | z.ZodOptional<T>;
+export type PossiblePromise<T> = T | Promise<T>;
 
 export type SchemaInput<TSchema> = TSchema extends z.ZodType ? z.input<TSchema> : never;
 
@@ -26,5 +32,3 @@ export type ResponseHeadersForStatus<
 export type JoinPath<TPrefix extends string, TSegment extends string> = TPrefix extends ""
 	? TSegment
 	: `${TPrefix}.${TSegment}`;
-
-export type EnumValues<T extends Record<string, string>> = `${T[keyof T]}`;

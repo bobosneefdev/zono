@@ -3,7 +3,7 @@ import { defineConfig } from "tsup";
 export default defineConfig({
 	format: ["esm", "cjs"],
 	entry: {
-		contract: "src/contract.ts",
+		contract: "src/contract/index.ts",
 		client: "src/client/index.ts",
 		server: "src/server/index.ts",
 		hono: "src/hono/index.ts",

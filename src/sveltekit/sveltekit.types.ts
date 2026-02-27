@@ -1,6 +1,6 @@
 import type { RequestEvent, RequestHandler } from "@sveltejs/kit";
 import type { ContractMethod, ContractMethodMap } from "~/contract/contract.types.js";
-import type { ServerHandlerMethodMap, ServerOptionsBase } from "~/internal/server.types.js";
+import type { ServerHandlerMethodMap, ServerOptionsBase } from "~/internal/handler.types.js";
 import type { RouterPath, RouterPathContractMap } from "~/router/router.resolve.types.js";
 
 export type SvelteKitOptions<TParams extends Array<unknown>> = ServerOptionsBase<

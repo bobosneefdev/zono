@@ -1,9 +1,10 @@
+import type { ErrorMode, ValidationErrorBody } from "~/contract/contract.error.js";
+import type { ContractInput } from "~/contract/contract.io.js";
 import type {
 	Contract,
 	ContractMethod,
 	ContractResponseStatuses,
 } from "~/contract/contract.types.js";
-import type { ContractInput, ErrorMode, ValidationErrorBody } from "~/internal/server.types.js";
 import type {
 	PossiblePromise,
 	ResponseBodyForStatus,

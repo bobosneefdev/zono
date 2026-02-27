@@ -6,7 +6,7 @@ import type {
 	ClientRequestInputGivenMethodAndPath,
 	ClientValidationErrorResponse,
 } from "~/client/client.types.js";
-import type { ServerHandlerOutput } from "~/internal/server.types.js";
+import type { ServerHandlerOutput } from "~/internal/handler.types.js";
 import { createRouter, RouterPath } from "~/router/index.js";
 import { createClient } from "./client.js";
 

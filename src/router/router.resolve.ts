@@ -7,6 +7,11 @@ import type {
 	RouterPathContractMap,
 } from "~/router/router.resolve.types.js";
 
+export function routeToSegments(route: string): Array<string> {
+	const withoutLeadingSlash = route.startsWith("/") ? route.slice(1) : route;
+	return withoutLeadingSlash.split("/").filter(Boolean);
+}
+
 function routePathToDotPath(routePath: string): string {
 	const withoutLeadingSlash = routePath.startsWith("/") ? routePath.slice(1) : routePath;
 	return withoutLeadingSlash.split("/").filter(Boolean).join(".");

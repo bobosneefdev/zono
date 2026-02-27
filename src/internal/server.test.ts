@@ -1,10 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import z from "zod";
-import {
-	buildContractResponse,
-	buildValidationErrorResponse,
-	parseContractInput,
-} from "~/internal/server.js";
+import { parseContractFields } from "~/contract/contract.parse.js";
+import { buildContractResponse, buildValidationErrorResponse } from "~/internal/server.js";
 
 const jsonQueryContract = {
 	query: {
@@ -28,12 +25,12 @@ const basicContract = {
 	} as const,
 } as const;
 
-describe("parseContractInput", () => {
+describe("parseContractFields", () => {
 	it("parses query with type json via parseRawQuery", async () => {
 		const rawInput = {
 			query: { json: JSON.stringify({ foo: "bar", count: 42 }) },
 		};
-		const result = await parseContractInput(jsonQueryContract as never, rawInput, false);
+		const result = await parseContractFields(jsonQueryContract as never, rawInput, false);
 		expect(result.success).toBe(true);
 		if (result.success) {
 			expect(result.data.query).toEqual({ foo: "bar", count: 42 });
@@ -45,7 +42,7 @@ describe("parseContractInput", () => {
 		const rawInput = {
 			query: { json: JSON.stringify(parsed) },
 		};
-		const result = await parseContractInput(jsonQueryContract as never, rawInput, true);
+		const result = await parseContractFields(jsonQueryContract as never, rawInput, true);
 		expect(result.success).toBe(true);
 		if (result.success) {
 			expect(result.data.query).toEqual(parsed);
@@ -54,7 +51,7 @@ describe("parseContractInput", () => {
 
 	it("handles rawQuery not a record for json query", async () => {
 		const rawInput = { query: "not-a-record" };
-		const result = await parseContractInput(jsonQueryContract as never, rawInput, false);
+		const result = await parseContractFields(jsonQueryContract as never, rawInput, false);
 		expect(result.success).toBe(false);
 		if (!result.success) {
 			expect(result.issues.length).toBeGreaterThan(0);
@@ -63,7 +60,7 @@ describe("parseContractInput", () => {
 
 	it("handles rawQuery.json not a string for json query", async () => {
 		const rawInput = { query: { json: 123 } };
-		const result = await parseContractInput(jsonQueryContract as never, rawInput, false);
+		const result = await parseContractFields(jsonQueryContract as never, rawInput, false);
 		expect(result.success).toBe(false);
 		if (!result.success) {
 			expect(result.issues.length).toBeGreaterThan(0);
