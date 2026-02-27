@@ -1,8 +1,8 @@
 import type z from "zod";
 import type { Contract } from "~/contract/contract.types.js";
 import type {
+	ContractOutput,
 	ErrorMode,
-	ServerHandlerInput,
 	ServerHandlerOutput,
 	ValidationErrorBodyHidden,
 	ValidationErrorBodyPublic,
@@ -43,7 +43,7 @@ function parseRawQuery(contract: Contract, rawQuery: unknown): unknown {
 }
 
 export type ParseContractResult<TContract extends Contract> =
-	| { success: true; data: ServerHandlerInput<TContract> }
+	| { success: true; data: ContractOutput<TContract> }
 	| { success: false; issues: Array<z.core.$ZodIssue> };
 
 export async function parseContractInput<TContract extends Contract>(
@@ -58,7 +58,7 @@ export async function parseContractInput<TContract extends Contract>(
 		if (contract.query) parsed.query = parseRawQuery(contract, rawInput.query);
 		if (contract.headers) parsed.headers = rawInput.headers;
 		if (contract.payload) parsed.payload = rawInput.payload;
-		return { success: true, data: parsed as ServerHandlerInput<TContract> };
+		return { success: true, data: parsed as ContractOutput<TContract> };
 	}
 
 	const allIssues: Array<z.core.$ZodIssue> = [];
@@ -104,7 +104,7 @@ export async function parseContractInput<TContract extends Contract>(
 		return { success: false, issues: allIssues };
 	}
 
-	return { success: true, data: parsed as ServerHandlerInput<TContract> };
+	return { success: true, data: parsed as ContractOutput<TContract> };
 }
 
 export function buildValidationErrorResponse(

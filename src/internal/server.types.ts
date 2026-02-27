@@ -10,6 +10,7 @@ import type {
 	ResponseBodyForStatus,
 	ResponseHeadersForStatus,
 	SchemaInput,
+	SchemaOutput,
 } from "~/internal/util.types.js";
 
 export type ErrorMode = "public" | "hidden";
@@ -22,30 +23,48 @@ export type ValidationErrorBody<TMode extends ErrorMode> = TMode extends "public
 	? ValidationErrorBodyPublic
 	: ValidationErrorBodyHidden;
 
-type IncludePathParams<TContract extends Contract> = TContract["pathParams"] extends z.ZodType
-	? { pathParams: SchemaInput<TContract["pathParams"]> }
+type SchemaDir = "input" | "output";
+
+type SchemaForDir<TSchema, TDir extends SchemaDir> = TDir extends "input"
+	? SchemaInput<TSchema>
+	: SchemaOutput<TSchema>;
+
+type IncludePathParams<
+	TContract extends Contract,
+	TDir extends SchemaDir,
+> = TContract["pathParams"] extends z.ZodType
+	? { pathParams: SchemaForDir<TContract["pathParams"], TDir> }
 	: object;
 
-type IncludePayload<TContract extends Contract> = TContract["payload"] extends {
+type IncludePayload<
+	TContract extends Contract,
+	TDir extends SchemaDir,
+> = TContract["payload"] extends { schema: infer TSchema extends z.ZodType }
+	? { payload: SchemaForDir<TSchema, TDir> }
+	: object;
+
+type IncludeQuery<TContract extends Contract, TDir extends SchemaDir> = TContract["query"] extends {
 	schema: infer TSchema extends z.ZodType;
 }
-	? { payload: SchemaInput<TSchema> }
+	? { query: SchemaForDir<TSchema, TDir> }
 	: object;
 
-type IncludeQuery<TContract extends Contract> = TContract["query"] extends {
-	schema: infer TSchema extends z.ZodType;
-}
-	? { query: SchemaInput<TSchema> }
+type IncludeHeaders<
+	TContract extends Contract,
+	TDir extends SchemaDir,
+> = TContract["headers"] extends z.ZodType
+	? { headers: SchemaForDir<TContract["headers"], TDir> }
 	: object;
 
-type IncludeHeaders<TContract extends Contract> = TContract["headers"] extends z.ZodType
-	? { headers: SchemaInput<TContract["headers"]> }
-	: object;
+export type ContractInput<TContract extends Contract> = IncludePathParams<TContract, "input"> &
+	IncludePayload<TContract, "input"> &
+	IncludeQuery<TContract, "input"> &
+	IncludeHeaders<TContract, "input">;
 
-export type ServerHandlerInput<TContract extends Contract> = IncludePathParams<TContract> &
-	IncludePayload<TContract> &
-	IncludeQuery<TContract> &
-	IncludeHeaders<TContract>;
+export type ContractOutput<TContract extends Contract> = IncludePathParams<TContract, "output"> &
+	IncludePayload<TContract, "output"> &
+	IncludeQuery<TContract, "output"> &
+	IncludeHeaders<TContract, "output">;
 
 type ResponseContentTypeForStatus<
 	TContract extends Contract,
@@ -79,7 +98,7 @@ export type ServerHandlerOutput<TContract extends Contract> = {
 }[ContractResponseStatuses<TContract>];
 
 export type ServerHandler<TContract extends Contract, TParams extends Array<unknown> = []> = (
-	data: ServerHandlerInput<TContract>,
+	data: ContractOutput<TContract>,
 	...args: TParams
 ) => PossiblePromise<ServerHandlerOutput<TContract>>;
 

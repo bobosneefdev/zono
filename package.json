@@ -25,6 +25,11 @@
 			"import": "./dist/hono.mjs",
 			"require": "./dist/hono.js"
 		},
+		"./hono-gateway": {
+			"types": "./dist/hono-gateway.d.ts",
+			"import": "./dist/hono-gateway.mjs",
+			"require": "./dist/hono-gateway.js"
+		},
 		"./sveltekit": {
 			"types": "./dist/sveltekit.d.ts",
 			"import": "./dist/sveltekit.mjs",

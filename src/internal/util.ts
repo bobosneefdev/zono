@@ -1,6 +1,7 @@
 import {
 	BytesContentType,
 	type ContractMethod,
+	type ContractMethodMap,
 	FormDataContentType,
 	JsonContentType,
 	TextContentType,
@@ -26,6 +27,16 @@ export function isContractNode(value: unknown): value is { CONTRACT: Record<stri
 
 export function isRouterNode(value: unknown): value is { ROUTER: Record<string, unknown> } {
 	return isRecord(value) && "ROUTER" in value && isRecord(value.ROUTER);
+}
+
+export function getContractMethods(contractMap: ContractMethodMap): Array<ContractMethod> {
+	const methods: Array<ContractMethod> = [];
+	for (const method of CONTRACT_METHOD_ORDER) {
+		if (contractMap[method]) {
+			methods.push(method);
+		}
+	}
+	return methods;
 }
 
 export function routeToSegments(route: string): Array<string> {

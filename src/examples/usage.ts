@@ -5,8 +5,13 @@ import {
 	RouterShapeContractGivenPath,
 } from "@bobosneefdev/zono/contract";
 import { initHono } from "@bobosneefdev/zono/hono";
+import {
+	createGatewayRouter,
+	createGatewayRouterService,
+	initHonoGateway,
+} from "@bobosneefdev/zono/hono-gateway";
 import { ServerHandlerGivenMethod } from "@bobosneefdev/zono/server";
-import { Context, Hono } from "hono";
+import { type Context, Hono, type MiddlewareHandler } from "hono";
 import z from "zod";
 
 // NOT A MODULE, JUST A SANDBOX FOR TESTING/EXAMPLES THROUGHOUT DEVELOPMENT
@@ -45,8 +50,8 @@ const zPost = z.object({
 	description: z.string(),
 });
 
-// ./contract.ts
-const exampleShape = {
+// ./social/contract.ts
+const socialShape = {
 	users: {
 		TYPE: "router",
 		ROUTER: {
@@ -78,9 +83,9 @@ const exampleShape = {
 	},
 } satisfies RouterShape;
 
-type ExampleShape = typeof exampleShape;
+type ExampleShape = typeof socialShape;
 
-// ./users/register/contract.ts
+// ./social/users/register/contract.ts
 const usersRegisterContract = {
 	get: {
 		query: {
@@ -96,7 +101,7 @@ const usersRegisterContract = {
 	},
 } satisfies RouterShapeContractGivenPath<ExampleShape, "users.register">;
 
-// ./users/$userId/contract.ts
+// ./social/users/$userId/contract.ts
 const usersUserIdContract = {
 	get: {
 		pathParams: z.object({
@@ -111,7 +116,7 @@ const usersUserIdContract = {
 	},
 } satisfies RouterShapeContractGivenPath<ExampleShape, "users.$userId">;
 
-// ./users/$userId/posts/contract.ts
+// ./social/users/$userId/posts/contract.ts
 const usersUserIdPostsContract = {
 	get: {
 		pathParams: z.object({
@@ -126,7 +131,7 @@ const usersUserIdPostsContract = {
 	},
 } satisfies RouterShapeContractGivenPath<ExampleShape, "users.$userId.posts">;
 
-// ./users/$userId/posts/$postId/contract.ts
+// ./social/users/$userId/posts/$postId/contract.ts
 const usersUserIdPostsPostIdContract = {
 	get: {
 		pathParams: z.object({
@@ -142,7 +147,7 @@ const usersUserIdPostsPostIdContract = {
 	},
 } satisfies RouterShapeContractGivenPath<ExampleShape, "users.$userId.posts.$postId">;
 
-// ./users/$userId/comments/contract.ts
+// ./social/users/$userId/comments/contract.ts
 const usersUserIdCommentsContract = {
 	get: {
 		pathParams: z.object({
@@ -157,7 +162,7 @@ const usersUserIdCommentsContract = {
 	},
 } satisfies RouterShapeContractGivenPath<ExampleShape, "users.$userId.comments">;
 
-// ./users/$userId/comments/$commentId/contract.ts
+// ./social/users/$userId/comments/$commentId/contract.ts
 const usersUserIdCommentsCommentIdContract = {
 	get: {
 		pathParams: z.object({
@@ -173,8 +178,8 @@ const usersUserIdCommentsCommentIdContract = {
 	},
 } satisfies RouterShapeContractGivenPath<ExampleShape, "users.$userId.comments.$commentId">;
 
-// ./contract.ts
-const router = createRouter(exampleShape, {
+// ./social/contract.ts
+const socialRouter = createRouter(socialShape, {
 	users: {
 		register: {
 			CONTRACT: usersRegisterContract,
@@ -203,12 +208,12 @@ const router = createRouter(exampleShape, {
 	},
 });
 
-// ./server.ts
+// ./social/server.ts
 type MyHonoContext = [Context];
 
-// ./users/register/handler.ts
+// ./social/users/register/handler.ts
 const handleGet_users_register: ServerHandlerGivenMethod<
-	typeof router.users.register.CONTRACT,
+	typeof socialRouter.users.register.CONTRACT,
 	MyHonoContext,
 	"get"
 > = async (data, _c) => {
@@ -222,9 +227,9 @@ const handleGet_users_register: ServerHandlerGivenMethod<
 	};
 };
 
-// ./users/$userId/handler.ts
+// ./social/users/$userId/handler.ts
 const handleGet_users_$userId: ServerHandlerGivenMethod<
-	typeof router.users.$userId.CONTRACT,
+	typeof socialRouter.users.$userId.CONTRACT,
 	MyHonoContext,
 	"get"
 > = async (data, _c) => {
@@ -241,9 +246,9 @@ const handleGet_users_$userId: ServerHandlerGivenMethod<
 	};
 };
 
-// ./users/$userId/posts/handler.ts
+// ./social/users/$userId/posts/handler.ts
 const handleGet_users_$userId_posts: ServerHandlerGivenMethod<
-	typeof router.users.$userId.ROUTER.posts.CONTRACT,
+	typeof socialRouter.users.$userId.ROUTER.posts.CONTRACT,
 	MyHonoContext,
 	"get"
 > = async (data, _c) => {
@@ -262,9 +267,9 @@ const handleGet_users_$userId_posts: ServerHandlerGivenMethod<
 	};
 };
 
-// ./users/$userId/posts/$postId/handler.ts
+// ./social/users/$userId/posts/$postId/handler.ts
 const handleGet_users_$userId_posts_$postId: ServerHandlerGivenMethod<
-	typeof router.users.$userId.ROUTER.posts.ROUTER.$postId.CONTRACT,
+	typeof socialRouter.users.$userId.ROUTER.posts.ROUTER.$postId.CONTRACT,
 	MyHonoContext,
 	"get"
 > = async (data, _c) => {
@@ -281,9 +286,9 @@ const handleGet_users_$userId_posts_$postId: ServerHandlerGivenMethod<
 	};
 };
 
-// ./users/$userId/comments/handler.ts
+// ./social/users/$userId/comments/handler.ts
 const handleGet_users_$userId_comments: ServerHandlerGivenMethod<
-	typeof router.users.$userId.ROUTER.comments.CONTRACT,
+	typeof socialRouter.users.$userId.ROUTER.comments.CONTRACT,
 	MyHonoContext,
 	"get"
 > = async (data, _c) => {
@@ -302,9 +307,9 @@ const handleGet_users_$userId_comments: ServerHandlerGivenMethod<
 	};
 };
 
-// ./users/$userId/comments/$commentId/handler.ts
+// ./social/users/$userId/comments/$commentId/handler.ts
 const handleGet_users_$userId_comments_$commentId: ServerHandlerGivenMethod<
-	typeof router.users.$userId.ROUTER.comments.ROUTER.$commentId.CONTRACT,
+	typeof socialRouter.users.$userId.ROUTER.comments.ROUTER.$commentId.CONTRACT,
 	MyHonoContext,
 	"get"
 > = async (data, _c) => {
@@ -321,12 +326,12 @@ const handleGet_users_$userId_comments_$commentId: ServerHandlerGivenMethod<
 	};
 };
 
-// ./server.ts
-const app = new Hono();
+// ./social/server.ts
+const socialApp = new Hono();
 
 initHono(
-	app,
-	router,
+	socialApp,
+	socialRouter,
 	{
 		users: {
 			register: {
@@ -379,12 +384,12 @@ initHono(
 );
 
 Bun.serve({
-	fetch: app.fetch,
+	fetch: socialApp.fetch,
 	port: 3000,
 });
 
-// ./client.ts
-const client = createClient(router, {
+// ./social/client.ts
+const socialClient = createClient(socialRouter, {
 	baseUrl: "http://localhost:3000",
 	defaultHeaders: {
 		"static-header": "static-value",
@@ -395,7 +400,7 @@ const client = createClient(router, {
 });
 
 (async () => {
-	const response = await client.get("/users/register", {
+	const response = await socialClient.get("/users/register", {
 		query: {
 			first: "John",
 			last: "Porkchop",
@@ -408,4 +413,83 @@ const client = createClient(router, {
 	} else {
 		console.log("OK");
 	}
+})();
+
+// HONO GATEWAY EXAMPLE
+
+// ./gateway/index.ts
+
+const gatewayRouter = createGatewayRouter({
+	social: createGatewayRouterService(socialRouter, {
+		// The only inaccessible path would be /users/$userId/comments/$commentId
+		includeOnlyShape: {
+			users: {
+				register: true,
+				$userId: {
+					posts: {
+						$postId: true,
+					},
+					comments: true,
+				},
+			},
+		},
+	}),
+});
+
+const gatewayApp = new Hono();
+
+initHonoGateway(gatewayApp, gatewayRouter, {
+	services: {
+		social: {
+			baseUrl: "http://localhost:3000",
+			middleware: [
+				async (_c, next) => {
+					console.log("social service middleware");
+					await next();
+				},
+			],
+			pathMiddleware: {
+				"/users/register": [
+					(async (_c, next) => {
+						console.log("rate limit on register");
+						await next();
+					}) satisfies MiddlewareHandler,
+				],
+			},
+		},
+	},
+	basePath: "/v1",
+	globalMiddleware: [
+		async (c, next) => {
+			const authorization = c.req.header("Authorization");
+			if (!authorization) {
+				return c.json({ error: "Unauthorized" }, 401);
+			}
+			const token = authorization.split(" ")[1];
+			if (!token) {
+				return c.json({ error: "Unauthorized" }, 401);
+			}
+			console.log("Auth token found in request:", token);
+			await next();
+		},
+	],
+});
+
+Bun.serve({
+	fetch: gatewayApp.fetch,
+	port: 3001,
+});
+
+// ./gateway/client.ts
+const gatewayClient = createClient(gatewayRouter, {
+	baseUrl: "http://localhost:3001/v1",
+});
+
+(async () => {
+	const response = await gatewayClient.get("/social/users/$userId/comments", {
+		pathParams: {
+			userId: crypto.randomUUID(),
+		},
+	});
+	console.log("OK: gateway client", response.status);
 })();

@@ -3,7 +3,7 @@ import { Context, Hono } from "hono";
 import z from "zod";
 import { initHono } from "~/hono/index.js";
 import type {
-	ServerHandlerInput,
+	ContractOutput,
 	ServerHandlerOutput,
 	ServerHandlerTree,
 } from "~/internal/server.types.js";
@@ -103,10 +103,10 @@ const router = createRouter(
 describe("initHono", () => {
 	it("provides strongly typed handler input and output", () => {
 		type UsersContract = NonNullable<typeof router.users.$id.CONTRACT.get>;
-		type UsersInput = ServerHandlerInput<UsersContract>;
+		type UsersInput = ContractOutput<UsersContract>;
 		type UsersOutput = ServerHandlerOutput<UsersContract>;
 		type CreateUserContract = NonNullable<typeof router.users.$id.CONTRACT.post>;
-		type CreateUserInput = ServerHandlerInput<CreateUserContract>;
+		type CreateUserInput = ContractOutput<CreateUserContract>;
 
 		const input: UsersInput = {
 			pathParams: {
@@ -527,7 +527,7 @@ describe("initHono", () => {
 						$postId: {
 							HANDLER: {
 								get: async (
-									data: ServerHandlerInput<
+									data: ContractOutput<
 										NonNullable<
 											typeof router.users.$id.ROUTER.$postId.CONTRACT.get
 										>
@@ -558,9 +558,7 @@ describe("initHono", () => {
 				$id: {
 					HANDLER: {
 						get: async (
-							data: ServerHandlerInput<
-								NonNullable<typeof router.users.$id.CONTRACT.get>
-							>,
+							data: ContractOutput<NonNullable<typeof router.users.$id.CONTRACT.get>>,
 						) => ({
 							status: 200,
 							data: { id: data.pathParams.id, name: "john" },
@@ -572,7 +570,7 @@ describe("initHono", () => {
 						$postId: {
 							HANDLER: {
 								get: async (
-									data: ServerHandlerInput<
+									data: ContractOutput<
 										NonNullable<
 											typeof router.users.$id.ROUTER.$postId.CONTRACT.get
 										>
@@ -636,9 +634,7 @@ describe("initHono", () => {
 				$id: {
 					HANDLER: {
 						get: async (
-							data: ServerHandlerInput<
-								NonNullable<typeof router.users.$id.CONTRACT.get>
-							>,
+							data: ContractOutput<NonNullable<typeof router.users.$id.CONTRACT.get>>,
 						) => ({
 							status: 200,
 							data: {
@@ -654,7 +650,7 @@ describe("initHono", () => {
 						$postId: {
 							HANDLER: {
 								get: async (
-									data: ServerHandlerInput<
+									data: ContractOutput<
 										NonNullable<
 											typeof router.users.$id.ROUTER.$postId.CONTRACT.get
 										>

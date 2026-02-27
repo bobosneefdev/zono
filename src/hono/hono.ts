@@ -2,20 +2,18 @@ import type { Context, Hono, MiddlewareHandler } from "hono";
 import type { Contract, ContractMethod, ContractMethodMap } from "~/contract/contract.types.js";
 import type { HonoHandlers, HonoOptions } from "~/hono/hono.types.js";
 import {
+	executeMiddlewareChain,
+	normalizeBasePath,
+	registerHonoRoute,
+} from "~/internal/hono.util.js";
+import {
 	buildContractResponse,
 	buildValidationErrorResponse,
 	parseContractInput,
 } from "~/internal/server.js";
 import type { ErrorMode, ServerHandlerOutput } from "~/internal/server.types.js";
-import { CONTRACT_METHOD_ORDER, isContractNode, isRecord, isRouterNode } from "~/internal/util.js";
+import { getContractMethods, isContractNode, isRecord, isRouterNode } from "~/internal/util.js";
 import { routerDotPathToParamPath } from "~/router/router.resolve.js";
-
-function normalizeBasePath(basePath: string | undefined): string {
-	if (basePath == null || basePath === "") return "";
-	const trimmed = basePath.trim().replace(/\/+$/, "");
-	if (trimmed === "") return "";
-	return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
-}
 
 async function parseRequestBody(context: Context): Promise<unknown> {
 	const contentType = context.req.header("content-type") ?? "";
@@ -63,17 +61,6 @@ type RouteRegistration = {
 	middleware: Array<MiddlewareHandler>;
 	handler: (context: Context, options: ResolvedHonoOptions) => Promise<Response>;
 };
-
-function getContractMethods(contractMap: ContractMethodMap): Array<ContractMethod> {
-	const methods: Array<ContractMethod> = [];
-	for (const method of CONTRACT_METHOD_ORDER) {
-		if (contractMap[method]) {
-			methods.push(method);
-		}
-	}
-
-	return methods;
-}
 
 function collectRoutes(
 	router: Record<string, unknown>,
@@ -173,68 +160,13 @@ function registerRoute(
 	options: ResolvedHonoOptions,
 ): void {
 	const middlewareChain = [...options.globalMiddleware, ...registration.middleware];
-	const routeHandler = async (context: Context): Promise<Response> => {
-		const dispatch = async (index: number): Promise<void> => {
-			if (index >= middlewareChain.length) {
-				const response = await registration.handler(context, options);
-				const mergedHeaders = new Headers(context.res.headers);
-				for (const [key, value] of response.headers.entries()) {
-					mergedHeaders.set(key, value);
-				}
-
-				context.res = new Response(response.body, {
-					status: response.status,
-					headers: mergedHeaders,
-				});
-				return;
-			}
-
-			const middleware = middlewareChain[index];
-			const middlewareResponse = await middleware(context, async () => {
-				await dispatch(index + 1);
-			});
-
-			if (middlewareResponse instanceof Response) {
-				context.res = middlewareResponse;
-			}
-		};
-
-		await dispatch(0);
-
-		if (context.res instanceof Response) {
-			return context.res;
-		}
-
-		throw new Error("Middleware chain completed without producing a response");
-	};
-
 	const path = options.basePath ? `${options.basePath}${registration.path}` : registration.path;
 
-	switch (registration.method) {
-		case "get":
-			app.get(path, routeHandler);
-			return;
-		case "post":
-			app.post(path, routeHandler);
-			return;
-		case "put":
-			app.put(path, routeHandler);
-			return;
-		case "delete":
-			app.delete(path, routeHandler);
-			return;
-		case "patch":
-			app.patch(path, routeHandler);
-			return;
-		case "options":
-			app.options(path, routeHandler);
-			return;
-		case "head":
-			app.on("HEAD", path, routeHandler);
-			return;
-		default:
-			throw new Error(`Unsupported HTTP method: ${registration.method}`);
-	}
+	registerHonoRoute(app, registration.method, path, (context) =>
+		executeMiddlewareChain(context, middlewareChain, (ctx) =>
+			registration.handler(ctx, options),
+		),
+	);
 }
 
 export function initHono<TRouter, TParams extends Array<unknown> = [Context]>(

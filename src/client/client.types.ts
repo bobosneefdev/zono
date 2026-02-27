@@ -3,11 +3,7 @@ import type {
 	ContractMethod,
 	ContractResponseStatuses,
 } from "~/contract/contract.types.js";
-import type {
-	ErrorMode,
-	ServerHandlerInput,
-	ValidationErrorBody,
-} from "~/internal/server.types.js";
+import type { ContractInput, ErrorMode, ValidationErrorBody } from "~/internal/server.types.js";
 import type {
 	PossiblePromise,
 	ResponseBodyForStatus,
@@ -26,13 +22,11 @@ export type ClientPathsAvailableGivenMethod<TRouter, TMethod extends ContractMet
 		: never;
 }[RouterPath<TRouter>];
 
-export type ClientRequestInput<TContract extends Contract> = ServerHandlerInput<TContract>;
-
 export type ClientRequestInputGivenMethodAndPath<
 	TRouter,
 	TMethod extends ContractMethod,
 	TPath extends ClientPathsAvailableGivenMethod<TRouter, TMethod>,
-> = ClientRequestInput<RouterContractGivenPathAndMethod<TRouter, TPath, TMethod>>;
+> = ContractInput<RouterContractGivenPathAndMethod<TRouter, TPath, TMethod>>;
 
 export type ClientOutput<TContract extends Contract> = {
 	[TStatus in ContractResponseStatuses<TContract>]: {
