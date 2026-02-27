@@ -1,6 +1,7 @@
 import z from "zod";
 import type { ErrorMode, ValidationErrorBody } from "~/contract/contract.error.js";
 import type { ContractInput } from "~/contract/contract.io.js";
+import type { MergeContractResponses } from "~/contract/contract.responses.js";
 import type { Contract, ContractMethod, ContractResponses } from "~/contract/contract.types.js";
 import type { PossiblePromise, SchemaOutput } from "~/internal/util.types.js";
 import type {
@@ -22,12 +23,6 @@ export type ClientRequestInputGivenMethodAndPath<
 	TPath extends ClientPathsAvailableGivenMethod<TRouter, TMethod>,
 > = ContractInput<RouterContractGivenPathAndMethod<TRouter, TPath, TMethod>>;
 
-type MergeContractResponses<TBaseResponses, TAdditionalResponses extends ContractResponses> = {
-	[TStatus in Extract<keyof TBaseResponses | keyof NonNullable<TAdditionalResponses>, number>]:
-		| (TStatus extends keyof TBaseResponses ? TBaseResponses[TStatus] : never)
-		| (TStatus extends keyof TAdditionalResponses ? TAdditionalResponses[TStatus] : never);
-};
-
 type ResponseBodyForStatusFromResponses<
 	TResponses,
 	TStatus extends Extract<keyof TResponses, number>,
@@ -45,7 +40,7 @@ type ResponseHeadersForStatusFromResponses<
 export type ClientOutput<
 	TContract extends Contract,
 	TAdditionalResponses extends ContractResponses = Record<never, never>,
-> = TContract extends { responses: infer TResponses }
+> = TContract extends { responses: infer TResponses extends ContractResponses }
 	? {
 			[TStatus in Extract<
 				keyof MergeContractResponses<TResponses, TAdditionalResponses>,

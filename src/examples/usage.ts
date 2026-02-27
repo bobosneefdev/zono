@@ -1,6 +1,8 @@
 import { createClient } from "@bobosneefdev/zono/client";
 import {
+	BytesContentType,
 	createRouter,
+	mergeContractResponses,
 	RouterShape,
 	RouterShapeContractGivenPath,
 } from "@bobosneefdev/zono/contract";
@@ -486,12 +488,26 @@ const gatewayClient = createClient(gatewayRouter, {
 	defaultHeaders: {
 		Authorization: () => `Bearer ${crypto.randomUUID()}`,
 	},
-	additionalResponses: {
-		401: {
-			contentType: "application/json",
-			schema: z.object({ error: z.string() }),
+	additionalResponses: mergeContractResponses(
+		{
+			401: {
+				contentType: "application/json",
+				schema: z.object({ error: z.string() }),
+			},
 		},
-	},
+		{
+			401: {
+				contentType: BytesContentType.OCTET_STREAM,
+				schema: z.instanceof(Uint8Array),
+			},
+			429: {
+				contentType: "application/json",
+				schema: z.object({
+					retryAfter: z.number().int(),
+				}),
+			},
+		},
+	),
 });
 
 (async () => {
