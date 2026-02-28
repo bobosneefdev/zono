@@ -13,17 +13,26 @@ import type { MiddlewareContractMap } from "~/middleware/middleware.types.js";
 
 export type HonoContextParams = ReadonlyArray<unknown>;
 
+export type AdditionalHandlerParamsFn<TContextParams extends HonoContextParams = []> = (
+	ctx: Context,
+) => PossiblePromise<TContextParams>;
+
+export type InferAdditionalHandlerParams<T extends AdditionalHandlerParamsFn> = Awaited<
+	ReturnType<T>
+>;
+
 export type HonoHandler<
 	TContract extends Contract,
-	TContextParams extends HonoContextParams = [Context],
+	TContextParams extends HonoContextParams = [],
 > = (
 	input: ContractOutput<TContract>,
+	ctx: Context,
 	...contextParams: TContextParams
 ) => PossiblePromise<ServerHandlerOutput<TContract>>;
 
 export type HonoHandlerMethodMap<
 	TContractMap extends ContractMethodMap,
-	TContextParams extends HonoContextParams = [Context],
+	TContextParams extends HonoContextParams = [],
 > = {
 	[M in ContractMethod as TContractMap[M] extends Contract ? M : never]: HonoHandler<
 		Extract<TContractMap[M], Contract>,
@@ -31,10 +40,7 @@ export type HonoHandlerMethodMap<
 	>;
 };
 
-type HonoRouteHandlerNode<
-	TNode,
-	TContextParams extends HonoContextParams = [Context],
-> = (TNode extends {
+type HonoRouteHandlerNode<TNode, TContextParams extends HonoContextParams = []> = (TNode extends {
 	CONTRACT: infer C extends ContractMethodMap;
 }
 	? { HANDLER: HonoHandlerMethodMap<C, TContextParams> }
@@ -45,7 +51,7 @@ type HonoRouteHandlerNode<
 
 export type HonoRouteHandlerTree<
 	TRoutes,
-	TContextParams extends HonoContextParams = [Context],
+	TContextParams extends HonoContextParams = [],
 > = TRoutes extends {
 	ROUTER: infer R extends Record<string, unknown>;
 }
@@ -54,11 +60,13 @@ export type HonoRouteHandlerTree<
 
 export type HonoMiddlewareHandler<
 	TResponses extends ContractResponses,
-	TContextParams extends HonoContextParams = [Context],
+	TContextParams extends HonoContextParams = [],
 > =
 	| null
 	| ((
-			...contextParamsAndNext: [...contextParams: TContextParams, next: () => Promise<void>]
+			ctx: Context,
+			next: () => Promise<void>,
+			...contextParams: TContextParams
 	  ) => PossiblePromise<void | HonoMiddlewareReturn<TResponses>>);
 
 export type HonoMiddlewareReturn<TResponses extends ContractResponses> = {
@@ -87,7 +95,7 @@ type HonoMiddlewareHandlerNode<TNode, TContextParams extends HonoContextParams> 
 
 export type HonoMiddlewareHandlerTree<
 	TMiddleware,
-	TContextParams extends HonoContextParams = [Context],
+	TContextParams extends HonoContextParams = [],
 > = (TMiddleware extends {
 	MIDDLEWARE: infer M extends MiddlewareContractMap;
 }
@@ -102,22 +110,13 @@ type HonoOptionsBase = {
 	basePath?: string;
 };
 
-export type HonoOptionsWithTransform<TContextParams extends HonoContextParams = [Context]> =
-	HonoOptionsBase & {
-		transformContextParams: (params: [Context]) => PossiblePromise<TContextParams>;
-	};
-
-export type HonoOptionsWithoutTransform = HonoOptionsBase & {
-	transformContextParams?: undefined;
+export type HonoOptions<TContextParams extends HonoContextParams = []> = HonoOptionsBase & {
+	additionalHandlerParams?: AdditionalHandlerParamsFn<TContextParams>;
 };
 
-export type HonoOptions<TContextParams extends HonoContextParams = [Context]> = HonoOptionsBase & {
-	transformContextParams?: (params: [Context]) => PossiblePromise<TContextParams>;
-};
-
-/** Infers TContextParams from transformContextParams when present, otherwise [Context] */
+/** Infers TContextParams from additionalHandlerParams when present, otherwise [] */
 export type InferredHandlerParams<O> = O extends {
-	transformContextParams: (params: [Context]) => infer R;
+	additionalHandlerParams: AdditionalHandlerParamsFn<infer R>;
 }
-	? Awaited<R>
-	: [Context];
+	? R
+	: [];

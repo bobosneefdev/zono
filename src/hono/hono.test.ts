@@ -466,7 +466,7 @@ describe("initHono", () => {
 		expect(body).toEqual({ retryAfter: 60 });
 	});
 
-	test("transformContextParams passes transformed params to handlers", async () => {
+	test("additionalHandlerParams passes additional params to handlers", async () => {
 		const app = new Hono();
 		initHono(
 			app,
@@ -518,8 +518,8 @@ describe("initHono", () => {
 			undefined,
 			undefined,
 			{
-				transformContextParams: ([ctx]: [Context]) =>
-					[ctx, ctx.req.header("Authorization")] as const,
+				additionalHandlerParams: (ctx: Context) =>
+					[ctx.req.header("Authorization")] as const,
 				errorMode: "public",
 			},
 		);
@@ -537,7 +537,7 @@ describe("initHono", () => {
 		expect(bodyWithoutAuth).toEqual({ status: "no-auth" });
 	});
 
-	test("transformContextParams supports async transform", async () => {
+	test("additionalHandlerParams supports async resolution", async () => {
 		const app = new Hono();
 		initHono(
 			app,
@@ -589,10 +589,10 @@ describe("initHono", () => {
 			undefined,
 			undefined,
 			{
-				transformContextParams: async ([ctx]: [Context]) => {
+				additionalHandlerParams: async (ctx: Context) => {
 					const auth = ctx.req.header("Authorization");
 					await new Promise((r) => setTimeout(r, 0));
-					return [ctx, auth ?? "async-no-auth"] as const;
+					return [auth ?? "async-no-auth"] as const;
 				},
 				errorMode: "public",
 			},

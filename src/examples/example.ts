@@ -138,7 +138,7 @@ initHono(
 				ROUTER: {
 					register: {
 						HANDLER: {
-							post: async (input, _ctx: Context, _auth: string | undefined) => {
+							post: async (input, _ctx, _auth) => {
 								return {
 									status: 201 as const,
 									contentType: "application/json" as const,
@@ -199,15 +199,15 @@ initHono(
 	middleware,
 	{
 		MIDDLEWARE: {
-			rateLimit: async (_ctx, _auth, next) => {
+			rateLimit: async (_ctx, next, _auth) => {
 				await next();
 			},
 		},
 	},
 	{
 		errorMode: "public",
-		transformContextParams: async (params: [Context]) => {
-			return [...params, params[0].req.header("Authorization") ?? "no-auth"] as const;
+		additionalHandlerParams: async (ctx: Context) => {
+			return [ctx.req.header("Authorization") ?? "no-auth"] as const;
 		},
 	},
 );

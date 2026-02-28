@@ -3,7 +3,9 @@ import type { ContractMethod } from "~/contract/contract.types.js";
 import type { PossiblePromise } from "~/internal/util.types.js";
 
 export type MiddlewareHandlerFn<TContextParams extends ReadonlyArray<unknown> = [Context]> = (
-	...contextParamsAndNext: [...contextParams: TContextParams, next: () => Promise<void>]
+	ctx: Context,
+	next: () => Promise<void>,
+	...contextParams: TContextParams
 ) => PossiblePromise<void | { status: number; contentType?: string | null; body?: unknown }>;
 
 export type MiddlewareEntry<TContextParams extends ReadonlyArray<unknown> = [Context]> = {
@@ -69,9 +71,13 @@ export async function executeMiddlewareChain<TContextParams extends ReadonlyArra
 		}
 
 		const entry = middleware[index];
-		const typedResult = await entry.handler(...contextParams, async () => {
-			await dispatch(index + 1);
-		});
+		const typedResult = await entry.handler(
+			context,
+			async () => {
+				await dispatch(index + 1);
+			},
+			...contextParams,
+		);
 
 		if (isTypedMiddlewareReturn(typedResult)) {
 			context.res = buildMiddlewareResponse(typedResult);
