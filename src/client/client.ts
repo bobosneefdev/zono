@@ -1,6 +1,7 @@
 import type { ErrorMode } from "~/contract/contract.error.js";
 import type { Contract, ContractQuery, ContractResponses } from "~/contract/contract.types.js";
 import { parseContractFields } from "~/internal/parse.js";
+import { parseSchemaForChannel } from "~/internal/schema_channels.js";
 import {
 	BYTES_CONTENT_TYPES,
 	CONTRACT_METHOD_ORDER,
@@ -140,7 +141,6 @@ async function resolveDefaultHeaders(
 async function parseIncomingResponse(
 	contract: Contract,
 	response: Response,
-	bypassIncomingParse: boolean,
 	serverErrorMode: ErrorMode | undefined,
 	additionalResponses: ContractResponses | undefined,
 ): Promise<{
@@ -165,21 +165,35 @@ async function parseIncomingResponse(
 		// Contentless response
 	} else if (JSON_CONTENT_TYPES.has(statusDefinition.contentType)) {
 		const rawBody = await response.clone().json();
-		body = bypassIncomingParse ? rawBody : await statusDefinition.schema.parseAsync(rawBody);
+		body = await parseSchemaForChannel(
+			statusDefinition.schema as unknown as import("zod").ZodType,
+			rawBody,
+			"transformed",
+		);
 	} else if (TEXT_CONTENT_TYPES.has(statusDefinition.contentType)) {
 		const rawBody = await response.clone().text();
-		body = bypassIncomingParse ? rawBody : await statusDefinition.schema.parseAsync(rawBody);
+		body = await parseSchemaForChannel(
+			statusDefinition.schema as unknown as import("zod").ZodType,
+			rawBody,
+			"transformed",
+		);
 	} else if (BYTES_CONTENT_TYPES.has(statusDefinition.contentType)) {
 		const rawBody = await response.clone().bytes();
-		body = bypassIncomingParse ? rawBody : await statusDefinition.schema.parseAsync(rawBody);
+		body = await parseSchemaForChannel(
+			statusDefinition.schema as unknown as import("zod").ZodType,
+			rawBody,
+			"transformed",
+		);
 	}
 
 	let headers: unknown;
 	if (statusDefinition.headers) {
 		const rawHeaders = Object.fromEntries(response.headers.entries());
-		headers = bypassIncomingParse
-			? rawHeaders
-			: await statusDefinition.headers.parseAsync(rawHeaders);
+		headers = await parseSchemaForChannel(
+			statusDefinition.headers as unknown as import("zod").ZodType,
+			rawHeaders,
+			"transformed",
+		);
 	}
 
 	return { status: response.status, body, headers, response };
@@ -208,16 +222,12 @@ export function createClient<
 			query: input.query,
 			headers: input.headers,
 		};
-		const parseResult = await parseContractFields(
-			contract,
-			rawInput,
-			options.bypassOutgoingParse ?? false,
-		);
+		const parseResult = await parseContractFields(contract, rawInput, "http-safe");
 		if (!parseResult.success) {
 			const message = parseResult.issues.map((i) => i.message).join("; ");
 			throw new Error(`Contract validation failed: ${message}`);
 		}
-		const parsed = parseResult.data as Record<string, unknown>;
+		const parsed = parseResult.data as unknown as Record<string, unknown>;
 
 		const resolvedHeaders = await resolveDefaultHeaders(options.defaultHeaders);
 		if (parsed.headers && typeof parsed.headers === "object") {
@@ -260,7 +270,6 @@ export function createClient<
 		return parseIncomingResponse(
 			contract,
 			response,
-			options.bypassIncomingParse ?? false,
 			options.serverErrorMode,
 			Object.keys(additionalResponses).length > 0 ? additionalResponses : undefined,
 		);

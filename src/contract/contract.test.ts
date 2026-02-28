@@ -166,6 +166,95 @@ describe("createRoutes", () => {
 		const invalidResult = bodySchema.safeParse({ name: 123 });
 		expect(invalidResult.success).toBe(false);
 	});
+
+	test("supports top-level transform chains and validates nested transform rejection", async () => {
+		const transformShape = {
+			ROUTER: {
+				users: {
+					ROUTER: {
+						register: {
+							CONTRACT: true,
+						},
+					},
+				},
+			},
+		} as const satisfies RouterShape;
+
+		const transformedRoutes = createRoutes(transformShape, {
+			ROUTER: {
+				users: {
+					ROUTER: {
+						register: {
+							CONTRACT: {
+								post: {
+									body: {
+										contentType: "application/json",
+										schema: z
+											.object({ name: z.string(), email: z.string().email() })
+											.transform((input) => ({
+												...input,
+												name: input.name.trim(),
+											}))
+											.transform((input) => ({
+												...input,
+												name: input.name.toUpperCase(),
+											})),
+									},
+									responses: {
+										201: {
+											contentType: "application/json",
+											schema: z
+												.object({
+													id: z.string(),
+													name: z.string(),
+													email: z.string(),
+												})
+												.transform((user) => ({
+													...user,
+													name: user.name.toLowerCase(),
+												})),
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		});
+
+		expect(transformedRoutes.ROUTER.users.ROUTER.register.CONTRACT.post).toBeDefined();
+
+		expect(() =>
+			createRoutes(transformShape, {
+				ROUTER: {
+					users: {
+						ROUTER: {
+							register: {
+								CONTRACT: {
+									post: {
+										body: {
+											contentType: "application/json",
+											schema: z.object({
+												name: z.string().transform((value) => value.trim()),
+												email: z.string().email(),
+											}),
+										},
+										responses: {
+											201: {
+												contentType: "application/json",
+												schema: zUser,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			}),
+		).toThrow("Nested .transform(...) is not supported in route contract schemas");
+	});
 });
 
 describe("createMiddleware", () => {

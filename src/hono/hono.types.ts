@@ -100,8 +100,6 @@ export type HonoMiddlewareHandlerTree<
 type HonoOptionsBase = {
 	errorMode?: ErrorMode;
 	basePath?: string;
-	bypassIncomingParse?: boolean;
-	bypassOutgoingParse?: boolean;
 };
 
 export type HonoOptionsWithTransform<TContextParams extends HonoContextParams = [Context]> =

@@ -64,14 +64,9 @@ type IncludeOutputHeaders<
 	? { headers?: undefined }
 	: { headers: ResponseHeadersForStatus<TContract, TStatus> };
 
-export type ServerHandlerOutputOptions = {
-	bypassOutgoingParse?: boolean;
-};
-
 export type ServerHandlerOutput<TContract extends Contract> = {
 	[TStatus in ContractResponseStatuses<TContract>]: {
 		status: TStatus;
-		opts?: ServerHandlerOutputOptions;
 	} & IncludeOutputContentType<TContract, TStatus> &
 		IncludeOutputBody<TContract, TStatus> &
 		IncludeOutputHeaders<TContract, TStatus>;
@@ -98,7 +93,5 @@ export type ServerHandlerMethodMap<
 };
 
 export type ServerOptionsBase = {
-	bypassIncomingParse?: boolean;
-	bypassOutgoingParse?: boolean;
 	errorMode?: ErrorMode;
 };

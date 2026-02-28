@@ -25,6 +25,9 @@ const shape = {
 		health: {
 			CONTRACT: true,
 		},
+		transforms: {
+			CONTRACT: true,
+		},
 	},
 } as const satisfies RouterShape;
 
@@ -83,6 +86,27 @@ const routes = createRoutes(shape, {
 						200: {
 							contentType: "application/json",
 							schema: z.object({ status: z.literal("ok") }),
+						},
+					},
+				},
+			},
+		},
+		transforms: {
+			CONTRACT: {
+				post: {
+					body: {
+						contentType: "application/json",
+						schema: z
+							.object({ name: z.string() })
+							.transform(async (input) => ({ name: input.name.trim() }))
+							.transform((input) => ({ normalized: input.name.toUpperCase() })),
+					},
+					responses: {
+						200: {
+							contentType: "application/json",
+							schema: z
+								.object({ message: z.string() })
+								.transform(async (body) => ({ message: `${body.message}!`, id: crypto.randomUUID() })),
 						},
 					},
 				},
@@ -157,6 +181,15 @@ initHono(
 						status: 200 as const,
 						contentType: "application/json" as const,
 						body: { status: "ok" as const },
+					}),
+				},
+			},
+			transforms: {
+				HANDLER: {
+					post: async (input) => ({
+						status: 200 as const,
+						contentType: "application/json" as const,
+						body: { message: input.body.normalized },
 					}),
 				},
 			},
@@ -247,6 +280,11 @@ const gatewayClient = createClient(gateway.routes, {
 	const gatewayHealth = await gatewayClient.usersService.health.get();
 	if (gatewayHealth.status === 200) {
 		console.log("Gateway health:", gatewayHealth.body.status);
+	}
+
+	const transformed = await client.transforms.post({ body: { name: "  ada  " } });
+	if (transformed.status === 200) {
+		console.log("Transformed response:", transformed.body.message);
 	}
 
 	const gatewayUser = await gatewayClient.usersService.users.$userId.get({

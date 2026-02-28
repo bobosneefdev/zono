@@ -19,6 +19,9 @@ const shape = {
 				},
 			},
 		},
+		transforms: {
+			CONTRACT: true,
+		},
 		health: {
 			CONTRACT: true,
 		},
@@ -73,6 +76,27 @@ const routes = createRoutes(shape, {
 						200: {
 							contentType: "application/json",
 							schema: z.object({ status: z.string() }),
+						},
+					},
+				},
+			},
+		},
+		transforms: {
+			CONTRACT: {
+				post: {
+					body: {
+						contentType: "application/json",
+						schema: z
+							.object({ name: z.string() })
+							.transform(async (input) => ({ name: input.name.trim() }))
+							.transform((input) => ({ normalized: input.name.toUpperCase() })),
+					},
+					responses: {
+						200: {
+							contentType: "application/json",
+							schema: z
+								.object({ message: z.string() })
+								.transform(async (body) => ({ message: `${body.message}!` })),
 						},
 					},
 				},
@@ -137,6 +161,15 @@ beforeAll(() => {
 						}),
 					},
 				},
+				transforms: {
+					HANDLER: {
+						post: (input) => ({
+							status: 200 as const,
+							contentType: "application/json" as const,
+							body: { message: input.body.normalized },
+						}),
+					},
+				},
 			},
 		},
 		undefined,
@@ -188,17 +221,27 @@ describe("createClient (proxy chain)", () => {
 		}
 	});
 
-	test("validation error returns 400 with public error mode", async () => {
+	test("invalid client input fails fast before request", async () => {
 		const rawClient = createClient(routes, {
 			baseUrl: `http://localhost:${PORT}`,
 			middleware: [middleware],
 			serverErrorMode: "public",
-			bypassOutgoingParse: true,
 		});
-		const res = await rawClient.users.register.post({
-			body: { name: 123 as unknown as string, email: "bad" },
+
+		await expect(
+			rawClient.users.register.post({
+				body: { name: 123 as unknown as string, email: "bad" },
+			}),
+		).rejects.toThrow("Contract validation failed");
+	});
+
+	test("applies directional transform behavior with async support", async () => {
+		const res = await client.transforms.post({
+			body: { name: "  john  " },
 		});
-		expect(res.status).toBe(400);
-		expect(res.body).toBeDefined();
+		expect(res.status).toBe(200);
+		if (res.status === 200) {
+			expect(res.body.message).toBe("JOHN!");
+		}
 	});
 });

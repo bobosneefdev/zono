@@ -1,6 +1,7 @@
 import type z from "zod";
-import type { ContractOutput } from "~/contract/contract.io.js";
 import type { Contract } from "~/contract/contract.types.js";
+import type { SchemaChannel } from "~/internal/schema_channels.js";
+import { getHttpSafeBaseSchema } from "~/internal/schema_channels.js";
 import { isRecord } from "~/internal/util.js";
 
 export type RawContractInput = {
@@ -10,8 +11,8 @@ export type RawContractInput = {
 	headers?: unknown;
 };
 
-export type ParseContractResult<TContract extends Contract> =
-	| { success: true; data: ContractOutput<TContract> }
+export type ParseContractResult =
+	| { success: true; data: Record<string, unknown> }
 	| { success: false; issues: Array<z.core.$ZodIssue> };
 
 export function parseRawQuery(contract: Contract, rawQuery: unknown): unknown {
@@ -34,25 +35,20 @@ export function parseRawQuery(contract: Contract, rawQuery: unknown): unknown {
 	return rawQuery;
 }
 
-export async function parseContractFields<TContract extends Contract>(
-	contract: TContract,
+export async function parseContractFields(
+	contract: Contract,
 	rawInput: RawContractInput,
-	bypass: boolean,
-): Promise<ParseContractResult<TContract>> {
+	channel: SchemaChannel,
+): Promise<ParseContractResult> {
 	const parsed: Record<string, unknown> = {};
 
-	if (bypass) {
-		if (contract.pathParams) parsed.pathParams = rawInput.pathParams;
-		if (contract.query) parsed.query = parseRawQuery(contract, rawInput.query);
-		if (contract.headers) parsed.headers = rawInput.headers;
-		if (contract.body) parsed.body = rawInput.body;
-		return { success: true, data: parsed as ContractOutput<TContract> };
-	}
-
 	const allIssues: Array<z.core.$ZodIssue> = [];
+	const parseSchema = (schema: z.ZodType): z.ZodType =>
+		channel === "http-safe" ? getHttpSafeBaseSchema(schema) : schema;
 
 	if (contract.pathParams) {
-		const result = await contract.pathParams.safeParseAsync(rawInput.pathParams);
+		const pathParamsSchema = parseSchema(contract.pathParams as unknown as z.ZodType);
+		const result = await pathParamsSchema.safeParseAsync(rawInput.pathParams);
 		if (result.success) {
 			parsed.pathParams = result.data;
 		} else {
@@ -62,7 +58,8 @@ export async function parseContractFields<TContract extends Contract>(
 
 	if (contract.query) {
 		const rawQuery = parseRawQuery(contract, rawInput.query);
-		const result = await contract.query.schema.safeParseAsync(rawQuery);
+		const querySchema = parseSchema(contract.query.schema as unknown as z.ZodType);
+		const result = await querySchema.safeParseAsync(rawQuery);
 		if (result.success) {
 			parsed.query = result.data;
 		} else {
@@ -71,7 +68,8 @@ export async function parseContractFields<TContract extends Contract>(
 	}
 
 	if (contract.headers) {
-		const result = await contract.headers.safeParseAsync(rawInput.headers);
+		const headersSchema = parseSchema(contract.headers);
+		const result = await headersSchema.safeParseAsync(rawInput.headers);
 		if (result.success) {
 			parsed.headers = result.data;
 		} else {
@@ -80,7 +78,8 @@ export async function parseContractFields<TContract extends Contract>(
 	}
 
 	if (contract.body) {
-		const result = await contract.body.schema.safeParseAsync(rawInput.body);
+		const bodySchema = parseSchema(contract.body.schema as unknown as z.ZodType);
+		const result = await bodySchema.safeParseAsync(rawInput.body);
 		if (result.success) {
 			parsed.body = result.data;
 		} else {
@@ -92,5 +91,5 @@ export async function parseContractFields<TContract extends Contract>(
 		return { success: false, issues: allIssues };
 	}
 
-	return { success: true, data: parsed as ContractOutput<TContract> };
+	return { success: true, data: parsed };
 }

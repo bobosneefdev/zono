@@ -37,8 +37,6 @@ async function parseRequestBody(context: Context): Promise<unknown> {
 
 type ResolvedHonoOptions = {
 	basePath: string;
-	bypassIncomingParse: boolean;
-	bypassOutgoingParse: boolean;
 	errorMode: ErrorMode;
 	transformContextParams?: (
 		params: [Context],
@@ -160,7 +158,7 @@ function collectRoutes(
 						const parseResult = await parseContractFields(
 							contract,
 							rawInput,
-							options.bypassIncomingParse,
+							"transformed",
 						);
 						if (!parseResult.success) {
 							return buildValidationErrorResponse(
@@ -174,9 +172,8 @@ function collectRoutes(
 						) => Promise<unknown>;
 						const result = await handlerFn(parseResult.data, ...contextParams);
 						return buildContractResponse(
-							contract,
+							contract as Contract,
 							result as ServerHandlerOutput<Contract>,
-							options.bypassOutgoingParse,
 						);
 					},
 				});
@@ -237,8 +234,6 @@ export function initHono<
 ): Hono {
 	const resolvedOptions: ResolvedHonoOptions = {
 		basePath: normalizeBasePath(options?.basePath),
-		bypassIncomingParse: options?.bypassIncomingParse ?? false,
-		bypassOutgoingParse: options?.bypassOutgoingParse ?? false,
 		errorMode: options?.errorMode ?? "hidden",
 		transformContextParams: options?.transformContextParams,
 	};

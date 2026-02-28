@@ -6,6 +6,7 @@ import type {
 } from "~/contract/contract.error.js";
 import type { Contract } from "~/contract/contract.types.js";
 import type { ServerHandlerOutput } from "~/internal/handler.types.js";
+import { parseSchemaForChannel } from "~/internal/schema_channels.js";
 import {
 	BYTES_CONTENT_TYPES,
 	isRecord,
@@ -28,14 +29,11 @@ export function buildValidationErrorResponse(
 export async function buildContractResponse<TContract extends Contract>(
 	contract: TContract,
 	result: ServerHandlerOutput<TContract>,
-	defaultBypassOutgoingParse: boolean,
 ): Promise<Response> {
 	const statusDefinition = contract.responses[result.status];
 	if (!statusDefinition) {
 		throw new Error(`Unexpected response status: ${result.status}`);
 	}
-
-	const bypassOutgoingParse = result.opts?.bypassOutgoingParse ?? defaultBypassOutgoingParse;
 
 	const rawBody = "body" in result ? result.body : undefined;
 
@@ -43,28 +41,36 @@ export async function buildContractResponse<TContract extends Contract>(
 	if (statusDefinition.contentType === null) {
 		// No body for contentless responses
 	} else if (JSON_CONTENT_TYPES.has(statusDefinition.contentType)) {
-		const parsedBody = bypassOutgoingParse
-			? rawBody
-			: await statusDefinition.schema.parseAsync(rawBody);
+		const parsedBody = await parseSchemaForChannel(
+			statusDefinition.schema as unknown as z.ZodType,
+			rawBody,
+			"http-safe",
+		);
 		encodedBody = JSON.stringify(parsedBody);
 	} else if (TEXT_CONTENT_TYPES.has(statusDefinition.contentType)) {
-		const parsedBody = bypassOutgoingParse
-			? rawBody
-			: await statusDefinition.schema.parseAsync(rawBody);
+		const parsedBody = await parseSchemaForChannel(
+			statusDefinition.schema as unknown as z.ZodType,
+			rawBody,
+			"http-safe",
+		);
 		encodedBody = String(parsedBody);
 	} else if (BYTES_CONTENT_TYPES.has(statusDefinition.contentType)) {
-		const parsedBody = bypassOutgoingParse
-			? rawBody
-			: await statusDefinition.schema.parseAsync(rawBody);
+		const parsedBody = await parseSchemaForChannel(
+			statusDefinition.schema as unknown as z.ZodType,
+			rawBody,
+			"http-safe",
+		);
 		encodedBody = parsedBody as BodyInit;
 	}
 
 	let responseHeaders: HeadersInit | undefined;
 	if (statusDefinition.headers) {
 		const rawHeaders = "headers" in result ? result.headers : undefined;
-		const parsedHeaders = bypassOutgoingParse
-			? rawHeaders
-			: await statusDefinition.headers.parseAsync(rawHeaders);
+		const parsedHeaders = await parseSchemaForChannel(
+			statusDefinition.headers as unknown as z.ZodType,
+			rawHeaders,
+			"http-safe",
+		);
 		responseHeaders = isRecord(parsedHeaders)
 			? (Object.entries(parsedHeaders).filter(
 					(entry): entry is [string, string] => typeof entry[1] === "string",

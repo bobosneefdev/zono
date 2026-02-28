@@ -19,6 +19,9 @@ const shape = {
 				},
 			},
 		},
+		transforms: {
+			CONTRACT: true,
+		},
 		health: {
 			CONTRACT: true,
 		},
@@ -76,6 +79,27 @@ const routes = createRoutes(shape, {
 						200: {
 							contentType: "application/json",
 							schema: z.object({ status: z.string() }),
+						},
+					},
+				},
+			},
+		},
+		transforms: {
+			CONTRACT: {
+				post: {
+					body: {
+						contentType: "application/json",
+						schema: z
+							.object({ name: z.string() })
+							.transform(async (input) => ({ name: input.name.trim() }))
+							.transform((input) => ({ normalized: input.name.toUpperCase() })),
+					},
+					responses: {
+						200: {
+							contentType: "application/json",
+							schema: z
+								.object({ message: z.string() })
+								.transform(async (body) => ({ message: `${body.message}!` })),
 						},
 					},
 				},
@@ -157,6 +181,15 @@ function createTestApp() {
 						}),
 					},
 				},
+				transforms: {
+					HANDLER: {
+						post: (input) => ({
+							status: 200 as const,
+							contentType: "application/json" as const,
+							body: { message: input.body.normalized },
+						}),
+					},
+				},
 			},
 		},
 		middleware,
@@ -195,6 +228,18 @@ describe("initHono", () => {
 		expect(res.status).toBe(200);
 		const body = await res.json();
 		expect(body).toEqual({ status: "ok" });
+	});
+
+	test("applies transformed handler input while keeping server response validation HTTP-safe", async () => {
+		const app = createTestApp();
+		const res = await app.request("/transforms", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ name: "  john  " }),
+		});
+		expect(res.status).toBe(200);
+		const body = await res.json();
+		expect(body).toEqual({ message: "JOHN" });
 	});
 
 	test("registers POST routes with body parsing", async () => {
@@ -286,6 +331,15 @@ describe("initHono", () => {
 							}),
 						},
 					},
+					transforms: {
+						HANDLER: {
+							post: () => ({
+								status: 200 as const,
+								contentType: "application/json" as const,
+								body: { message: "x" },
+							}),
+						},
+					},
 				},
 			},
 			middleware,
@@ -362,6 +416,15 @@ describe("initHono", () => {
 							}),
 						},
 					},
+					transforms: {
+						HANDLER: {
+							post: () => ({
+								status: 200 as const,
+								contentType: "application/json" as const,
+								body: { message: "x" },
+							}),
+						},
+					},
 				},
 			},
 			undefined,
@@ -421,6 +484,15 @@ describe("initHono", () => {
 								status: 200 as const,
 								contentType: "application/json" as const,
 								body: { status: resolved },
+							}),
+						},
+					},
+					transforms: {
+						HANDLER: {
+							post: () => ({
+								status: 200 as const,
+								contentType: "application/json" as const,
+								body: { message: "x" },
 							}),
 						},
 					},

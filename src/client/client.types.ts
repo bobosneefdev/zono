@@ -4,7 +4,7 @@ import type { ErrorMode, ValidationErrorBody } from "~/contract/contract.error.j
 import type { ContractInput } from "~/contract/contract.io.js";
 import type { MergeContractResponses } from "~/contract/contract.responses.js";
 import type { Contract, ContractMethod, ContractResponses } from "~/contract/contract.types.js";
-import type { PossiblePromise, SchemaOutput } from "~/internal/util.types.js";
+import type { PossiblePromise, SchemaTransformedOutput } from "~/internal/util.types.js";
 import type { MiddlewareContractMap } from "~/middleware/middleware.types.js";
 
 type UnionToIntersection<U> = (U extends unknown ? (k: U) => void : never) extends (
@@ -53,13 +53,13 @@ type CollectAllMiddlewareResponses<
 
 type ResponseBodyForStatus<TResponses, TStatus extends number> = TStatus extends keyof TResponses
 	? TResponses[TStatus] extends { schema: infer TSchema extends z.ZodType }
-		? SchemaOutput<TSchema>
+		? SchemaTransformedOutput<TSchema>
 		: undefined
 	: undefined;
 
 type ResponseHeadersForStatus<TResponses, TStatus extends number> = TStatus extends keyof TResponses
 	? TResponses[TStatus] extends { headers: infer THeaders extends z.ZodType }
-		? SchemaOutput<THeaders>
+		? SchemaTransformedOutput<THeaders>
 		: undefined
 	: undefined;
 
@@ -152,8 +152,6 @@ export type ClientOptions<
 > = {
 	baseUrl: string;
 	middleware?: TMiddlewares;
-	bypassOutgoingParse?: boolean;
-	bypassIncomingParse?: boolean;
 	defaultHeaders?: Record<string, ClientOptionsDefaultHeaderValue>;
 	serverErrorMode?: TErrorMode;
 };

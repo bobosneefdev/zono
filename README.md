@@ -13,6 +13,59 @@ Zono helps you define API contracts once and use them across your client and ser
 - Framework adapters for Hono and SvelteKit
 - Gateway utilities for Hono-based proxy/aggregation flows
 
+## Route Schema Transform Rules
+
+Route contract schemas support top-level `.transform(...)` chains while preserving HTTP-safe wire schemas.
+
+- ✅ Top-level transform chains are allowed (sync and async)
+- ❌ Nested transforms are not allowed anywhere inside the base schema
+- Validation fails fast when contracts are created if nested transforms are detected
+
+Directional behavior:
+
+- Client request input validates against the HTTP-safe/base schema
+- Server handler input receives transformed output
+- Server handler return is validated against the HTTP-safe/base response schema
+- Client response parsing applies full response schema including top-level transforms
+
+Example:
+
+```ts
+const routes = createRoutes(shape, {
+  ROUTER: {
+    transforms: {
+      CONTRACT: {
+        post: {
+          body: {
+            contentType: "application/json",
+            schema: z
+              .object({ name: z.string() })
+              .transform(async (input) => ({ name: input.name.trim() }))
+              .transform((input) => ({ normalized: input.name.toUpperCase() })),
+          },
+          responses: {
+            200: {
+              contentType: "application/json",
+              schema: z
+                .object({ message: z.string() })
+                .transform((body) => ({ message: `${body.message}!` })),
+            },
+          },
+        },
+      },
+    },
+  },
+});
+```
+
+Nested transform example (rejected at contract construction time):
+
+```ts
+z.object({
+  name: z.string().transform((value) => value.trim()), // not allowed (nested)
+});
+```
+
 ## Install
 
 ```bash

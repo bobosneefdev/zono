@@ -4,7 +4,6 @@ export type {
 	ServerHandlerGivenMethod,
 	ServerHandlerMethodMap,
 	ServerHandlerOutput,
-	ServerHandlerOutputOptions,
 	ServerOptionsBase,
 	TypedMiddlewareHandler,
 	TypedMiddlewareHandlers,
