@@ -16,7 +16,12 @@ import {
 import type { ServerHandlerOutput } from "~/internal/handler.types.js";
 import { parseContractFields } from "~/internal/parse.js";
 import { resolveRequestBody } from "~/internal/request_body.util.js";
-import { buildContractResponse, buildValidationErrorResponse } from "~/internal/server.js";
+import {
+	buildContractResponse,
+	buildInternalErrorResponse,
+	buildNotFoundErrorResponse,
+	buildValidationErrorResponse,
+} from "~/internal/server.js";
 import {
 	dotPathToParamPath,
 	getContractMethods,
@@ -237,6 +242,9 @@ export function initHono<
 		errorMode: options?.errorMode ?? "hidden",
 		transformContextParams: options?.transformContextParams,
 	};
+
+	app.notFound(() => buildNotFoundErrorResponse());
+	app.onError(() => buildInternalErrorResponse());
 
 	const registrations = collectRoutes(
 		routes as Record<string, unknown>,

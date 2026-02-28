@@ -1,4 +1,9 @@
-export type { ErrorMode, ValidationErrorBody } from "~/contract/contract.error.js";
+export type {
+	ErrorMode,
+	InternalErrorBody,
+	NotFoundErrorBody,
+	ValidationErrorBody,
+} from "~/contract/contract.error.js";
 export type { ContractInput, ContractOutput } from "~/contract/contract.io.js";
 export type {
 	MergeContractResponses,

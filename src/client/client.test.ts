@@ -139,15 +139,21 @@ beforeAll(() => {
 						},
 						$userId: {
 							HANDLER: {
-								get: (input) => ({
-									status: 200 as const,
-									contentType: "application/json" as const,
-									body: {
-										id: input.pathParams.userId,
-										name: "User",
-										email: "user@test.com",
-									},
-								}),
+								get: (input) => {
+									if (input.pathParams.userId === "explode") {
+										throw new Error("forced failure");
+									}
+
+									return {
+										status: 200 as const,
+										contentType: "application/json" as const,
+										body: {
+											id: input.pathParams.userId,
+											name: "User",
+											email: "user@test.com",
+										},
+									};
+								},
 							},
 						},
 					},
@@ -218,6 +224,30 @@ describe("createClient (proxy chain)", () => {
 		expect(res.status).toBe(200);
 		if (res.status === 200) {
 			expect(res.body.id).toBe("user-123");
+		}
+	});
+
+	test("returns hard-coded 404 body when route is not found", async () => {
+		const missingClient = createClient(routes, {
+			baseUrl: `http://localhost:${PORT}/missing-base`,
+			middleware: [middleware],
+			serverErrorMode: "public",
+		});
+
+		const res = await missingClient.health.get();
+		expect(res.status).toBe(404);
+		if (res.status === 404) {
+			expect(res.body).toEqual({ type: "notFound" });
+		}
+	});
+
+	test("returns hard-coded 500 body when handler throws", async () => {
+		const res = await client.users.$userId.get({
+			pathParams: { userId: "explode" },
+		});
+		expect(res.status).toBe(500);
+		if (res.status === 500) {
+			expect(res.body).toEqual({ type: "internalError" });
 		}
 	});
 

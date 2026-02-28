@@ -1,6 +1,8 @@
 import type z from "zod";
 import type {
 	ErrorMode,
+	InternalErrorBody,
+	NotFoundErrorBody,
 	ValidationErrorBodyHidden,
 	ValidationErrorBodyPublic,
 } from "~/contract/contract.error.js";
@@ -19,9 +21,27 @@ export function buildValidationErrorResponse(
 	errorMode: ErrorMode,
 ): Response {
 	const body: ValidationErrorBodyPublic | ValidationErrorBodyHidden =
-		errorMode === "public" ? { issues } : { issues: issues.length };
+		errorMode === "public"
+			? { type: "invalidInput", issues }
+			: { type: "invalidInput", issues: issues.length };
 	return new Response(JSON.stringify(body), {
 		status: 400,
+		headers: { "content-type": "application/json" },
+	});
+}
+
+export function buildNotFoundErrorResponse(): Response {
+	const body: NotFoundErrorBody = { type: "notFound" };
+	return new Response(JSON.stringify(body), {
+		status: 404,
+		headers: { "content-type": "application/json" },
+	});
+}
+
+export function buildInternalErrorResponse(): Response {
+	const body: InternalErrorBody = { type: "internalError" };
+	return new Response(JSON.stringify(body), {
+		status: 500,
 		headers: { "content-type": "application/json" },
 	});
 }

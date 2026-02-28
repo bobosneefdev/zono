@@ -275,8 +275,96 @@ describe("initHono", () => {
 		});
 		expect(res.status).toBe(400);
 		const body = await res.json();
+		expect(body.type).toBe("invalidInput");
 		expect(body.issues).toBeDefined();
 		expect(Array.isArray(body.issues)).toBe(true);
+	});
+
+	test("returns hard-coded 404 body for unknown route", async () => {
+		const app = createTestApp();
+		const res = await app.request("/does-not-exist");
+		expect(res.status).toBe(404);
+		const body = await res.json();
+		expect(body).toEqual({ type: "notFound" });
+	});
+
+	test("returns hard-coded 500 body when handler throws", async () => {
+		const app = new Hono();
+		initHono(
+			app,
+			routes,
+			{
+				ROUTER: {
+					users: {
+						ROUTER: {
+							register: {
+								HANDLER: {
+									post: () => ({
+										status: 201 as const,
+										contentType: "application/json" as const,
+										body: { id: "x", name: "n", email: "e@e.com" },
+									}),
+								},
+							},
+							$userId: {
+								HANDLER: {
+									get: () => {
+										throw new Error("boom");
+									},
+								},
+							},
+						},
+					},
+					health: {
+						HANDLER: {
+							get: () => ({
+								status: 200 as const,
+								contentType: "application/json" as const,
+								body: { status: "ok" },
+							}),
+						},
+					},
+					transforms: {
+						HANDLER: {
+							post: () => ({
+								status: 200 as const,
+								contentType: "application/json" as const,
+								body: { message: "x" },
+							}),
+						},
+					},
+				},
+			},
+			middleware,
+			{
+				MIDDLEWARE: {
+					rateLimit: async (_ctx, next) => {
+						await next();
+					},
+				},
+				ROUTER: {
+					users: {
+						ROUTER: {
+							register: {
+								MIDDLEWARE: {
+									antiBot: async (_ctx, next) => {
+										await next();
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			{
+				errorMode: "public",
+			},
+		);
+
+		const res = await app.request("/users/123");
+		expect(res.status).toBe(500);
+		const body = await res.json();
+		expect(body).toEqual({ type: "internalError" });
 	});
 
 	test("middleware passes through when not short-circuiting", async () => {

@@ -1,5 +1,7 @@
 export { createClient } from "~/client/client.js";
 export type {
+	ClientInternalErrorResponse,
+	ClientNotFoundErrorResponse,
 	ClientOptions,
 	ClientOptionsDefaultHeaderValue,
 	ClientOutputForContract,

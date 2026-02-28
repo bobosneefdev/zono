@@ -11,6 +11,7 @@ import type {
 	GatewayOptions,
 	GeneratedGateway,
 } from "~/hono_gateway/hono_gateway.types.js";
+import { buildInternalErrorResponse, buildNotFoundErrorResponse } from "~/internal/server.js";
 import {
 	dotPathToParamPath,
 	dotPathToSlashPath,
@@ -182,6 +183,9 @@ export function initHonoGateway<TRoutes, TMiddleware = unknown>(
 	options: GatewayOptions<TRoutes, TMiddleware>,
 ): Hono {
 	const basePath = normalizeBasePath(options.basePath);
+	app.notFound(() => buildNotFoundErrorResponse());
+	app.onError(() => buildInternalErrorResponse());
+
 	const services = options.services as Record<string, string>;
 	const registrations = collectGatewayRoutes(routes as Record<string, unknown>);
 

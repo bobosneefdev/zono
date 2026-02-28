@@ -104,9 +104,10 @@ const routes = createRoutes(shape, {
 					responses: {
 						200: {
 							contentType: "application/json",
-							schema: z
-								.object({ message: z.string() })
-								.transform(async (body) => ({ message: `${body.message}!`, id: crypto.randomUUID() })),
+							schema: z.object({ message: z.string() }).transform(async (body) => ({
+								message: `${body.message}!`,
+								id: crypto.randomUUID(),
+							})),
 						},
 					},
 				},

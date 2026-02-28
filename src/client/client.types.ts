@@ -1,6 +1,11 @@
 import { Prettify } from "ts-essentials";
 import z from "zod";
-import type { ErrorMode, ValidationErrorBody } from "~/contract/contract.error.js";
+import type {
+	ErrorMode,
+	InternalErrorBody,
+	NotFoundErrorBody,
+	ValidationErrorBody,
+} from "~/contract/contract.error.js";
 import type { ContractInput } from "~/contract/contract.io.js";
 import type { MergeContractResponses } from "~/contract/contract.responses.js";
 import type { Contract, ContractMethod, ContractResponses } from "~/contract/contract.types.js";
@@ -80,10 +85,22 @@ type ClientOutputBase<
 	};
 }[Extract<keyof MergedResponses<TContract, TMiddlewareResponses>, number>];
 
-type WithValidationError<
+type WithGlobalErrorResponses<
 	TOutput,
 	TErrorMode extends ErrorMode | undefined,
-> = TErrorMode extends ErrorMode ? TOutput | ClientValidationErrorResponse<TErrorMode> : TOutput;
+> = TErrorMode extends ErrorMode
+	?
+			| TOutput
+			| (Extract<TOutput, { status: 400 }> extends never
+					? ClientValidationErrorResponse<TErrorMode>
+					: never)
+			| (Extract<TOutput, { status: 404 }> extends never
+					? ClientNotFoundErrorResponse
+					: never)
+			| (Extract<TOutput, { status: 500 }> extends never
+					? ClientInternalErrorResponse
+					: never)
+	: TOutput;
 
 export type ClientValidationErrorResponse<TMode extends ErrorMode> = {
 	status: 400;
@@ -92,11 +109,25 @@ export type ClientValidationErrorResponse<TMode extends ErrorMode> = {
 	response: Response;
 };
 
+export type ClientNotFoundErrorResponse = {
+	status: 404;
+	body: NotFoundErrorBody;
+	headers: undefined;
+	response: Response;
+};
+
+export type ClientInternalErrorResponse = {
+	status: 500;
+	body: InternalErrorBody;
+	headers: undefined;
+	response: Response;
+};
+
 export type ClientOutputForContract<
 	TContract extends Contract,
 	TMiddlewareResponses extends ContractResponses,
 	TErrorMode extends ErrorMode | undefined,
-> = WithValidationError<ClientOutputBase<TContract, TMiddlewareResponses>, TErrorMode>;
+> = WithGlobalErrorResponses<ClientOutputBase<TContract, TMiddlewareResponses>, TErrorMode>;
 
 type ClientMethodFn<
 	TContract extends Contract,

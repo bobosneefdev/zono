@@ -8,4 +8,9 @@ export type {
 	TypedMiddlewareHandler,
 	TypedMiddlewareHandlers,
 } from "~/internal/handler.types.js";
-export { buildContractResponse, buildValidationErrorResponse } from "~/internal/server.js";
+export {
+	buildContractResponse,
+	buildInternalErrorResponse,
+	buildNotFoundErrorResponse,
+	buildValidationErrorResponse,
+} from "~/internal/server.js";

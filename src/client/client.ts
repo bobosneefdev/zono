@@ -149,9 +149,12 @@ async function parseIncomingResponse(
 	headers: unknown;
 	response: Response;
 }> {
-	if (serverErrorMode && response.status === 400) {
+	if (
+		serverErrorMode &&
+		(response.status === 400 || response.status === 404 || response.status === 500)
+	) {
 		const body = await response.clone().json();
-		return { status: 400, body, headers: undefined, response };
+		return { status: response.status, body, headers: undefined, response };
 	}
 
 	const statusDefinition =
