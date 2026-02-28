@@ -28,6 +28,10 @@ export function isRouterNode(value: unknown): value is { ROUTER: Record<string, 
 	return isRecord(value) && "ROUTER" in value && isRecord(value.ROUTER);
 }
 
+export function isMiddlewareNode(value: unknown): value is { MIDDLEWARE: Record<string, unknown> } {
+	return isRecord(value) && "MIDDLEWARE" in value && isRecord(value.MIDDLEWARE);
+}
+
 export function getContractMethods(contractMap: ContractMethodMap): Array<ContractMethod> {
 	const methods: Array<ContractMethod> = [];
 	for (const method of CONTRACT_METHOD_ORDER) {
@@ -36,6 +40,23 @@ export function getContractMethods(contractMap: ContractMethodMap): Array<Contra
 		}
 	}
 	return methods;
+}
+
+export function dotPathToParamPath(dotPath: string): string {
+	if (!dotPath) return "/";
+	const segments = dotPath.split(".").filter(Boolean);
+	const mapped = segments.map((s) => (s.startsWith("$") ? `:${s.slice(1)}` : s));
+	return `/${mapped.join("/")}`;
+}
+
+export function dotPathToSlashPath(dotPath: string): string {
+	if (!dotPath) return "/";
+	return `/${dotPath.split(".").filter(Boolean).join("/")}`;
+}
+
+export function routeToSegments(route: string): Array<string> {
+	const withoutLeadingSlash = route.startsWith("/") ? route.slice(1) : route;
+	return withoutLeadingSlash.split("/").filter(Boolean);
 }
 
 export const JSON_CONTENT_TYPES: Set<string> = new Set(Object.values(JsonContentType));

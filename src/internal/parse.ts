@@ -5,7 +5,7 @@ import { isRecord } from "~/internal/util.js";
 
 export type RawContractInput = {
 	pathParams?: unknown;
-	payload?: unknown;
+	body?: unknown;
 	query?: unknown;
 	headers?: unknown;
 };
@@ -28,7 +28,6 @@ export function parseRawQuery(contract: Contract, rawQuery: unknown): unknown {
 		if (typeof encoded === "string") {
 			return JSON.parse(encoded);
 		}
-		// Client passes the query object directly; server passes { json: "..." } from URL
 		return "json" in rawQuery ? undefined : rawQuery;
 	}
 
@@ -46,7 +45,7 @@ export async function parseContractFields<TContract extends Contract>(
 		if (contract.pathParams) parsed.pathParams = rawInput.pathParams;
 		if (contract.query) parsed.query = parseRawQuery(contract, rawInput.query);
 		if (contract.headers) parsed.headers = rawInput.headers;
-		if (contract.payload) parsed.payload = rawInput.payload;
+		if (contract.body) parsed.body = rawInput.body;
 		return { success: true, data: parsed as ContractOutput<TContract> };
 	}
 
@@ -80,10 +79,10 @@ export async function parseContractFields<TContract extends Contract>(
 		}
 	}
 
-	if (contract.payload) {
-		const result = await contract.payload.schema.safeParseAsync(rawInput.payload);
+	if (contract.body) {
+		const result = await contract.body.schema.safeParseAsync(rawInput.body);
 		if (result.success) {
-			parsed.payload = result.data;
+			parsed.body = result.data;
 		} else {
 			allIssues.push(...result.error.issues);
 		}

@@ -14,18 +14,20 @@ import type {
 	ResponseHeadersForStatus,
 	SchemaInput,
 } from "~/internal/util.types.js";
-import type { MiddlewareContractMap } from "~/router/router.types.js";
+import type { MiddlewareContractMap } from "~/middleware/middleware.types.js";
 
-/** Return type for typed middleware - always { status, data } */
+/** Return type for typed middleware - always { status, contentType, body } */
 export type MiddlewareReturn<TResponses extends ContractResponses> = {
 	[S in Extract<keyof TResponses, number>]: {
 		status: S;
-	} & (TResponses[S] extends { schema: infer TSchema extends z.ZodType }
-		? { data: SchemaInput<TSchema> }
-		: { data?: undefined });
+	} & (TResponses[S] extends { contentType: infer CT }
+		? TResponses[S] extends { schema: infer TSchema extends z.ZodType }
+			? { contentType: CT; body: SchemaInput<TSchema> }
+			: { contentType: CT; body?: undefined }
+		: { contentType?: undefined; body?: undefined });
 }[Extract<keyof TResponses, number>];
 
-/** Typed middleware handler - returns void to continue, or { status, data } to short-circuit */
+/** Typed middleware handler - returns void to continue, or response to short-circuit */
 export type TypedMiddlewareHandler<TResponses extends ContractResponses, TContext> =
 	| null
 	| ((
@@ -35,7 +37,7 @@ export type TypedMiddlewareHandler<TResponses extends ContractResponses, TContex
 
 /** Maps middleware names to typed handlers (or null for external middleware) */
 export type TypedMiddlewareHandlers<TMiddlewareMap extends MiddlewareContractMap, TContext> = {
-	[K in keyof TMiddlewareMap]?: TypedMiddlewareHandler<TMiddlewareMap[K], TContext> | null;
+	[K in keyof TMiddlewareMap]: TypedMiddlewareHandler<TMiddlewareMap[K], TContext> | null;
 };
 
 type ResponseContentTypeForStatus<
@@ -43,12 +45,17 @@ type ResponseContentTypeForStatus<
 	TStatus extends ContractResponseStatuses<TContract>,
 > = TContract["responses"][TStatus]["contentType"];
 
-type IncludeOutputData<
+type IncludeOutputBody<
 	TContract extends Contract,
 	TStatus extends ContractResponseStatuses<TContract>,
 > = ResponseContentTypeForStatus<TContract, TStatus> extends null
-	? { data?: undefined }
-	: { data: ResponseBodyForStatus<TContract, TStatus> };
+	? { body?: undefined }
+	: { body: ResponseBodyForStatus<TContract, TStatus> };
+
+type IncludeOutputContentType<
+	TContract extends Contract,
+	TStatus extends ContractResponseStatuses<TContract>,
+> = { contentType: ResponseContentTypeForStatus<TContract, TStatus> };
 
 type IncludeOutputHeaders<
 	TContract extends Contract,
@@ -65,7 +72,8 @@ export type ServerHandlerOutput<TContract extends Contract> = {
 	[TStatus in ContractResponseStatuses<TContract>]: {
 		status: TStatus;
 		opts?: ServerHandlerOutputOptions;
-	} & IncludeOutputData<TContract, TStatus> &
+	} & IncludeOutputContentType<TContract, TStatus> &
+		IncludeOutputBody<TContract, TStatus> &
 		IncludeOutputHeaders<TContract, TStatus>;
 }[ContractResponseStatuses<TContract>];
 
@@ -89,48 +97,8 @@ export type ServerHandlerMethodMap<
 		: never]: ServerHandlerGivenMethod<TContractMap, TParams, TMethod>;
 };
 
-export type ServerHandlerTree<TRouter, TParams extends Array<unknown> = []> = {
-	[K in keyof TRouter]?: K extends "MIDDLEWARE"
-		? NonNullable<TRouter[K]> extends MiddlewareContractMap
-			? TypedMiddlewareHandlers<NonNullable<TRouter[K]>, FirstParam<TParams>>
-			: never
-		: HandlerNode<TRouter[K], TParams>;
-};
-
-type FirstParam<TParams extends Array<unknown>> = TParams extends [infer C, ...Array<unknown>]
-	? C
-	: unknown;
-
-type MiddlewareAndForNode<TNode, TParams extends Array<unknown>> = TNode extends {
-	MIDDLEWARE?: infer M;
-}
-	? NonNullable<M> extends MiddlewareContractMap
-		? { MIDDLEWARE?: TypedMiddlewareHandlers<NonNullable<M>, FirstParam<TParams>> }
-		: Record<string, never>
-	: Record<string, never>;
-
-type HandlerNode<TNode, TParams extends Array<unknown>> = TNode extends {
-	CONTRACT: infer TContractMap extends ContractMethodMap;
-}
-	? { HANDLER: ServerHandlerMethodMap<TContractMap, TParams> } & MiddlewareAndForNode<
-			TNode,
-			TParams
-		> &
-			(TNode extends { ROUTER: infer TRouter }
-				? { ROUTER: ServerHandlerTree<TRouter, TParams> }
-				: { ROUTER?: undefined })
-	: TNode extends { ROUTER: infer TRouter }
-		? { ROUTER: ServerHandlerTree<TRouter, TParams> } & MiddlewareAndForNode<TNode, TParams>
-		: TNode extends Record<string, unknown>
-			? ServerHandlerTree<TNode, TParams>
-			: never;
-
-export type ServerOptionsBase<
-	TInParams extends Array<unknown>,
-	TOutParams extends Array<unknown>,
-> = {
+export type ServerOptionsBase = {
 	bypassIncomingParse?: boolean;
 	bypassOutgoingParse?: boolean;
 	errorMode?: ErrorMode;
-	transformParams?: (...args: TInParams) => TOutParams;
 };

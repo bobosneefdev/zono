@@ -15,11 +15,10 @@ type IncludePathParams<
 	? { pathParams: SchemaForDir<TContract["pathParams"], TDir> }
 	: object;
 
-type IncludePayload<
-	TContract extends Contract,
-	TDir extends SchemaDir,
-> = TContract["payload"] extends { schema: infer TSchema extends z.ZodType }
-	? { payload: SchemaForDir<TSchema, TDir> }
+type IncludeBody<TContract extends Contract, TDir extends SchemaDir> = TContract["body"] extends {
+	schema: infer TSchema extends z.ZodType;
+}
+	? { body: SchemaForDir<TSchema, TDir> }
 	: object;
 
 type IncludeQuery<TContract extends Contract, TDir extends SchemaDir> = TContract["query"] extends {
@@ -36,11 +35,11 @@ type IncludeHeaders<
 	: object;
 
 export type ContractInput<TContract extends Contract> = IncludePathParams<TContract, "input"> &
-	IncludePayload<TContract, "input"> &
+	IncludeBody<TContract, "input"> &
 	IncludeQuery<TContract, "input"> &
 	IncludeHeaders<TContract, "input">;
 
 export type ContractOutput<TContract extends Contract> = IncludePathParams<TContract, "output"> &
-	IncludePayload<TContract, "output"> &
+	IncludeBody<TContract, "output"> &
 	IncludeQuery<TContract, "output"> &
 	IncludeHeaders<TContract, "output">;

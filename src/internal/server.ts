@@ -37,25 +37,25 @@ export async function buildContractResponse<TContract extends Contract>(
 
 	const bypassOutgoingParse = result.opts?.bypassOutgoingParse ?? defaultBypassOutgoingParse;
 
-	const rawData = "data" in result ? result.data : undefined;
+	const rawBody = "body" in result ? result.body : undefined;
 
 	let encodedBody: BodyInit | null = null;
 	if (statusDefinition.contentType === null) {
-		// Do nothing
+		// No body for contentless responses
 	} else if (JSON_CONTENT_TYPES.has(statusDefinition.contentType)) {
 		const parsedBody = bypassOutgoingParse
-			? rawData
-			: await statusDefinition.schema.parseAsync(rawData);
+			? rawBody
+			: await statusDefinition.schema.parseAsync(rawBody);
 		encodedBody = JSON.stringify(parsedBody);
 	} else if (TEXT_CONTENT_TYPES.has(statusDefinition.contentType)) {
 		const parsedBody = bypassOutgoingParse
-			? rawData
-			: await statusDefinition.schema.parseAsync(rawData);
+			? rawBody
+			: await statusDefinition.schema.parseAsync(rawBody);
 		encodedBody = String(parsedBody);
 	} else if (BYTES_CONTENT_TYPES.has(statusDefinition.contentType)) {
 		const parsedBody = bypassOutgoingParse
-			? rawData
-			: await statusDefinition.schema.parseAsync(rawData);
+			? rawBody
+			: await statusDefinition.schema.parseAsync(rawBody);
 		encodedBody = parsedBody as BodyInit;
 	}
 

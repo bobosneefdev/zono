@@ -4,61 +4,83 @@ import type { ContractInput } from "~/contract/contract.io.js";
 import type { MergeContractResponses } from "~/contract/contract.responses.js";
 import type { Contract, ContractMethod, ContractResponses } from "~/contract/contract.types.js";
 import type { PossiblePromise, SchemaOutput } from "~/internal/util.types.js";
-import type {
-	RouterContractGivenPath,
-	RouterContractGivenPathAndMethod,
-	RouterMethodGivenPath,
-	RouterPath,
-} from "~/router/router.resolve.types.js";
+import type { MiddlewareContractMap } from "~/middleware/middleware.types.js";
 
-export type ClientPathsAvailableGivenMethod<TRouter, TMethod extends ContractMethod> = {
-	[TPath in RouterPath<TRouter>]: TMethod extends RouterMethodGivenPath<TRouter, TPath>
-		? TPath
-		: never;
-}[RouterPath<TRouter>];
-
-export type ClientRequestInputGivenMethodAndPath<
-	TRouter,
-	TMethod extends ContractMethod,
-	TPath extends ClientPathsAvailableGivenMethod<TRouter, TMethod>,
-> = ContractInput<RouterContractGivenPathAndMethod<TRouter, TPath, TMethod>>;
-
-type ResponseBodyForStatusFromResponses<
-	TResponses,
-	TStatus extends Extract<keyof TResponses, number>,
-> = TResponses[TStatus] extends { schema: infer TSchema extends z.ZodType }
-	? SchemaOutput<TSchema>
-	: undefined;
-
-type ResponseHeadersForStatusFromResponses<
-	TResponses,
-	TStatus extends Extract<keyof TResponses, number>,
-> = TResponses[TStatus] extends { headers: infer THeaders extends z.ZodType }
-	? SchemaOutput<THeaders>
-	: undefined;
-
-export type ClientOutput<
-	TContract extends Contract,
-	TAdditionalResponses extends ContractResponses = Record<never, never>,
-> = TContract extends { responses: infer TResponses extends ContractResponses }
-	? {
-			[TStatus in Extract<
-				keyof MergeContractResponses<TResponses, TAdditionalResponses>,
-				number
-			>]: {
-				status: TStatus;
-				body: ResponseBodyForStatusFromResponses<
-					MergeContractResponses<TResponses, TAdditionalResponses>,
-					TStatus
-				>;
-				headers: ResponseHeadersForStatusFromResponses<
-					MergeContractResponses<TResponses, TAdditionalResponses>,
-					TStatus
-				>;
-				response: Response;
-			};
-		}[Extract<keyof MergeContractResponses<TResponses, TAdditionalResponses>, number>]
+type UnionToIntersection<U> = (U extends unknown ? (k: U) => void : never) extends (
+	k: infer I,
+) => void
+	? I
 	: never;
+
+type FlattenMiddlewareValues<M extends MiddlewareContractMap> = [keyof M] extends [never]
+	? Record<never, never>
+	: UnionToIntersection<M[keyof M]> extends infer R extends ContractResponses
+		? R
+		: Record<never, never>;
+
+type ExtractLevelMiddleware<TNode> = TNode extends {
+	MIDDLEWARE: infer M extends MiddlewareContractMap;
+}
+	? FlattenMiddlewareValues<M>
+	: Record<never, never>;
+
+type CollectFromSingleMiddleware<
+	TNode,
+	TPath extends ReadonlyArray<string>,
+> = MergeContractResponses<
+	ExtractLevelMiddleware<TNode>,
+	TPath extends readonly [infer K extends string, ...infer Rest extends ReadonlyArray<string>]
+		? TNode extends { ROUTER: infer R extends Record<string, unknown> }
+			? K extends keyof R
+				? CollectFromSingleMiddleware<R[K], Rest>
+				: Record<never, never>
+			: Record<never, never>
+		: Record<never, never>
+>;
+
+type CollectAllMiddlewareResponses<
+	TMiddlewares extends ReadonlyArray<unknown>,
+	TPath extends ReadonlyArray<string>,
+> = TMiddlewares extends readonly [infer Head, ...infer Tail extends ReadonlyArray<unknown>]
+	? MergeContractResponses<
+			CollectFromSingleMiddleware<Head, TPath>,
+			CollectAllMiddlewareResponses<Tail, TPath>
+		>
+	: Record<never, never>;
+
+type ResponseBodyForStatus<TResponses, TStatus extends number> = TStatus extends keyof TResponses
+	? TResponses[TStatus] extends { schema: infer TSchema extends z.ZodType }
+		? SchemaOutput<TSchema>
+		: undefined
+	: undefined;
+
+type ResponseHeadersForStatus<TResponses, TStatus extends number> = TStatus extends keyof TResponses
+	? TResponses[TStatus] extends { headers: infer THeaders extends z.ZodType }
+		? SchemaOutput<THeaders>
+		: undefined
+	: undefined;
+
+type MergedResponses<
+	TContract extends Contract,
+	TMiddlewareResponses extends ContractResponses,
+> = MergeContractResponses<TContract["responses"], TMiddlewareResponses>;
+
+type ClientOutputBase<
+	TContract extends Contract,
+	TMiddlewareResponses extends ContractResponses,
+> = {
+	[S in Extract<keyof MergedResponses<TContract, TMiddlewareResponses>, number>]: {
+		status: S;
+		body: ResponseBodyForStatus<MergedResponses<TContract, TMiddlewareResponses>, S>;
+		headers: ResponseHeadersForStatus<MergedResponses<TContract, TMiddlewareResponses>, S>;
+		response: Response;
+	};
+}[Extract<keyof MergedResponses<TContract, TMiddlewareResponses>, number>];
+
+type WithValidationError<
+	TOutput,
+	TErrorMode extends ErrorMode | undefined,
+> = TErrorMode extends ErrorMode ? TOutput | ClientValidationErrorResponse<TErrorMode> : TOutput;
 
 export type ClientValidationErrorResponse<TMode extends ErrorMode> = {
 	status: 400;
@@ -67,110 +89,68 @@ export type ClientValidationErrorResponse<TMode extends ErrorMode> = {
 	response: Response;
 };
 
-type WithValidationError<
-	TOutput,
+export type ClientOutputForContract<
+	TContract extends Contract,
+	TMiddlewareResponses extends ContractResponses,
 	TErrorMode extends ErrorMode | undefined,
-> = TErrorMode extends ErrorMode ? TOutput | ClientValidationErrorResponse<TErrorMode> : TOutput;
+> = WithValidationError<ClientOutputBase<TContract, TMiddlewareResponses>, TErrorMode>;
 
-export type ClientOutputGivenPath<TRouter, TPath extends RouterPath<TRouter>> = ClientOutput<
-	RouterContractGivenPath<TRouter, TPath>
->;
+type ClientMethodFn<
+	TContract extends Contract,
+	TMiddlewareResponses extends ContractResponses,
+	TErrorMode extends ErrorMode | undefined,
+> = keyof ContractInput<TContract> extends never
+	? (
+			input?: ContractInput<TContract>,
+		) => Promise<ClientOutputForContract<TContract, TMiddlewareResponses, TErrorMode>>
+	: (
+			input: ContractInput<TContract>,
+		) => Promise<ClientOutputForContract<TContract, TMiddlewareResponses, TErrorMode>>;
 
-export type ClientOutputGivenPathAndMethod<
-	TRouter,
-	TPath extends RouterPath<TRouter>,
-	TMethod extends ContractMethod,
-	TErrorMode extends ErrorMode | undefined = undefined,
-	TAdditionalResponses extends ContractResponses = Record<never, never>,
-> = WithValidationError<
-	ClientOutput<RouterContractGivenPathAndMethod<TRouter, TPath, TMethod>, TAdditionalResponses>,
-	TErrorMode
->;
+type ClientMethods<
+	TContractMap,
+	TMiddlewareResponses extends ContractResponses,
+	TErrorMode extends ErrorMode | undefined,
+> = {
+	[M in ContractMethod as M extends keyof TContractMap ? M : never]: M extends keyof TContractMap
+		? TContractMap[M] extends infer TContract extends Contract
+			? ClientMethodFn<TContract, TMiddlewareResponses, TErrorMode>
+			: never
+		: never;
+};
 
-type ClientMethodRequestArgs<
-	TRouter,
-	TMethod extends ContractMethod,
-	TPath extends ClientPathsAvailableGivenMethod<TRouter, TMethod>,
-> = keyof ClientRequestInputGivenMethodAndPath<TRouter, TMethod, TPath> extends never
-	? [request?: ClientRequestInputGivenMethodAndPath<TRouter, TMethod, TPath>]
-	: [request: ClientRequestInputGivenMethodAndPath<TRouter, TMethod, TPath>];
+type ClientNode<
+	TNode,
+	TMiddlewares extends ReadonlyArray<unknown>,
+	TPath extends ReadonlyArray<string>,
+	TErrorMode extends ErrorMode | undefined,
+> = (TNode extends { CONTRACT: infer C extends Record<string, unknown> }
+	? ClientMethods<C, CollectAllMiddlewareResponses<TMiddlewares, TPath>, TErrorMode>
+	: unknown) &
+	(TNode extends { ROUTER: infer R extends Record<string, unknown> }
+		? { [K in keyof R & string]: ClientNode<R[K], TMiddlewares, [...TPath, K], TErrorMode> }
+		: unknown);
+
+export type ClientProxy<
+	TRoutes,
+	TMiddlewares extends ReadonlyArray<unknown>,
+	TErrorMode extends ErrorMode | undefined,
+> = TRoutes extends { ROUTER: infer R extends Record<string, unknown> }
+	? {
+			[K in keyof R & string]: ClientNode<R[K], TMiddlewares, [K], TErrorMode>;
+		}
+	: never;
 
 export type ClientOptionsDefaultHeaderValue = string | (() => PossiblePromise<string>);
 
 export type ClientOptions<
+	TMiddlewares extends ReadonlyArray<unknown> = [],
 	TErrorMode extends ErrorMode | undefined = undefined,
-	TAdditionalResponses extends ContractResponses = Record<never, never>,
 > = {
 	baseUrl: string;
+	middleware?: TMiddlewares;
 	bypassOutgoingParse?: boolean;
 	bypassIncomingParse?: boolean;
 	defaultHeaders?: Record<string, ClientOptionsDefaultHeaderValue>;
 	serverErrorMode?: TErrorMode;
-	additionalResponses?: TAdditionalResponses;
 };
-
-export interface Client<
-	TRouter,
-	TErrorMode extends ErrorMode | undefined = undefined,
-	TAdditionalResponses extends ContractResponses = Record<never, never>,
-> {
-	get<TPath extends ClientPathsAvailableGivenMethod<TRouter, "get">>(
-		route: TPath,
-		...args: ClientMethodRequestArgs<TRouter, "get", TPath>
-	): Promise<
-		ClientOutputGivenPathAndMethod<TRouter, TPath, "get", TErrorMode, TAdditionalResponses>
-	>;
-
-	post<TPath extends ClientPathsAvailableGivenMethod<TRouter, "post">>(
-		route: TPath,
-		...args: ClientMethodRequestArgs<TRouter, "post", TPath>
-	): Promise<
-		ClientOutputGivenPathAndMethod<TRouter, TPath, "post", TErrorMode, TAdditionalResponses>
-	>;
-
-	put<TPath extends ClientPathsAvailableGivenMethod<TRouter, "put">>(
-		route: TPath,
-		...args: ClientMethodRequestArgs<TRouter, "put", TPath>
-	): Promise<
-		ClientOutputGivenPathAndMethod<TRouter, TPath, "put", TErrorMode, TAdditionalResponses>
-	>;
-
-	delete<TPath extends ClientPathsAvailableGivenMethod<TRouter, "delete">>(
-		route: TPath,
-		...args: ClientMethodRequestArgs<TRouter, "delete", TPath>
-	): Promise<
-		ClientOutputGivenPathAndMethod<TRouter, TPath, "delete", TErrorMode, TAdditionalResponses>
-	>;
-
-	patch<TPath extends ClientPathsAvailableGivenMethod<TRouter, "patch">>(
-		route: TPath,
-		...args: ClientMethodRequestArgs<TRouter, "patch", TPath>
-	): Promise<
-		ClientOutputGivenPathAndMethod<TRouter, TPath, "patch", TErrorMode, TAdditionalResponses>
-	>;
-
-	options<TPath extends ClientPathsAvailableGivenMethod<TRouter, "options">>(
-		route: TPath,
-		...args: ClientMethodRequestArgs<TRouter, "options", TPath>
-	): Promise<
-		ClientOutputGivenPathAndMethod<TRouter, TPath, "options", TErrorMode, TAdditionalResponses>
-	>;
-
-	head<TPath extends ClientPathsAvailableGivenMethod<TRouter, "head">>(
-		route: TPath,
-		...args: ClientMethodRequestArgs<TRouter, "head", TPath>
-	): Promise<
-		ClientOutputGivenPathAndMethod<TRouter, TPath, "head", TErrorMode, TAdditionalResponses>
-	>;
-
-	parseResponse<
-		TMethod extends ContractMethod,
-		TPath extends ClientPathsAvailableGivenMethod<TRouter, TMethod>,
-	>(
-		method: TMethod,
-		route: TPath,
-		response: Response,
-	): Promise<
-		ClientOutputGivenPathAndMethod<TRouter, TPath, TMethod, TErrorMode, TAdditionalResponses>
-	>;
-}

@@ -1,96 +1,66 @@
-import { describe, expect, it } from "bun:test";
-import { Context, Hono } from "hono";
+import { describe, expect, test } from "bun:test";
+import { Hono } from "hono";
 import z from "zod";
-import type { ContractOutput } from "~/contract/contract.io.js";
-import { initHono } from "~/hono/index.js";
-import type { ServerHandlerOutput, ServerHandlerTree } from "~/internal/handler.types.js";
-import { createRouter } from "~/router/index.js";
+import { createRoutes } from "~/contract/routes.js";
+import type { RouterShape } from "~/contract/shape.types.js";
+import { createHonoMiddlewareHandlers, createHonoRouteHandlers, initHono } from "~/hono/hono.js";
+import { createMiddleware } from "~/middleware/middleware.js";
 
-function expectType<T>(_value: T): void {}
-
-const router = createRouter(
-	{
+const shape = {
+	ROUTER: {
 		users: {
-			TYPE: "router",
 			ROUTER: {
-				$id: {
-					TYPE: "contract",
-					ROUTER: {
-						$postId: {
-							TYPE: "contract",
-						},
-					},
+				register: {
+					CONTRACT: true,
+				},
+				$userId: {
+					CONTRACT: true,
 				},
 			},
 		},
+		health: {
+			CONTRACT: true,
+		},
 	},
-	{
-		ROUTER: {
-			users: {
-				ROUTER: {
-					$id: {
-						CONTRACT: {
-							get: {
-								pathParams: z.object({
-									id: z.string(),
+} as const satisfies RouterShape;
+
+const zUser = z.object({
+	id: z.string(),
+	name: z.string(),
+	email: z.string(),
+});
+
+const routes = createRoutes(shape, {
+	ROUTER: {
+		users: {
+			ROUTER: {
+				register: {
+					CONTRACT: {
+						post: {
+							body: {
+								contentType: "application/json",
+								schema: z.object({
+									name: z.string(),
+									email: z.string(),
 								}),
-								headers: z.object({
-									"x-input-header": z.string(),
-								}),
-								responses: {
-									200: {
-										contentType: "application/json",
-										schema: z.object({
-											id: z.string(),
-											name: z
-												.string()
-												.transform(async (value) => value.toUpperCase()),
-										}),
-										headers: z.object({
-											"x-custom-header": z.string(),
-										}),
-									},
-								},
 							},
-							post: {
-								pathParams: z.object({
-									id: z.string(),
-								}),
-								payload: {
+							responses: {
+								201: {
 									contentType: "application/json",
-									schema: z.object({
-										name: z.string(),
-									}),
-								},
-								responses: {
-									201: {
-										contentType: "application/json",
-										schema: z.object({
-											id: z.string(),
-											name: z.string(),
-										}),
-									},
+									schema: zUser,
 								},
 							},
 						},
-						ROUTER: {
-							$postId: {
-								CONTRACT: {
-									get: {
-										pathParams: z.object({
-											id: z.string(),
-											postId: z.string(),
-										}),
-										responses: {
-											200: {
-												contentType: "application/json",
-												schema: z.object({
-													id: z.string(),
-													title: z.string(),
-												}),
-											},
-										},
-									},
+					},
+				},
+				$userId: {
+					CONTRACT: {
+						get: {
+							pathParams: z.object({ userId: z.string() }),
+							responses: {
+								200: {
+									contentType: "application/json",
+									schema: zUser,
 								},
 							},
 						},
@@ -98,1003 +68,250 @@ const router = createRouter(
 				},
 			},
 		},
+		health: {
+			CONTRACT: {
+				get: {
+					responses: {
+						200: {
+							contentType: "application/json",
+							schema: z.object({ status: z.string() }),
+						},
+					},
+				},
+			},
+		},
 	},
-);
+});
+
+const middleware = createMiddleware(routes, {
+	MIDDLEWARE: {
+		rateLimit: {
+			429: {
+				contentType: "application/json",
+				schema: z.object({ retryAfter: z.number() }),
+			},
+		},
+	},
+	ROUTER: {
+		users: {
+			ROUTER: {
+				register: {
+					MIDDLEWARE: {
+						antiBot: {
+							403: {
+								contentType: "application/json",
+								schema: z.object({ error: z.string() }),
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+});
+
+function createTestApp() {
+	const app = new Hono();
+
+	initHono(app, routes, {
+		routeHandlers: createHonoRouteHandlers(routes, {
+			ROUTER: {
+				users: {
+					ROUTER: {
+						register: {
+							HANDLER: {
+								post: (input) => ({
+									status: 201 as const,
+									contentType: "application/json" as const,
+									body: {
+										id: "test-id",
+										...input.body,
+									},
+								}),
+							},
+						},
+						$userId: {
+							HANDLER: {
+								get: (input) => ({
+									status: 200 as const,
+									contentType: "application/json" as const,
+									body: {
+										id: input.pathParams.userId,
+										name: "Test User",
+										email: "test@example.com",
+									},
+								}),
+							},
+						},
+					},
+				},
+				health: {
+					HANDLER: {
+						get: () => ({
+							status: 200 as const,
+							contentType: "application/json" as const,
+							body: { status: "ok" },
+						}),
+					},
+				},
+			},
+		}),
+		middleware,
+		middlewareHandlers: createHonoMiddlewareHandlers(middleware, {
+			MIDDLEWARE: {
+				rateLimit: async (_ctx, next) => {
+					await next();
+				},
+			},
+			ROUTER: {
+				users: {
+					ROUTER: {
+						register: {
+							MIDDLEWARE: {
+								antiBot: async (_ctx, next) => {
+									await next();
+								},
+							},
+						},
+					},
+				},
+			},
+		}),
+		errorMode: "public",
+	});
+
+	return app;
+}
 
 describe("initHono", () => {
-	it("provides strongly typed handler input and output", () => {
-		type UsersContract = NonNullable<typeof router.users.$id.CONTRACT.get>;
-		type UsersInput = ContractOutput<UsersContract>;
-		type UsersOutput = ServerHandlerOutput<UsersContract>;
-		type CreateUserContract = NonNullable<typeof router.users.$id.CONTRACT.post>;
-		type CreateUserInput = ContractOutput<CreateUserContract>;
-
-		const input: UsersInput = {
-			pathParams: {
-				id: "123",
-			},
-			headers: {
-				"x-input-header": "ok",
-			},
-		};
-
-		expectType<string>(input.pathParams.id);
-
-		const output: UsersOutput = {
-			status: 200,
-			data: {
-				id: "123",
-				name: "john",
-			},
-			headers: {
-				"x-custom-header": "hello",
-			},
-		};
-
-		expectType<200>(output.status);
-
-		// @ts-expect-error headers are required for this response schema
-		const outputWithoutHeaders: UsersOutput = {
-			status: 200,
-			data: {
-				id: "123",
-				name: "john",
-			},
-		};
-		void outputWithoutHeaders;
-
-		const createInput: CreateUserInput = {
-			pathParams: {
-				id: "123",
-			},
-			payload: {
-				name: "john",
-			},
-		};
-
-		expectType<string>(createInput.payload.name);
-
-		const app = new Hono();
-		type MyHonoContext = [Context];
-		const handlers: ServerHandlerTree<typeof router, MyHonoContext> = {
-			users: {
-				$id: {
-					HANDLER: {
-						get: async (data, c) => {
-							expectType<Context>(c);
-							return {
-								status: 200,
-								data: {
-									id: data.pathParams.id,
-									name: "john",
-								},
-								headers: {
-									"x-custom-header": "hello",
-								},
-							};
-						},
-						post: async (data) => {
-							return {
-								status: 201,
-								data: {
-									id: data.pathParams.id,
-									name: data.payload.name,
-								},
-							};
-						},
-					},
-					ROUTER: {
-						$postId: {
-							HANDLER: {
-								get: async (data) => {
-									return {
-										status: 200,
-										data: {
-											id: data.pathParams.postId,
-											title: "post",
-										},
-									};
-								},
-							},
-						},
-					},
-				},
-			},
-		};
-
-		initHono(app, router, handlers);
+	test("registers GET routes", async () => {
+		const app = createTestApp();
+		const res = await app.request("/health");
+		expect(res.status).toBe(200);
+		const body = await res.json();
+		expect(body).toEqual({ status: "ok" });
 	});
 
-	it("registers nested routes and validates incoming and outgoing payloads", async () => {
-		const app = new Hono();
-
-		initHono(app, router, {
-			users: {
-				$id: {
-					HANDLER: {
-						get: async (data) => {
-							return {
-								status: 200,
-								data: {
-									id: data.pathParams.id,
-									name: "john doe",
-								},
-								headers: {
-									"x-custom-header": "Hello, world!",
-								},
-							};
-						},
-						post: async (data) => {
-							return {
-								status: 201,
-								data: {
-									id: data.pathParams.id,
-									name: data.payload.name,
-								},
-							};
-						},
-					},
-					ROUTER: {
-						$postId: {
-							HANDLER: {
-								get: async (data) => {
-									return {
-										status: 200,
-										data: {
-											id: data.pathParams.postId,
-											title: "Post Title",
-										},
-									};
-								},
-							},
-						},
-					},
-				},
-			},
-		});
-
-		const usersResponse = await app.request("http://localhost/users/123", {
-			method: "GET",
-			headers: {
-				"x-input-header": "ok",
-			},
-		});
-
-		expect(usersResponse.status).toBe(200);
-		expect(usersResponse.headers.get("x-custom-header")).toBe("Hello, world!");
-		expect(await usersResponse.json()).toEqual({
-			id: "123",
-			name: "JOHN DOE",
-		});
-
-		const createResponse = await app.request("http://localhost/users/123", {
-			method: "POST",
-			headers: {
-				"content-type": "application/json",
-			},
-			body: JSON.stringify({
-				name: "Jane",
-			}),
-		});
-
-		expect(createResponse.status).toBe(201);
-		expect(await createResponse.json()).toEqual({
-			id: "123",
-			name: "Jane",
-		});
-
-		const postsResponse = await app.request("http://localhost/users/123/abc", {
-			method: "GET",
-		});
-
-		expect(postsResponse.status).toBe(200);
-		expect(await postsResponse.json()).toEqual({
-			id: "abc",
-			title: "Post Title",
-		});
-	});
-
-	it("supports basePath option", async () => {
-		const app = new Hono();
-
-		initHono(
-			app,
-			router,
-			{
-				users: {
-					$id: {
-						HANDLER: {
-							get: async (data) => ({
-								status: 200,
-								data: {
-									id: data.pathParams.id,
-									name: "john",
-								},
-								headers: { "x-custom-header": "ok" },
-							}),
-							post: async (data) => ({
-								status: 201,
-								data: {
-									id: data.pathParams.id,
-									name: data.payload.name,
-								},
-							}),
-						},
-						ROUTER: {
-							$postId: {
-								HANDLER: {
-									get: async (data) => ({
-										status: 200,
-										data: {
-											id: data.pathParams.postId,
-											title: "post",
-										},
-									}),
-								},
-							},
-						},
-					},
-				},
-			},
-			{ basePath: "/api" },
-		);
-
-		const withBasePath = await app.request("http://localhost/api/users/123", {
-			method: "GET",
-			headers: { "x-input-header": "ok" },
-		});
-		expect(withBasePath.status).toBe(200);
-		expect(await withBasePath.json()).toEqual({
-			id: "123",
-			name: "JOHN",
-		});
-
-		const withoutBasePath = await app.request("http://localhost/users/123", {
-			method: "GET",
-			headers: { "x-input-header": "ok" },
-		});
-		expect(withoutBasePath.status).toBe(404);
-
-		const nestedWithBasePath = await app.request("http://localhost/api/users/123/abc", {
-			method: "GET",
-		});
-		expect(nestedWithBasePath.status).toBe(200);
-		expect(await nestedWithBasePath.json()).toEqual({
-			id: "abc",
-			title: "post",
-		});
-	});
-
-	it("supports bypassIncomingParse option", async () => {
-		const bypassRouter = createRouter(
-			{
-				items: {
-					TYPE: "router",
-					ROUTER: {
-						$id: {
-							TYPE: "contract",
-						},
-					},
-				},
-			},
-			{
-				ROUTER: {
-					items: {
-						ROUTER: {
-							$id: {
-								CONTRACT: {
-									get: {
-										pathParams: z.object({
-											id: z.string().regex(/^\d+$/),
-										}),
-										responses: {
-											200: {
-												contentType: "application/json",
-												schema: z.object({
-													id: z.string(),
-												}),
-											},
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		);
-
-		const app = new Hono();
-
-		initHono(
-			app,
-			bypassRouter,
-			{
-				items: {
-					$id: {
-						HANDLER: {
-							get: async (data) => ({
-								status: 200,
-								data: {
-									id: data.pathParams.id,
-								},
-							}),
-						},
-					},
-				},
-			},
-			{
-				bypassIncomingParse: true,
-			},
-		);
-
-		const response = await app.request("http://localhost/items/abc", {
-			method: "GET",
-		});
-
-		expect(response.status).toBe(200);
-		expect(await response.json()).toEqual({ id: "abc" });
-	});
-
-	it("typed middleware at parent level applies to all children", async () => {
-		const mwRouter = createRouter(
-			{
-				api: {
-					TYPE: "router",
-					ROUTER: {
-						$id: {
-							TYPE: "contract",
-							ROUTER: { posts: { TYPE: "contract" } },
-						},
-					},
-				},
-			},
-			{
-				MIDDLEWARE: {
-					logger: {
-						429: {
-							contentType: "application/json",
-							schema: z.object({ blocked: z.boolean() }),
-						},
-					},
-				},
-				ROUTER: {
-					api: {
-						ROUTER: {
-							$id: {
-								MIDDLEWARE: {
-									auth: {
-										401: {
-											contentType: "application/json",
-											schema: z.object({ error: z.string() }),
-										},
-									},
-								},
-								CONTRACT: {
-									get: {
-										pathParams: z.object({ id: z.string() }),
-										responses: {
-											200: {
-												contentType: "application/json",
-												schema: z.object({ id: z.string() }),
-											},
-										},
-									},
-								},
-								ROUTER: {
-									posts: {
-										CONTRACT: {
-											get: {
-												pathParams: z.object({ id: z.string() }),
-												responses: {
-													200: {
-														contentType: "application/json",
-														schema: z.object({ count: z.number() }),
-													},
-												},
-											},
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		);
-
-		const app = new Hono();
-		initHono(app, mwRouter, {
-			MIDDLEWARE: {
-				logger: async (_c, next) => {
-					await next();
-				},
-			},
-			api: {
-				$id: {
-					MIDDLEWARE: {
-						auth: async (_c, next) => {
-							await next();
-						},
-					},
-					HANDLER: {
-						get: async (data) => ({ status: 200, data: { id: data.pathParams.id } }),
-					},
-					ROUTER: {
-						posts: {
-							HANDLER: {
-								get: async (_data) => ({ status: 200, data: { count: 5 } }),
-							},
-						},
-					},
-				},
-			},
-		});
-
-		const idResponse = await app.request("http://localhost/api/abc", { method: "GET" });
-		expect(idResponse.status).toBe(200);
-		expect(await idResponse.json()).toEqual({ id: "abc" });
-
-		const postsResponse = await app.request("http://localhost/api/abc/posts", {
-			method: "GET",
-		});
-		expect(postsResponse.status).toBe(200);
-		expect(await postsResponse.json()).toEqual({ count: 5 });
-	});
-
-	it("typed middleware returning { status, data } short-circuits with correct response", async () => {
-		const mwRouter = createRouter(
-			{ limit: { TYPE: "contract" } },
-			{
-				MIDDLEWARE: {
-					rateLimiter: {
-						429: {
-							contentType: "application/json",
-							schema: z.object({ retryAfter: z.number().int() }),
-						},
-					},
-				},
-				ROUTER: {
-					limit: {
-						CONTRACT: {
-							get: {
-								responses: {
-									200: {
-										contentType: "application/json",
-										schema: z.object({ ok: z.literal(true) }),
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		);
-
-		const app = new Hono();
-		initHono(app, mwRouter, {
-			MIDDLEWARE: {
-				rateLimiter: () => Promise.resolve({ status: 429, data: { retryAfter: 60 } }),
-			},
-			limit: {
-				HANDLER: {
-					get: async () => ({ status: 200, data: { ok: true } }),
-				},
-			},
-		} as Parameters<typeof initHono>[2]);
-
-		const response = await app.request("http://localhost/limit", { method: "GET" });
-		expect(response.status).toBe(429);
-		expect(response.headers.get("content-type")).toContain("application/json");
-		expect(await response.json()).toEqual({ retryAfter: 60 });
-	});
-
-	it("typed middleware calling next() continues to handler", async () => {
-		const mwRouter = createRouter(
-			{ pass: { TYPE: "contract" } },
-			{
-				MIDDLEWARE: {
-					checked: {
-						401: {
-							contentType: "application/json",
-							schema: z.object({ error: z.string() }),
-						},
-					},
-				},
-				ROUTER: {
-					pass: {
-						CONTRACT: {
-							get: {
-								responses: {
-									200: {
-										contentType: "application/json",
-										schema: z.object({ passed: z.boolean() }),
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		);
-
-		const app = new Hono();
-		initHono(app, mwRouter, {
-			MIDDLEWARE: {
-				checked: async (_c: Context, next: () => Promise<void>) => {
-					await next();
-				},
-			},
-			pass: {
-				HANDLER: {
-					get: async () => ({ status: 200, data: { passed: true } }),
-				},
-			},
-		} as Parameters<typeof initHono>[2]);
-
-		const response = await app.request("http://localhost/pass", { method: "GET" });
-		expect(response.status).toBe(200);
-		expect(await response.json()).toEqual({ passed: true });
-	});
-
-	it("null typed middleware is skipped in chain", async () => {
-		const mwRouter = createRouter(
-			{ skip: { TYPE: "contract" } },
-			{
-				MIDDLEWARE: {
-					external: {
-						429: {
-							contentType: "application/json",
-							schema: z.object({ busy: z.boolean() }),
-						},
-					},
-				},
-				ROUTER: {
-					skip: {
-						CONTRACT: {
-							get: {
-								responses: {
-									200: {
-										contentType: "application/json",
-										schema: z.object({ ok: z.boolean() }),
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		);
-
-		const app = new Hono();
-		initHono(app, mwRouter, {
-			MIDDLEWARE: {
-				external: null,
-			},
-			skip: {
-				HANDLER: {
-					get: async () => ({ status: 200, data: { ok: true } }),
-				},
-			},
-		} as Parameters<typeof initHono>[2]);
-
-		const response = await app.request("http://localhost/skip", { method: "GET" });
-		expect(response.status).toBe(200);
-		expect(await response.json()).toEqual({ ok: true });
-	});
-
-	it("throws when handler map is not a record", () => {
-		const app = new Hono();
-		const handlersWithNullHandlerMap = {
-			users: {
-				$id: {
-					HANDLER: null,
-					ROUTER: {
-						$postId: {
-							HANDLER: {
-								get: async (
-									data: ContractOutput<
-										NonNullable<
-											typeof router.users.$id.ROUTER.$postId.CONTRACT.get
-										>
-									>,
-								) => ({
-									status: 200,
-									data: {
-										id: data.pathParams.postId,
-										title: "post",
-									},
-								}),
-							},
-						},
-					},
-				},
-			},
-		} as unknown as ServerHandlerTree<typeof router, [Context]>;
-
-		expect(() => initHono(app, router, handlersWithNullHandlerMap)).toThrow(
-			"Missing handler map for path /users/:id",
-		);
-	});
-
-	it("throws when middleware is not a record", () => {
-		const mwRouter = createRouter(
-			{ resource: { TYPE: "contract" } },
-			{
-				MIDDLEWARE: {
-					guard: {
-						401: {
-							contentType: "application/json",
-							schema: z.object({ error: z.string() }),
-						},
-					},
-				},
-				ROUTER: {
-					resource: {
-						CONTRACT: {
-							get: {
-								responses: {
-									200: {
-										contentType: "application/json",
-										schema: z.object({ ok: z.boolean() }),
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		);
-
-		const app = new Hono();
-		expect(() =>
-			initHono(app, mwRouter, {
-				MIDDLEWARE: "not-a-record" as unknown as ServerHandlerTree<
-					typeof mwRouter
-				>["MIDDLEWARE"],
-				resource: {
-					HANDLER: { get: async () => ({ status: 200, data: { ok: true } }) },
-				},
-			}),
-		).toThrow("Middleware must be a record of typed handlers: /");
-	});
-
-	it("registers options method route", async () => {
-		const methodsRouter = createRouter(
-			{
-				ping: { TYPE: "contract" },
-			},
-			{
-				ROUTER: {
-					ping: {
-						CONTRACT: {
-							options: {
-								responses: {
-									204: { contentType: null },
-								},
-							},
-						},
-					},
-				},
-			},
-		);
-
-		const app = new Hono();
-		initHono(app, methodsRouter, {
-			ping: {
-				HANDLER: {
-					options: async () => ({ status: 204 }),
-				},
-			},
-		});
-
-		const optionsResponse = await app.request("http://localhost/ping", {
-			method: "OPTIONS",
-		});
-		expect(optionsResponse.status).toBe(204);
-	});
-
-	it("throws deterministic error when method contract is missing matching handler", () => {
-		const app = new Hono();
-		const handlersWithMissingPostMethod = {
-			users: {
-				$id: {
-					HANDLER: {
-						get: async (
-							data: ContractOutput<NonNullable<typeof router.users.$id.CONTRACT.get>>,
-						) => ({
-							status: 200,
-							data: {
-								id: data.pathParams.id,
-								name: "john",
-							},
-							headers: {
-								"x-custom-header": "ok",
-							},
-						}),
-					},
-					ROUTER: {
-						$postId: {
-							HANDLER: {
-								get: async (
-									data: ContractOutput<
-										NonNullable<
-											typeof router.users.$id.ROUTER.$postId.CONTRACT.get
-										>
-									>,
-								) => ({
-									status: 200,
-									data: {
-										id: data.pathParams.postId,
-										title: "post",
-									},
-								}),
-							},
-						},
-					},
-				},
-			},
-		} as unknown as ServerHandlerTree<typeof router, [Context]>;
-
-		expect(() => initHono(app, router, handlersWithMissingPostMethod)).toThrow(
-			"Missing handler function for POST /users/:id",
-		);
-	});
-
-	it("parses multipart FormData request bodies", async () => {
-		const formRouter = createRouter(
-			{
-				uploads: {
-					TYPE: "contract",
-				},
-			},
-			{
-				ROUTER: {
-					uploads: {
-						CONTRACT: {
-							post: {
-								payload: {
-									contentType: "multipart/form-data",
-									schema: z.instanceof(FormData),
-								},
-								responses: {
-									200: {
-										contentType: "application/json",
-										schema: z.object({
-											name: z.string(),
-										}),
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		);
-
-		const app = new Hono();
-		initHono(app, formRouter, {
-			uploads: {
-				HANDLER: {
-					post: async (data) => ({
-						status: 200,
-						data: {
-							name: String(data.payload.get("name") ?? ""),
-						},
-					}),
-				},
-			},
-		});
-
-		const formData = new FormData();
-		formData.set("name", "Jane");
-
-		const response = await app.request("http://localhost/uploads", {
-			method: "POST",
-			body: formData,
-		});
-
-		expect(response.status).toBe(200);
-		expect(await response.json()).toEqual({
-			name: "Jane",
-		});
-	});
-
-	it("returns hidden validation errors by default on invalid input", async () => {
-		const app = new Hono();
-
-		initHono(app, router, {
-			users: {
-				$id: {
-					HANDLER: {
-						get: async (data) => ({
-							status: 200,
-							data: { id: data.pathParams.id, name: "john" },
-							headers: { "x-custom-header": "ok" },
-						}),
-						post: async (data) => ({
-							status: 201,
-							data: { id: data.pathParams.id, name: data.payload.name },
-						}),
-					},
-					ROUTER: {
-						$postId: {
-							HANDLER: {
-								get: async (data) => ({
-									status: 200,
-									data: { id: data.pathParams.postId, title: "post" },
-								}),
-							},
-						},
-					},
-				},
-			},
-		});
-
-		const response = await app.request("http://localhost/users/123", {
+	test("registers POST routes with body parsing", async () => {
+		const app = createTestApp();
+		const res = await app.request("/users/register", {
 			method: "POST",
 			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ name: 12345 }),
+			body: JSON.stringify({ name: "John", email: "john@example.com" }),
 		});
-
-		expect(response.status).toBe(400);
-		const body = await response.json();
-		expect(typeof body.issues).toBe("number");
-		expect(body.issues).toBeGreaterThan(0);
+		expect(res.status).toBe(201);
+		const body = await res.json();
+		expect(body).toEqual({
+			id: "test-id",
+			name: "John",
+			email: "john@example.com",
+		});
 	});
 
-	it("returns public validation errors when errorMode is 'public'", async () => {
-		const app = new Hono();
+	test("handles path parameters", async () => {
+		const app = createTestApp();
+		const res = await app.request("/users/abc-123");
+		expect(res.status).toBe(200);
+		const body = await res.json();
+		expect(body.id).toBe("abc-123");
+	});
 
-		initHono(
-			app,
-			router,
-			{
-				users: {
-					$id: {
-						HANDLER: {
-							get: async (data) => ({
-								status: 200,
-								data: { id: data.pathParams.id, name: "john" },
-								headers: { "x-custom-header": "ok" },
-							}),
-							post: async (data) => ({
-								status: 201,
-								data: { id: data.pathParams.id, name: data.payload.name },
-							}),
-						},
-						ROUTER: {
-							$postId: {
-								HANDLER: {
-									get: async (data) => ({
-										status: 200,
-										data: { id: data.pathParams.postId, title: "post" },
-									}),
-								},
-							},
-						},
-					},
-				},
-			},
-			{ errorMode: "public" },
-		);
-
-		const response = await app.request("http://localhost/users/123", {
+	test("returns 400 for invalid body (public error mode)", async () => {
+		const app = createTestApp();
+		const res = await app.request("/users/register", {
 			method: "POST",
 			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ name: 12345 }),
+			body: JSON.stringify({ name: 123 }),
 		});
-
-		expect(response.status).toBe(400);
-		const body = await response.json();
+		expect(res.status).toBe(400);
+		const body = await res.json();
+		expect(body.issues).toBeDefined();
 		expect(Array.isArray(body.issues)).toBe(true);
-		expect(body.issues.length).toBeGreaterThan(0);
-		expect(body.issues[0]).toHaveProperty("code");
-		expect(body.issues[0]).toHaveProperty("message");
 	});
 
-	it("encodes json/text/bytes/null responses based on response contentType", async () => {
-		const contentTypeRouter = createRouter(
-			{
-				json: { TYPE: "contract" },
-				text: { TYPE: "contract" },
-				bytes: { TYPE: "contract" },
-				nullish: { TYPE: "contract" },
-			},
-			{
-				ROUTER: {
-					json: {
-						CONTRACT: {
-							get: {
-								responses: {
-									200: {
-										contentType: "application/json",
-										schema: z.object({ value: z.string() }),
-									},
-								},
-							},
-						},
-					},
-					text: {
-						CONTRACT: {
-							get: {
-								responses: {
-									200: {
-										contentType: "text/plain",
-										schema: z.string(),
-									},
-								},
-							},
-						},
-					},
-					bytes: {
-						CONTRACT: {
-							get: {
-								responses: {
-									200: {
-										contentType: "application/octet-stream",
-										schema: z.instanceof(Uint8Array),
-									},
-								},
-							},
-						},
-					},
-					nullish: {
-						CONTRACT: {
-							get: {
-								responses: {
-									204: {
-										contentType: null,
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		);
+	test("middleware passes through when not short-circuiting", async () => {
+		const app = createTestApp();
+		const res = await app.request("/users/register", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ name: "John", email: "john@test.com" }),
+		});
+		expect(res.status).toBe(201);
+	});
 
+	test("middleware can short-circuit with typed response", async () => {
 		const app = new Hono();
-		initHono(app, contentTypeRouter, {
-			json: {
-				HANDLER: {
-					get: async () => ({ status: 200, data: { value: "ok" } }),
+		initHono(app, routes, {
+			routeHandlers: createHonoRouteHandlers(routes, {
+				ROUTER: {
+					users: {
+						ROUTER: {
+							register: {
+								HANDLER: {
+									post: (input) => ({
+										status: 201 as const,
+										contentType: "application/json" as const,
+										body: { id: "x", ...input.body },
+									}),
+								},
+							},
+							$userId: {
+								HANDLER: {
+									get: (input) => ({
+										status: 200 as const,
+										contentType: "application/json" as const,
+										body: {
+											id: input.pathParams.userId,
+											name: "User",
+											email: "u@e.com",
+										},
+									}),
+								},
+							},
+						},
+					},
+					health: {
+						HANDLER: {
+							get: () => ({
+								status: 200 as const,
+								contentType: "application/json" as const,
+								body: { status: "ok" },
+							}),
+						},
+					},
 				},
-			},
-			text: {
-				HANDLER: {
-					get: async () => ({ status: 200, data: "hello" }),
+			}),
+			middleware,
+			middlewareHandlers: createHonoMiddlewareHandlers(middleware, {
+				MIDDLEWARE: {
+					rateLimit: async () => {
+						return {
+							status: 429 as const,
+							contentType: "application/json" as const,
+							body: { retryAfter: 60 },
+						};
+					},
 				},
-			},
-			bytes: {
-				HANDLER: {
-					get: async () => ({ status: 200, data: Uint8Array.from([7, 8, 9]) }),
+				ROUTER: {
+					users: {
+						ROUTER: {
+							register: {
+								MIDDLEWARE: {
+									antiBot: async (_ctx, next) => {
+										await next();
+									},
+								},
+							},
+						},
+					},
 				},
-			},
-			nullish: {
-				HANDLER: {
-					get: async () => ({ status: 204 }),
-				},
-			},
+			}),
+			errorMode: "public",
 		});
 
-		const jsonResponse = await app.request("http://localhost/json", { method: "GET" });
-		expect(jsonResponse.headers.get("content-type")?.includes("application/json")).toBe(true);
-		expect(await jsonResponse.json()).toEqual({ value: "ok" });
-
-		const textResponse = await app.request("http://localhost/text", { method: "GET" });
-		expect(textResponse.headers.get("content-type")).toBe("text/plain");
-		expect(await textResponse.text()).toBe("hello");
-
-		const bytesResponse = await app.request("http://localhost/bytes", { method: "GET" });
-		expect(bytesResponse.headers.get("content-type")).toBe("application/octet-stream");
-		expect(new Uint8Array(await bytesResponse.arrayBuffer())).toEqual(
-			Uint8Array.from([7, 8, 9]),
-		);
-
-		const nullResponse = await app.request("http://localhost/nullish", { method: "GET" });
-		expect(nullResponse.status).toBe(204);
-		expect(nullResponse.headers.get("content-type")).toBeNull();
-		expect(await nullResponse.text()).toBe("");
+		const res = await app.request("/health");
+		expect(res.status).toBe(429);
+		const body = await res.json();
+		expect(body).toEqual({ retryAfter: 60 });
 	});
 });

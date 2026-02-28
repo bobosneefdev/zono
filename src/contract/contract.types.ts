@@ -6,7 +6,7 @@ type PossibleZodOptional<T extends z.ZodType> = T | z.ZodOptional<T>;
 
 export type Contract = {
 	responses: ContractResponses;
-	payload?: ContractPayload;
+	body?: ContractBody;
 	query?: ContractQuery;
 	headers?: ContractHeaders;
 	pathParams?: ContractPathParams;
@@ -15,9 +15,9 @@ export type Contract = {
 export type ContractResponses = Record<number, ContractResponse>;
 
 export type ContractResponse = { headers?: ContractHeaders } & (
-	| ContractJsonBody
-	| ContractTextBody
-	| ContractBytesBody
+	| ContractJsonResponse
+	| ContractTextResponse
+	| ContractBytesResponse
 	| ContractResponseContentless
 );
 
@@ -25,7 +25,7 @@ export enum JsonContentType {
 	JSON = "application/json",
 }
 
-export type ContractJsonBody = {
+export type ContractJsonResponse = {
 	contentType: EnumValues<typeof JsonContentType>;
 	schema: z.ZodType<JsonValue, JsonValue>;
 };
@@ -39,7 +39,7 @@ export enum TextContentType {
 	CSS = "text/css",
 }
 
-export type ContractTextBody = {
+export type ContractTextResponse = {
 	contentType: EnumValues<typeof TextContentType>;
 	schema: z.ZodType<string, string>;
 };
@@ -50,7 +50,7 @@ export enum BytesContentType {
 	PROTOBUF = "application/x-protobuf",
 }
 
-export type ContractBytesBody = {
+export type ContractBytesResponse = {
 	contentType: EnumValues<typeof BytesContentType>;
 	schema: z.ZodType<Uint8Array, Uint8Array>;
 };
@@ -70,7 +70,22 @@ export type ContractResponseContentless = {
 	schema?: undefined;
 };
 
-export type ContractPayload =
+export type ContractJsonBody = {
+	contentType: EnumValues<typeof JsonContentType>;
+	schema: z.ZodType<JsonValue, JsonValue>;
+};
+
+export type ContractTextBody = {
+	contentType: EnumValues<typeof TextContentType>;
+	schema: z.ZodType<string, string>;
+};
+
+export type ContractBytesBody = {
+	contentType: EnumValues<typeof BytesContentType>;
+	schema: z.ZodType<Uint8Array, Uint8Array>;
+};
+
+export type ContractBody =
 	| ContractJsonBody
 	| ContractTextBody
 	| ContractBytesBody

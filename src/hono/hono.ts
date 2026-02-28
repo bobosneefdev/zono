@@ -1,25 +1,28 @@
 import type { Context, Hono } from "hono";
 import type { ErrorMode } from "~/contract/contract.error.js";
-import { parseContractFields } from "~/contract/contract.parse.js";
+import type { Contract, ContractMethod, ContractMethodMap } from "~/contract/contract.types.js";
 import type {
-	Contract,
-	ContractMethod,
-	ContractMethodMap,
-	ContractResponses,
-} from "~/contract/contract.types.js";
-import type { HonoHandlers, HonoOptions } from "~/hono/hono.types.js";
-import type { ServerHandlerOutput } from "~/internal/handler.types.js";
-import { resolveRequestBody } from "~/internal/request_body.util.js";
-import { buildContractResponse, buildValidationErrorResponse } from "~/internal/server.js";
-import { getContractMethods, isContractNode, isRecord, isRouterNode } from "~/internal/util.js";
-import { routerDotPathToParamPath } from "~/router/router.resolve.js";
-import type { MiddlewareContractMap } from "~/router/router.types.js";
+	HonoMiddlewareHandlerTree,
+	HonoOptions,
+	HonoRouteHandlerTree,
+} from "~/hono/hono.types.js";
 import {
 	executeMiddlewareChain,
 	type MiddlewareEntry,
 	normalizeBasePath,
 	registerHonoRoute,
-} from "./hono.util.js";
+} from "~/hono/hono.util.js";
+import type { ServerHandlerOutput } from "~/internal/handler.types.js";
+import { parseContractFields } from "~/internal/parse.js";
+import { resolveRequestBody } from "~/internal/request_body.util.js";
+import { buildContractResponse, buildValidationErrorResponse } from "~/internal/server.js";
+import {
+	dotPathToParamPath,
+	getContractMethods,
+	isContractNode,
+	isRecord,
+	isRouterNode,
+} from "~/internal/util.js";
 
 async function parseRequestBody(context: Context): Promise<unknown> {
 	const contentType = context.req.header("content-type") ?? "";
@@ -30,33 +33,10 @@ async function parseRequestBody(context: Context): Promise<unknown> {
 	);
 }
 
-async function parseRequestInput(
-	contract: Contract,
-	context: Context,
-	bypassIncomingParse: boolean,
-) {
-	return await parseContractFields(
-		contract,
-		{
-			pathParams: context.req.param(),
-			query: context.req.query(),
-			headers: Object.fromEntries(context.req.raw.headers.entries()),
-			payload: contract.payload ? await parseRequestBody(context) : undefined,
-		},
-		bypassIncomingParse,
-	);
-}
-
-async function buildResponse<TContract extends Contract>(
-	contract: TContract,
-	result: ServerHandlerOutput<TContract>,
-	defaultBypassOutgoingParse: boolean,
-): Promise<Response> {
-	return await buildContractResponse(contract, result, defaultBypassOutgoingParse);
-}
-
-type ResolvedHonoOptions = Required<Omit<HonoOptions<Array<unknown>>, "basePath" | "errorMode">> & {
+type ResolvedHonoOptions = {
 	basePath: string;
+	bypassIncomingParse: boolean;
+	bypassOutgoingParse: boolean;
 	errorMode: ErrorMode;
 };
 
@@ -69,33 +49,21 @@ type RouteRegistration = {
 };
 
 function collectMiddlewareEntries(
-	routerNode: Record<string, unknown>,
-	handlerNode: Record<string, unknown>,
-	path: string,
+	mwDefNode: Record<string, unknown>,
+	mwHandlerNode: Record<string, unknown>,
 ): Array<MiddlewareEntry> {
 	const entries: Array<MiddlewareEntry> = [];
-	const middleware = handlerNode.MIDDLEWARE;
-	const routerMiddleware = routerNode.MIDDLEWARE as MiddlewareContractMap | undefined;
+	const mwDef = mwDefNode.MIDDLEWARE as Record<string, unknown> | undefined;
+	const mwHandlers = mwHandlerNode.MIDDLEWARE as Record<string, unknown> | undefined;
 
-	if (middleware === undefined || routerMiddleware === undefined) {
-		return entries;
-	}
+	if (!mwDef || !mwHandlers) return entries;
 
-	if (!isRecord(middleware)) {
-		throw new Error(`Middleware must be a record of typed handlers: ${path}`);
-	}
-
-	for (const [name, handler] of Object.entries(middleware)) {
-		if (handler === null) continue;
-		const responses = routerMiddleware[name];
-		if (!isRecord(responses) || typeof handler !== "function") continue;
+	for (const name of Object.keys(mwDef)) {
+		const handler = mwHandlers[name];
+		if (handler === null || handler === undefined) continue;
+		if (typeof handler !== "function") continue;
 		entries.push({
-			type: "typed",
-			handler: handler as (
-				ctx: Context,
-				next: () => Promise<void>,
-			) => Promise<void | { status: number; data?: unknown }>,
-			responses: responses as ContractResponses,
+			handler: handler as MiddlewareEntry["handler"],
 		});
 	}
 
@@ -103,48 +71,57 @@ function collectMiddlewareEntries(
 }
 
 function collectRoutes(
-	router: Record<string, unknown>,
+	routes: Record<string, unknown>,
 	handlers: Record<string, unknown>,
-	dotPathPrefix = "",
-	accumulatedMiddleware: Array<MiddlewareEntry> = [],
+	mwDef: Record<string, unknown> | undefined,
+	mwHandlers: Record<string, unknown> | undefined,
+	dotPathPrefix: string,
+	accumulatedMiddleware: Array<MiddlewareEntry>,
 ): Array<RouteRegistration> {
 	const registrations: Array<RouteRegistration> = [];
 
 	let effectiveMiddleware = accumulatedMiddleware;
-	// Collect root-level MIDDLEWARE before iterating route keys
-	if (dotPathPrefix === "" && router.MIDDLEWARE && handlers.MIDDLEWARE) {
+	if (mwDef && mwHandlers) {
 		effectiveMiddleware = [
 			...effectiveMiddleware,
-			...collectMiddlewareEntries(
-				router as Record<string, unknown>,
-				{ MIDDLEWARE: handlers.MIDDLEWARE } as Record<string, unknown>,
-				"/",
-			),
+			...collectMiddlewareEntries(mwDef, mwHandlers),
 		];
 	}
 
-	for (const [key, value] of Object.entries(router)) {
-		if (key === "MIDDLEWARE") continue;
+	const routerKeys = Object.keys(routes.ROUTER as Record<string, unknown>);
+	const routesRouter = routes.ROUTER as Record<string, unknown>;
+	const handlersRouter = (handlers.ROUTER ?? handlers) as Record<string, unknown>;
 
-		const nodePath = dotPathPrefix.length > 0 ? `${dotPathPrefix}.${key}` : key;
-		const handlerNode = handlers[key];
+	for (const key of routerKeys) {
+		const routeNode = routesRouter[key];
+		const handlerNode = handlersRouter[key];
 
-		if (!isRecord(value) || !isRecord(handlerNode)) {
-			continue;
+		if (!isRecord(routeNode) || !isRecord(handlerNode)) continue;
+
+		const nodePath = dotPathPrefix ? `${dotPathPrefix}.${key}` : key;
+
+		const childMwDef = mwDef?.ROUTER
+			? (mwDef.ROUTER as Record<string, unknown>)[key]
+			: undefined;
+		const childMwHandlers = mwHandlers?.ROUTER
+			? (mwHandlers.ROUTER as Record<string, unknown>)[key]
+			: undefined;
+
+		let nodeMiddleware = effectiveMiddleware;
+		if (isRecord(childMwDef) && isRecord(childMwHandlers)) {
+			nodeMiddleware = [
+				...effectiveMiddleware,
+				...collectMiddlewareEntries(
+					childMwDef as Record<string, unknown>,
+					childMwHandlers as Record<string, unknown>,
+				),
+			];
 		}
 
-		const pathForMw = routerDotPathToParamPath(nodePath);
-		const levelMiddleware = collectMiddlewareEntries(value, handlerNode, pathForMw);
-		const currentPathMiddleware = [...effectiveMiddleware, ...levelMiddleware];
-
-		if (isContractNode(value) && "HANDLER" in handlerNode) {
-			const path = pathForMw;
-			const contractMap = value.CONTRACT as ContractMethodMap;
-			const handlerMap = handlerNode.HANDLER;
-
-			if (!isRecord(handlerMap)) {
-				throw new Error(`Missing handler map for path ${path}`);
-			}
+		if (isContractNode(routeNode) && "HANDLER" in handlerNode) {
+			const path = dotPathToParamPath(nodePath);
+			const contractMap = routeNode.CONTRACT as ContractMethodMap;
+			const handlerMap = handlerNode.HANDLER as Record<string, unknown>;
 
 			for (const method of getContractMethods(contractMap)) {
 				const contract = contractMap[method];
@@ -152,18 +129,24 @@ function collectRoutes(
 
 				const resolvedHandler = handlerMap[method];
 				if (typeof resolvedHandler !== "function") {
-					throw new Error(`Missing handler function for ${method.toUpperCase()} ${path}`);
+					throw new Error(`Missing handler for ${method.toUpperCase()} ${path}`);
 				}
 
 				registrations.push({
 					path,
 					method,
 					contract,
-					middleware: currentPathMiddleware,
+					middleware: nodeMiddleware,
 					handler: async (context: Context, options: ResolvedHonoOptions) => {
-						const parseResult = await parseRequestInput(
+						const rawInput = {
+							pathParams: context.req.param(),
+							query: context.req.query(),
+							headers: Object.fromEntries(context.req.raw.headers.entries()),
+							body: contract.body ? await parseRequestBody(context) : undefined,
+						};
+						const parseResult = await parseContractFields(
 							contract,
-							context,
+							rawInput,
 							options.bypassIncomingParse,
 						);
 						if (!parseResult.success) {
@@ -172,9 +155,12 @@ function collectRoutes(
 								options.errorMode,
 							);
 						}
-						const handlerParams = options.transformParams(context);
-						const result = await resolvedHandler(parseResult.data, ...handlerParams);
-						return await buildResponse(
+						const handlerFn = resolvedHandler as (
+							input: unknown,
+							ctx: Context,
+						) => Promise<unknown>;
+						const result = await handlerFn(parseResult.data, context);
+						return buildContractResponse(
 							contract,
 							result as ServerHandlerOutput<Contract>,
 							options.bypassOutgoingParse,
@@ -184,26 +170,18 @@ function collectRoutes(
 			}
 		}
 
-		const routerChild = isContractNode(value)
-			? isRouterNode(value)
-				? value.ROUTER
-				: undefined
-			: value;
-
-		const handlerChild =
-			"HANDLER" in handlerNode
-				? isRouterNode(handlerNode)
-					? handlerNode.ROUTER
-					: undefined
-				: handlerNode;
-
-		if (routerChild && handlerChild) {
+		if (isRouterNode(routeNode)) {
+			const childHandlers = isRecord(handlerNode.ROUTER) ? handlerNode.ROUTER : handlerNode;
 			registrations.push(
 				...collectRoutes(
-					routerChild as Record<string, unknown>,
-					handlerChild as Record<string, unknown>,
+					routeNode as Record<string, unknown>,
+					{ ROUTER: childHandlers } as Record<string, unknown>,
+					isRecord(childMwDef) ? (childMwDef as Record<string, unknown>) : undefined,
+					isRecord(childMwHandlers)
+						? (childMwHandlers as Record<string, unknown>)
+						: undefined,
 					nodePath,
-					currentPathMiddleware,
+					nodeMiddleware,
 				),
 			);
 		}
@@ -212,41 +190,51 @@ function collectRoutes(
 	return registrations;
 }
 
-function registerRoute(
-	app: Hono,
-	registration: RouteRegistration,
-	options: ResolvedHonoOptions,
-): void {
-	const path = options.basePath ? `${options.basePath}${registration.path}` : registration.path;
-
-	registerHonoRoute(app, registration.method, path, (context) =>
-		executeMiddlewareChain(context, registration.middleware, (ctx) =>
-			registration.handler(ctx, options),
-		),
-	);
+export function createHonoRouteHandlers<TRoutes>(
+	_routes: TRoutes,
+	handlers: HonoRouteHandlerTree<TRoutes>,
+): HonoRouteHandlerTree<TRoutes> {
+	return handlers;
 }
 
-export function initHono<TRouter, TParams extends Array<unknown> = [Context]>(
+export function createHonoMiddlewareHandlers<TMiddleware>(
+	_middleware: TMiddleware,
+	handlers: HonoMiddlewareHandlerTree<TMiddleware>,
+): HonoMiddlewareHandlerTree<TMiddleware> {
+	return handlers;
+}
+
+export function initHono<TRoutes, TMiddleware = unknown>(
 	app: Hono,
-	router: TRouter,
-	handlers: HonoHandlers<TRouter, TParams>,
-	options?: HonoOptions<TParams>,
+	routes: TRoutes,
+	options: HonoOptions<TRoutes, TMiddleware>,
 ): Hono {
 	const resolvedOptions: ResolvedHonoOptions = {
-		basePath: normalizeBasePath(options?.basePath),
-		bypassIncomingParse: options?.bypassIncomingParse ?? false,
-		bypassOutgoingParse: options?.bypassOutgoingParse ?? false,
-		errorMode: options?.errorMode ?? "hidden",
-		transformParams: options?.transformParams ?? ((...args) => args),
+		basePath: normalizeBasePath(options.basePath),
+		bypassIncomingParse: options.bypassIncomingParse ?? false,
+		bypassOutgoingParse: options.bypassOutgoingParse ?? false,
+		errorMode: options.errorMode ?? "hidden",
 	};
 
 	const registrations = collectRoutes(
-		router as Record<string, unknown>,
-		handlers as Record<string, unknown>,
+		routes as Record<string, unknown>,
+		options.routeHandlers as Record<string, unknown>,
+		options.middleware as Record<string, unknown> | undefined,
+		options.middlewareHandlers as Record<string, unknown> | undefined,
+		"",
+		[],
 	);
 
 	for (const registration of registrations) {
-		registerRoute(app, registration, resolvedOptions);
+		const path = resolvedOptions.basePath
+			? `${resolvedOptions.basePath}${registration.path}`
+			: registration.path;
+
+		registerHonoRoute(app, registration.method, path, (context) =>
+			executeMiddlewareChain(context, registration.middleware, (ctx) =>
+				registration.handler(ctx, resolvedOptions),
+			),
+		);
 	}
 
 	return app;

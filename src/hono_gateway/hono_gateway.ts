@@ -1,4 +1,4 @@
-import type { Context, Hono, MiddlewareHandler } from "hono";
+import type { Context, Hono } from "hono";
 import type { ContractMethod, ContractMethodMap } from "~/contract/contract.types.js";
 import {
 	executeMiddlewareChain,
@@ -7,11 +7,18 @@ import {
 	registerHonoRoute,
 } from "~/hono/hono.util.js";
 import type {
-	FilteredRouter,
+	GatewayInput,
 	GatewayOptions,
-	IncludeShape,
+	GeneratedGateway,
 } from "~/hono_gateway/hono_gateway.types.js";
-import { getContractMethods, isContractNode, isRecord, isRouterNode } from "~/internal/util.js";
+import {
+	dotPathToParamPath,
+	dotPathToSlashPath,
+	getContractMethods,
+	isContractNode,
+	isRecord,
+	isRouterNode,
+} from "~/internal/util.js";
 
 type GatewayRouteRegistration = {
 	namespace: string;
@@ -19,18 +26,6 @@ type GatewayRouteRegistration = {
 	gatewayHttpPath: string;
 	method: ContractMethod;
 };
-
-function dotPathToSlashPath(dotPath: string): string {
-	if (!dotPath) return "/";
-	return `/${dotPath.split(".").filter(Boolean).join("/")}`;
-}
-
-function dotPathToParamPath(dotPath: string): string {
-	if (!dotPath) return "/";
-	const segments = dotPath.split(".").filter(Boolean);
-	const mapped = segments.map((s) => (s.startsWith("$") ? `:${s.slice(1)}` : s));
-	return `/${mapped.join("/")}`;
-}
 
 function collectServiceRoutes(
 	node: unknown,
@@ -59,18 +54,20 @@ function collectServiceRoutes(
 				collectServiceRoutes(child, namespace, childPath, registrations);
 			}
 		}
-	} else {
-		for (const [key, child] of Object.entries(node)) {
+	} else if (isRouterNode(node)) {
+		for (const [key, child] of Object.entries(node.ROUTER)) {
 			const childPath = dotPathPrefix ? `${dotPathPrefix}.${key}` : key;
 			collectServiceRoutes(child, namespace, childPath, registrations);
 		}
 	}
 }
 
-function collectGatewayRoutes(router: Record<string, unknown>): Array<GatewayRouteRegistration> {
+function collectGatewayRoutes(routes: Record<string, unknown>): Array<GatewayRouteRegistration> {
 	const registrations: Array<GatewayRouteRegistration> = [];
-	for (const [namespace, serviceRouter] of Object.entries(router)) {
-		collectServiceRoutes(serviceRouter, namespace, "", registrations);
+	const router = routes.ROUTER as Record<string, unknown>;
+	if (!router) return registrations;
+	for (const [namespace, serviceRoutes] of Object.entries(router)) {
+		collectServiceRoutes(serviceRoutes, namespace, "", registrations);
 	}
 	return registrations;
 }
@@ -114,84 +111,96 @@ function createProxyHandler(
 	};
 }
 
-function filterByIncludeShape(
-	node: Record<string, unknown>,
-	include: Record<string, unknown>,
-): Record<string, unknown> {
-	const result: Record<string, unknown> = {};
-	for (const [key, filter] of Object.entries(include)) {
-		const child = node[key];
-		if (!isRecord(child)) continue;
+function collectGatewayMiddleware(
+	mwDef: unknown,
+	mwHandlers: unknown,
+	pathSegments: Array<string>,
+): Array<MiddlewareEntry> {
+	const entries: Array<MiddlewareEntry> = [];
+	if (!isRecord(mwDef) || !isRecord(mwHandlers)) return entries;
 
-		if (isContractNode(child)) {
-			if (filter === true) {
-				result[key] = { CONTRACT: child.CONTRACT };
-			} else if (isRecord(filter) && isRouterNode(child)) {
-				result[key] = {
-					CONTRACT: child.CONTRACT,
-					ROUTER: filterByIncludeShape(child.ROUTER, filter),
-				};
-			} else {
-				result[key] = { CONTRACT: child.CONTRACT };
-			}
-		} else if (isRecord(filter)) {
-			result[key] = filterByIncludeShape(child, filter);
+	if (isRecord(mwDef.MIDDLEWARE) && isRecord(mwHandlers.MIDDLEWARE)) {
+		for (const name of Object.keys(mwDef.MIDDLEWARE)) {
+			const handler = (mwHandlers.MIDDLEWARE as Record<string, unknown>)[name];
+			if (handler === null || handler === undefined || typeof handler !== "function")
+				continue;
+			entries.push({ handler: handler as MiddlewareEntry["handler"] });
 		}
 	}
-	return result;
+
+	let currentDef: Record<string, unknown> = mwDef;
+	let currentHandlers: Record<string, unknown> = mwHandlers;
+	for (const segment of pathSegments) {
+		const defRouter = currentDef.ROUTER as Record<string, unknown> | undefined;
+		const handlerRouter = currentHandlers.ROUTER as Record<string, unknown> | undefined;
+		if (!defRouter || !handlerRouter) break;
+
+		const nextDef = defRouter[segment] as Record<string, unknown> | undefined;
+		const nextHandler = handlerRouter[segment] as Record<string, unknown> | undefined;
+		if (!nextDef || !nextHandler) break;
+
+		currentDef = nextDef;
+		currentHandlers = nextHandler;
+
+		if (isRecord(currentDef.MIDDLEWARE) && isRecord(currentHandlers.MIDDLEWARE)) {
+			for (const name of Object.keys(currentDef.MIDDLEWARE)) {
+				const handler = (currentHandlers.MIDDLEWARE as Record<string, unknown>)[name];
+				if (handler === null || handler === undefined || typeof handler !== "function")
+					continue;
+				entries.push({ handler: handler as MiddlewareEntry["handler"] });
+			}
+		}
+	}
+
+	return entries;
 }
 
-export function createGatewayRouterService<TRouter, const TInclude extends IncludeShape<TRouter>>(
-	router: TRouter,
-	options: { includeOnlyShape: TInclude },
-): FilteredRouter<TRouter, TInclude> {
-	return filterByIncludeShape(
-		router as Record<string, unknown>,
-		options.includeOnlyShape as Record<string, unknown>,
-	) as FilteredRouter<TRouter, TInclude>;
+export function generateHonoGatewayRoutesAndMiddleware<const T extends GatewayInput>(
+	services: T,
+): GeneratedGateway<T> {
+	const routes: Record<string, unknown> = {};
+	const middleware: Record<string, unknown> = {};
+
+	for (const [name, service] of Object.entries(services)) {
+		routes[name] = service.routes;
+		middleware[name] = service.middleware ?? {};
+	}
+
+	return {
+		routes: { ROUTER: routes },
+		middleware: { ROUTER: middleware },
+	} as GeneratedGateway<T>;
 }
 
-export function createGatewayRouter<T extends Record<string, unknown>>(services: T): T {
-	return services;
-}
-
-export function initHonoGateway<TRouter extends Record<string, unknown>>(
+export function initHonoGateway<TRoutes, TMiddleware = unknown>(
 	app: Hono,
-	router: TRouter,
-	options: GatewayOptions<TRouter>,
+	routes: TRoutes,
+	options: GatewayOptions<TRoutes, TMiddleware>,
 ): Hono {
 	const basePath = normalizeBasePath(options.basePath);
-	const globalMiddleware: Array<MiddlewareHandler> = options.globalMiddleware ?? [];
-	const services = options.services as Record<
-		string,
-		{
-			baseUrl: string;
-			middleware?: Record<string, Array<MiddlewareHandler>>;
-		}
-	>;
-
-	const registrations = collectGatewayRoutes(router);
+	const services = options.services as Record<string, string>;
+	const registrations = collectGatewayRoutes(routes as Record<string, unknown>);
 
 	for (const registration of registrations) {
-		const serviceConfig = services[registration.namespace];
-		if (!serviceConfig) {
-			throw new Error(`Missing service config for namespace: ${registration.namespace}`);
+		const serviceBaseUrl = services[registration.namespace];
+		if (!serviceBaseUrl) {
+			throw new Error(`Missing service URL for namespace: ${registration.namespace}`);
 		}
 
-		const serviceMiddleware = serviceConfig.middleware?.["*"] ?? [];
-		const pathMiddleware = serviceConfig.middleware?.[registration.serviceRouterPath] ?? [];
-
-		const rawMiddleware = [...globalMiddleware, ...serviceMiddleware, ...pathMiddleware];
-		const middlewareChain: Array<MiddlewareEntry> = rawMiddleware.map((mw) => ({
-			type: "vanilla" as const,
-			handler: mw,
-		}));
+		const gatewayPathSegments = registration.gatewayHttpPath
+			.slice(1)
+			.split("/")
+			.filter(Boolean);
+		const middlewareChain = collectGatewayMiddleware(
+			options.middleware,
+			options.middlewareHandlers,
+			gatewayPathSegments.map((s) => (s.startsWith(":") ? `$${s.slice(1)}` : s)),
+		);
 
 		const prefix = basePath
 			? `${basePath}/${registration.namespace}`
 			: `/${registration.namespace}`;
-
-		const proxyHandler = createProxyHandler(serviceConfig.baseUrl, prefix);
+		const proxyHandler = createProxyHandler(serviceBaseUrl, prefix);
 
 		const path = basePath
 			? `${basePath}${registration.gatewayHttpPath}`

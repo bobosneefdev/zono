@@ -1,51 +1,36 @@
-import type { MiddlewareHandler } from "hono";
-import type { ContractMethodMap } from "~/contract/contract.types.js";
-import type { RouterPath } from "~/router/router.resolve.types.js";
+import type { ErrorMode } from "~/contract/contract.error.js";
+import type { HonoMiddlewareHandlerTree } from "~/hono/hono.types.js";
 
-export type IncludeShape<TNode> = TNode extends {
-	CONTRACT: ContractMethodMap;
-	ROUTER: infer R extends Record<string, unknown>;
-}
-	? true | { [K in keyof R]?: IncludeShape<R[K]> }
-	: TNode extends { CONTRACT: ContractMethodMap }
-		? true
-		: TNode extends Record<string, unknown>
-			? { [K in keyof TNode]?: IncludeShape<TNode[K]> }
-			: never;
-
-export type FilteredRouter<TNode, TInclude> = TInclude extends true
-	? TNode extends { CONTRACT: infer C extends ContractMethodMap }
-		? { CONTRACT: C }
-		: never
-	: TInclude extends Record<string, unknown>
-		? TNode extends {
-				CONTRACT: infer C extends ContractMethodMap;
-				ROUTER: infer R extends Record<string, unknown>;
-			}
-			? {
-					CONTRACT: C;
-					ROUTER: {
-						[K in keyof TInclude & keyof R]: FilteredRouter<R[K], TInclude[K]>;
-					};
-				}
-			: TNode extends { CONTRACT: infer C extends ContractMethodMap }
-				? { CONTRACT: C }
-				: {
-						[K in keyof TInclude & keyof TNode]: FilteredRouter<TNode[K], TInclude[K]>;
-					}
-		: never;
-
-export type GatewayRouterServiceOptions<TRouter> = {
-	includeOnlyShape: IncludeShape<TRouter>;
+export type GatewayServiceInput = {
+	routes: unknown;
+	middleware?: unknown;
 };
 
-export type GatewayServiceConfig<TServiceRouter> = {
-	baseUrl: string;
-	middleware?: Partial<Record<RouterPath<TServiceRouter> | "*", Array<MiddlewareHandler>>>;
+export type GatewayInput = Record<string, GatewayServiceInput>;
+
+export type GeneratedGatewayRoutes<T extends GatewayInput> = {
+	ROUTER: {
+		[K in keyof T & string]: T[K]["routes"];
+	};
 };
 
-export type GatewayOptions<TRouter> = {
-	services: { [K in keyof TRouter]: GatewayServiceConfig<TRouter[K]> };
+export type GeneratedGatewayMiddleware<T extends GatewayInput> = {
+	ROUTER: {
+		[K in keyof T & string]: T[K] extends { middleware: infer M } ? M : Record<never, never>;
+	};
+};
+
+export type GeneratedGateway<T extends GatewayInput> = {
+	routes: GeneratedGatewayRoutes<T>;
+	middleware: GeneratedGatewayMiddleware<T>;
+};
+
+export type GatewayOptions<TRoutes, TMiddleware = unknown> = {
+	services: TRoutes extends { ROUTER: infer R extends Record<string, unknown> }
+		? { [K in keyof R & string]: string }
+		: Record<string, string>;
+	middleware?: TMiddleware;
+	middlewareHandlers?: HonoMiddlewareHandlerTree<TMiddleware>;
+	errorMode?: ErrorMode;
 	basePath?: string;
-	globalMiddleware?: Array<MiddlewareHandler>;
 };

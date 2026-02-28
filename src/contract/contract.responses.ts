@@ -1,4 +1,3 @@
-import { Prettify } from "ts-essentials";
 import type { ContractResponses } from "~/contract/contract.types.js";
 
 export type MergeContractResponses<
@@ -11,14 +10,12 @@ export type MergeContractResponses<
 };
 
 export type MergeContractResponsesMany<TResponses extends ReadonlyArray<ContractResponses>> =
-	Prettify<
-		TResponses extends readonly [
-			infer THead extends ContractResponses,
-			...infer TTail extends ReadonlyArray<ContractResponses>,
-		]
-			? MergeContractResponses<THead, MergeContractResponsesMany<TTail>>
-			: Record<never, never>
-	>;
+	TResponses extends readonly [
+		infer THead extends ContractResponses,
+		...infer TTail extends ReadonlyArray<ContractResponses>,
+	]
+		? MergeContractResponses<THead, MergeContractResponsesMany<TTail>>
+		: Record<never, never>;
 
 export function mergeContractResponses<const TResponses extends ReadonlyArray<ContractResponses>>(
 	...responses: TResponses

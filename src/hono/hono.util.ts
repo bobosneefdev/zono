@@ -1,18 +1,14 @@
-import type { Context, Hono, MiddlewareHandler } from "hono";
-import type { Contract, ContractMethod, ContractResponses } from "~/contract/contract.types.js";
-import type { ServerHandlerOutput } from "~/internal/handler.types.js";
-import { buildContractResponse } from "~/internal/server.js";
+import type { Context, Hono } from "hono";
+import type { ContractMethod } from "~/contract/contract.types.js";
 
-export type MiddlewareEntry =
-	| { type: "vanilla"; handler: MiddlewareHandler }
-	| {
-			type: "typed";
-			handler: (
-				ctx: Context,
-				next: () => Promise<void>,
-			) => Promise<void | { status: number; data?: unknown }>;
-			responses: ContractResponses;
-	  };
+export type MiddlewareHandlerFn = (
+	ctx: Context,
+	next: () => Promise<void>,
+) => Promise<void | { status: number; contentType?: string | null; body?: unknown }>;
+
+export type MiddlewareEntry = {
+	handler: MiddlewareHandlerFn;
+};
 
 export function normalizeBasePath(basePath: string | undefined): string {
 	if (basePath == null || basePath === "") return "";
@@ -21,13 +17,35 @@ export function normalizeBasePath(basePath: string | undefined): string {
 	return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
 }
 
-function isTypedMiddlewareReturn(value: unknown): value is { status: number; data?: unknown } {
+function isTypedMiddlewareReturn(
+	value: unknown,
+): value is { status: number; contentType?: string | null; body?: unknown } {
 	return (
 		typeof value === "object" &&
 		value !== null &&
 		"status" in value &&
 		typeof (value as { status: unknown }).status === "number"
 	);
+}
+
+function buildMiddlewareResponse(result: {
+	status: number;
+	contentType?: string | null;
+	body?: unknown;
+}): Response {
+	let encodedBody: BodyInit | null = null;
+	const headers: Record<string, string> = {};
+
+	if (result.contentType) {
+		headers["content-type"] = result.contentType;
+		if (result.contentType.includes("json")) {
+			encodedBody = JSON.stringify(result.body);
+		} else {
+			encodedBody = String(result.body);
+		}
+	}
+
+	return new Response(encodedBody, { status: result.status, headers });
 }
 
 export async function executeMiddlewareChain(
@@ -42,7 +60,6 @@ export async function executeMiddlewareChain(
 			for (const [key, value] of response.headers.entries()) {
 				mergedHeaders.set(key, value);
 			}
-
 			context.res = new Response(response.body, {
 				status: response.status,
 				headers: mergedHeaders,
@@ -51,28 +68,12 @@ export async function executeMiddlewareChain(
 		}
 
 		const entry = middleware[index];
-		if (entry.type === "vanilla") {
-			const middlewareResponse = await entry.handler(context, async () => {
-				await dispatch(index + 1);
-			});
-			if (middlewareResponse instanceof Response) {
-				context.res = middlewareResponse;
-			}
-			return;
-		}
-
 		const typedResult = await entry.handler(context, async () => {
 			await dispatch(index + 1);
 		});
 
 		if (isTypedMiddlewareReturn(typedResult)) {
-			const syntheticContract: Contract = { responses: entry.responses };
-			const response = await buildContractResponse(
-				syntheticContract,
-				typedResult as ServerHandlerOutput<Contract>,
-				false,
-			);
-			context.res = response;
+			context.res = buildMiddlewareResponse(typedResult);
 		}
 	};
 
