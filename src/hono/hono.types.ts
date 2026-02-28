@@ -1,10 +1,9 @@
-import type { Context, MiddlewareHandler } from "hono";
+import type { Context } from "hono";
 import type { ServerHandlerTree, ServerOptionsBase } from "~/internal/handler.types.js";
 
 export type HonoHandlers<TRouter, TParams extends Array<unknown> = [Context]> = ServerHandlerTree<
 	TRouter,
-	TParams,
-	{ MIDDLEWARE?: Array<MiddlewareHandler> }
+	TParams
 >;
 
 export type HonoOptions<TParams extends Array<unknown> = [Context]> = ServerOptionsBase<
@@ -12,5 +11,4 @@ export type HonoOptions<TParams extends Array<unknown> = [Context]> = ServerOpti
 	TParams
 > & {
 	basePath?: string;
-	globalMiddleware?: Array<MiddlewareHandler>;
 };

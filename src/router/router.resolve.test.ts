@@ -5,6 +5,7 @@ import {
 	resolveRouteContract,
 	resolveRouteContractMap,
 	resolveRouteMethodContract,
+	resolveRouteMiddlewareResponses,
 	routerDotPathToParamPath,
 } from "~/router/router.resolve.js";
 
@@ -25,28 +26,35 @@ const router = createRouter(
 		},
 	},
 	{
-		users: {
-			$id: {
-				CONTRACT: {
-					get: {
-						pathParams: z.object({ id: z.string() }),
-						responses: {
-							200: {
-								contentType: "application/json",
-								schema: z.object({ id: z.string() }),
-							},
-						},
-					},
-				},
+		ROUTER: {
+			users: {
 				ROUTER: {
-					$postId: {
+					$id: {
 						CONTRACT: {
 							get: {
-								pathParams: z.object({ id: z.string(), postId: z.string() }),
+								pathParams: z.object({ id: z.string() }),
 								responses: {
 									200: {
 										contentType: "application/json",
-										schema: z.object({ title: z.string() }),
+										schema: z.object({ id: z.string() }),
+									},
+								},
+							},
+						},
+						ROUTER: {
+							$postId: {
+								CONTRACT: {
+									get: {
+										pathParams: z.object({
+											id: z.string(),
+											postId: z.string(),
+										}),
+										responses: {
+											200: {
+												contentType: "application/json",
+												schema: z.object({ title: z.string() }),
+											},
+										},
 									},
 								},
 							},
@@ -63,8 +71,10 @@ const emptyContractRouter = createRouter(
 		empty: { TYPE: "contract" },
 	},
 	{
-		empty: {
-			CONTRACT: {},
+		ROUTER: {
+			empty: {
+				CONTRACT: {},
+			},
 		},
 	},
 );
@@ -129,5 +139,74 @@ describe("resolveRouteMethodContract", () => {
 		expect(() => resolveRouteMethodContract(router, "/users/$id", "patch")).toThrow(
 			"Route does not contain contract for method patch: /users/$id",
 		);
+	});
+});
+
+describe("resolveRouteMiddlewareResponses", () => {
+	const routerWithMiddleware = createRouter(
+		{
+			api: {
+				TYPE: "router",
+				ROUTER: {
+					$id: { TYPE: "contract" },
+				},
+			},
+		},
+		{
+			MIDDLEWARE: {
+				rateLimiter: {
+					429: {
+						contentType: "application/json",
+						schema: z.object({ retryAfter: z.number() }),
+					},
+				},
+			},
+			ROUTER: {
+				api: {
+					ROUTER: {
+						$id: {
+							MIDDLEWARE: {
+								jwt: {
+									401: {
+										contentType: "application/json",
+										schema: z.object({ error: z.string() }),
+									},
+								},
+							},
+							CONTRACT: {
+								get: {
+									pathParams: z.object({ id: z.string() }),
+									responses: {
+										200: {
+											contentType: "application/json",
+											schema: z.object({ ok: z.boolean() }),
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	);
+
+	it("returns empty object for router without middleware", () => {
+		const responses = resolveRouteMiddlewareResponses(router, "/users/$id");
+		expect(responses).toEqual({});
+	});
+
+	it("collects middleware along path from root to route", () => {
+		const responses = resolveRouteMiddlewareResponses(routerWithMiddleware, "/api/$id");
+		expect(responses[429]).toBeDefined();
+		expect(responses[401]).toBeDefined();
+		expect(responses[429].contentType).toBe("application/json");
+		expect(responses[401].schema).toBeDefined();
+	});
+
+	it("throws for unknown path", () => {
+		expect(() =>
+			resolveRouteMiddlewareResponses(routerWithMiddleware, "/unknown" as "/api/$id"),
+		).toThrow("Unknown path /unknown");
 	});
 });

@@ -28,50 +28,32 @@ const router = createRouter(
 		},
 	},
 	{
-		users: {
-			$id: {
-				CONTRACT: {
-					get: {
-						pathParams: z.object({
-							id: z
-								.string()
-								.refine(async (value) => value.length > 0, "id must be non-empty"),
-						}),
-						responses: {
-							200: {
-								contentType: "application/json",
-								schema: z.object({
-									id: z.string(),
-									name: z
-										.string()
-										.transform(async (value) => value.toUpperCase()),
-								}),
-							},
-						},
-					},
-					post: {
-						pathParams: z.object({
-							id: z.string(),
-						}),
-						payload: {
-							contentType: "application/json",
-							schema: z.object({
-								name: z.string(),
-							}),
-						},
-						responses: {
-							201: {
-								contentType: "application/json",
-								schema: z.object({
-									ok: z.literal(true),
-								}),
-							},
-						},
-					},
-				},
+		ROUTER: {
+			users: {
 				ROUTER: {
-					posts: {
+					$id: {
 						CONTRACT: {
+							get: {
+								pathParams: z.object({
+									id: z
+										.string()
+										.refine(
+											async (value) => value.length > 0,
+											"id must be non-empty",
+										),
+								}),
+								responses: {
+									200: {
+										contentType: "application/json",
+										schema: z.object({
+											id: z.string(),
+											name: z
+												.string()
+												.transform(async (value) => value.toUpperCase()),
+										}),
+									},
+								},
+							},
 							post: {
 								pathParams: z.object({
 									id: z.string(),
@@ -79,7 +61,7 @@ const router = createRouter(
 								payload: {
 									contentType: "application/json",
 									schema: z.object({
-										title: z.string(),
+										name: z.string(),
 									}),
 								},
 								responses: {
@@ -88,6 +70,31 @@ const router = createRouter(
 										schema: z.object({
 											ok: z.literal(true),
 										}),
+									},
+								},
+							},
+						},
+						ROUTER: {
+							posts: {
+								CONTRACT: {
+									post: {
+										pathParams: z.object({
+											id: z.string(),
+										}),
+										payload: {
+											contentType: "application/json",
+											schema: z.object({
+												title: z.string(),
+											}),
+										},
+										responses: {
+											201: {
+												contentType: "application/json",
+												schema: z.object({
+													ok: z.literal(true),
+												}),
+											},
+										},
 									},
 								},
 							},
@@ -244,13 +251,15 @@ describe("createClient", () => {
 				status: { TYPE: "contract" },
 			},
 			{
-				status: {
-					CONTRACT: {
-						get: {
-							responses: {
-								200: {
-									contentType: "application/json",
-									schema: z.object({ ok: z.literal(true) }),
+				ROUTER: {
+					status: {
+						CONTRACT: {
+							get: {
+								responses: {
+									200: {
+										contentType: "application/json",
+										schema: z.object({ ok: z.literal(true) }),
+									},
 								},
 							},
 						},
@@ -312,19 +321,21 @@ describe("createClient", () => {
 				},
 			},
 			{
-				uploads: {
-					CONTRACT: {
-						post: {
-							payload: {
-								contentType: "multipart/form-data",
-								schema: z.instanceof(FormData),
-							},
-							responses: {
-								201: {
-									contentType: "application/json",
-									schema: z.object({
-										ok: z.literal(true),
-									}),
+				ROUTER: {
+					uploads: {
+						CONTRACT: {
+							post: {
+								payload: {
+									contentType: "multipart/form-data",
+									schema: z.instanceof(FormData),
+								},
+								responses: {
+									201: {
+										contentType: "application/json",
+										schema: z.object({
+											ok: z.literal(true),
+										}),
+									},
 								},
 							},
 						},
@@ -376,48 +387,50 @@ describe("createClient", () => {
 				nullish: { TYPE: "contract" },
 			},
 			{
-				json: {
-					CONTRACT: {
-						get: {
-							responses: {
-								200: {
-									contentType: "application/json",
-									schema: z.object({ ok: z.literal(true) }),
+				ROUTER: {
+					json: {
+						CONTRACT: {
+							get: {
+								responses: {
+									200: {
+										contentType: "application/json",
+										schema: z.object({ ok: z.literal(true) }),
+									},
 								},
 							},
 						},
 					},
-				},
-				text: {
-					CONTRACT: {
-						get: {
-							responses: {
-								200: {
-									contentType: "text/plain",
-									schema: z.string(),
+					text: {
+						CONTRACT: {
+							get: {
+								responses: {
+									200: {
+										contentType: "text/plain",
+										schema: z.string(),
+									},
 								},
 							},
 						},
 					},
-				},
-				bytes: {
-					CONTRACT: {
-						get: {
-							responses: {
-								200: {
-									contentType: "application/octet-stream",
-									schema: z.instanceof(Uint8Array),
+					bytes: {
+						CONTRACT: {
+							get: {
+								responses: {
+									200: {
+										contentType: "application/octet-stream",
+										schema: z.instanceof(Uint8Array),
+									},
 								},
 							},
 						},
 					},
-				},
-				nullish: {
-					CONTRACT: {
-						get: {
-							responses: {
-								204: {
-									contentType: null,
+					nullish: {
+						CONTRACT: {
+							get: {
+								responses: {
+									204: {
+										contentType: null,
+									},
 								},
 							},
 						},
@@ -553,19 +566,21 @@ describe("createClient", () => {
 				search: { TYPE: "contract" },
 			},
 			{
-				search: {
-					CONTRACT: {
-						get: {
-							query: {
-								type: "standard",
-								schema: z.object({
-									tags: z.array(z.string()),
-								}),
-							},
-							responses: {
-								200: {
-									contentType: "application/json",
-									schema: z.object({ results: z.array(z.any()) }),
+				ROUTER: {
+					search: {
+						CONTRACT: {
+							get: {
+								query: {
+									type: "standard",
+									schema: z.object({
+										tags: z.array(z.string()),
+									}),
+								},
+								responses: {
+									200: {
+										contentType: "application/json",
+										schema: z.object({ results: z.array(z.any()) }),
+									},
 								},
 							},
 						},
@@ -595,17 +610,19 @@ describe("createClient", () => {
 				query: { TYPE: "contract" },
 			},
 			{
-				query: {
-					CONTRACT: {
-						get: {
-							query: {
-								type: "json",
-								schema: z.object({ filter: z.string() }),
-							},
-							responses: {
-								200: {
-									contentType: "application/json",
-									schema: z.object({ ok: z.boolean() }),
+				ROUTER: {
+					query: {
+						CONTRACT: {
+							get: {
+								query: {
+									type: "json",
+									schema: z.object({ filter: z.string() }),
+								},
+								responses: {
+									200: {
+										contentType: "application/json",
+										schema: z.object({ ok: z.boolean() }),
+									},
 								},
 							},
 						},
@@ -635,14 +652,16 @@ describe("createClient", () => {
 				item: { TYPE: "contract" },
 			},
 			{
-				item: {
-					CONTRACT: {
-						get: {
-							responses: {
-								200: {
-									contentType: "application/json",
-									schema: z.object({ value: z.string() }),
-									headers: z.object({ "x-custom": z.string() }),
+				ROUTER: {
+					item: {
+						CONTRACT: {
+							get: {
+								responses: {
+									200: {
+										contentType: "application/json",
+										schema: z.object({ value: z.string() }),
+										headers: z.object({ "x-custom": z.string() }),
+									},
 								},
 							},
 						},
@@ -683,14 +702,16 @@ describe("createClient", () => {
 				ping: { TYPE: "contract" },
 			},
 			{
-				ping: {
-					CONTRACT: {
-						get: {
-							headers: z.object({ "x-ping-header": z.string() }),
-							responses: {
-								200: {
-									contentType: "application/json",
-									schema: z.object({ pong: z.string() }),
+				ROUTER: {
+					ping: {
+						CONTRACT: {
+							get: {
+								headers: z.object({ "x-ping-header": z.string() }),
+								responses: {
+									200: {
+										contentType: "application/json",
+										schema: z.object({ pong: z.string() }),
+									},
 								},
 							},
 						},
@@ -736,39 +757,41 @@ describe("createClient", () => {
 				},
 			},
 			{
-				random: {
-					CONTRACT: {
-						get: {
-							query: {
-								type: "standard",
-								schema: z.object({
-									category: z.string().optional(),
-								}),
-							},
-							responses: {
-								200: {
-									contentType: JsonContentType.JSON,
+				ROUTER: {
+					random: {
+						CONTRACT: {
+							get: {
+								query: {
+									type: "standard",
 									schema: z.object({
-										categories: z.array(z.string()),
-										created_at: z
-											.string()
-											.regex(
-												/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6}$/,
-												"Invalid timestamp format",
-											),
+										category: z.string().optional(),
 									}),
+								},
+								responses: {
+									200: {
+										contentType: JsonContentType.JSON,
+										schema: z.object({
+											categories: z.array(z.string()),
+											created_at: z
+												.string()
+												.regex(
+													/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6}$/,
+													"Invalid timestamp format",
+												),
+										}),
+									},
 								},
 							},
 						},
 					},
-				},
-				categories: {
-					CONTRACT: {
-						get: {
-							responses: {
-								200: {
-									contentType: "application/json",
-									schema: z.any(),
+					categories: {
+						CONTRACT: {
+							get: {
+								responses: {
+									200: {
+										contentType: "application/json",
+										schema: z.any(),
+									},
 								},
 							},
 						},

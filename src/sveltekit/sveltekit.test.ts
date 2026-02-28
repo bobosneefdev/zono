@@ -46,69 +46,75 @@ const router = createRouter(
 		},
 	},
 	{
-		users: {
-			$id: {
-				CONTRACT: {
-					get: {
-						pathParams: z.object({
-							id: z.string(),
-						}),
-						headers: z.object({
-							"x-input-header": z.string(),
-						}),
-						responses: {
-							200: {
-								contentType: "application/json",
-								schema: z.object({
-									id: z.string(),
-									name: z
-										.string()
-										.transform(async (value) => value.toUpperCase()),
-								}),
-								headers: z.object({
-									"x-output-header": z.string(),
-								}),
-							},
-						},
-					},
-					post: {
-						pathParams: z.object({
-							id: z.string(),
-						}),
-						payload: {
-							contentType: "application/json",
-							schema: z.object({
-								name: z.string(),
-							}),
-						},
-						responses: {
-							201: {
-								contentType: "application/json",
-								schema: z.object({
-									id: z.string(),
-									name: z.string(),
-								}),
-							},
-						},
-					},
-				},
+		ROUTER: {
+			users: {
 				ROUTER: {
-					$postId: {
+					$id: {
 						CONTRACT: {
 							get: {
 								pathParams: z.object({
 									id: z.string(),
-									postId: z.string(),
+								}),
+								headers: z.object({
+									"x-input-header": z.string(),
 								}),
 								responses: {
 									200: {
 										contentType: "application/json",
 										schema: z.object({
 											id: z.string(),
-											title: z
+											name: z
 												.string()
 												.transform(async (value) => value.toUpperCase()),
 										}),
+										headers: z.object({
+											"x-output-header": z.string(),
+										}),
+									},
+								},
+							},
+							post: {
+								pathParams: z.object({
+									id: z.string(),
+								}),
+								payload: {
+									contentType: "application/json",
+									schema: z.object({
+										name: z.string(),
+									}),
+								},
+								responses: {
+									201: {
+										contentType: "application/json",
+										schema: z.object({
+											id: z.string(),
+											name: z.string(),
+										}),
+									},
+								},
+							},
+						},
+						ROUTER: {
+							$postId: {
+								CONTRACT: {
+									get: {
+										pathParams: z.object({
+											id: z.string(),
+											postId: z.string(),
+										}),
+										responses: {
+											200: {
+												contentType: "application/json",
+												schema: z.object({
+													id: z.string(),
+													title: z
+														.string()
+														.transform(async (value) =>
+															value.toUpperCase(),
+														),
+												}),
+											},
+										},
 									},
 								},
 							},
@@ -364,21 +370,27 @@ describe("initSvelteKit", () => {
 				},
 			},
 			{
-				items: {
-					$id: {
-						CONTRACT: {
-							get: {
-								pathParams: z.object({
-									id: z.string().regex(/^\d+$/),
-								}),
-								responses: {
-									200: {
-										contentType: "application/json",
-										schema: z.object({
-											id: z
-												.string()
-												.transform(async (value) => value.toUpperCase()),
+				ROUTER: {
+					items: {
+						ROUTER: {
+							$id: {
+								CONTRACT: {
+									get: {
+										pathParams: z.object({
+											id: z.string().regex(/^\d+$/),
 										}),
+										responses: {
+											200: {
+												contentType: "application/json",
+												schema: z.object({
+													id: z
+														.string()
+														.transform(async (value) =>
+															value.toUpperCase(),
+														),
+												}),
+											},
+										},
 									},
 								},
 							},
@@ -428,19 +440,21 @@ describe("initSvelteKit", () => {
 				},
 			},
 			{
-				uploads: {
-					CONTRACT: {
-						post: {
-							payload: {
-								contentType: "multipart/form-data",
-								schema: z.instanceof(FormData),
-							},
-							responses: {
-								200: {
-									contentType: "application/json",
-									schema: z.object({
-										name: z.string(),
-									}),
+				ROUTER: {
+					uploads: {
+						CONTRACT: {
+							post: {
+								payload: {
+									contentType: "multipart/form-data",
+									schema: z.instanceof(FormData),
+								},
+								responses: {
+									200: {
+										contentType: "application/json",
+										schema: z.object({
+											name: z.string(),
+										}),
+									},
 								},
 							},
 						},

@@ -3,6 +3,7 @@ export {
 	resolveRouteContract,
 	resolveRouteContractMap,
 	resolveRouteMethodContract,
+	resolveRouteMiddlewareResponses,
 	routeToSegments,
 } from "~/router/router.resolve.js";
 export * from "~/router/router.resolve.types.js";

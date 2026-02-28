@@ -1,5 +1,18 @@
 import type { Context, Hono, MiddlewareHandler } from "hono";
-import type { ContractMethod } from "~/contract/contract.types.js";
+import type { Contract, ContractMethod, ContractResponses } from "~/contract/contract.types.js";
+import type { ServerHandlerOutput } from "~/internal/handler.types.js";
+import { buildContractResponse } from "~/internal/server.js";
+
+export type MiddlewareEntry =
+	| { type: "vanilla"; handler: MiddlewareHandler }
+	| {
+			type: "typed";
+			handler: (
+				ctx: Context,
+				next: () => Promise<void>,
+			) => Promise<void | { status: number; data?: unknown }>;
+			responses: ContractResponses;
+	  };
 
 export function normalizeBasePath(basePath: string | undefined): string {
 	if (basePath == null || basePath === "") return "";
@@ -8,9 +21,18 @@ export function normalizeBasePath(basePath: string | undefined): string {
 	return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
 }
 
+function isTypedMiddlewareReturn(value: unknown): value is { status: number; data?: unknown } {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		"status" in value &&
+		typeof (value as { status: unknown }).status === "number"
+	);
+}
+
 export async function executeMiddlewareChain(
 	context: Context,
-	middleware: Array<MiddlewareHandler>,
+	middleware: Array<MiddlewareEntry>,
 	finalHandler: (context: Context) => Promise<Response>,
 ): Promise<Response> {
 	const dispatch = async (index: number): Promise<void> => {
@@ -28,13 +50,29 @@ export async function executeMiddlewareChain(
 			return;
 		}
 
-		const mw = middleware[index];
-		const middlewareResponse = await mw(context, async () => {
+		const entry = middleware[index];
+		if (entry.type === "vanilla") {
+			const middlewareResponse = await entry.handler(context, async () => {
+				await dispatch(index + 1);
+			});
+			if (middlewareResponse instanceof Response) {
+				context.res = middlewareResponse;
+			}
+			return;
+		}
+
+		const typedResult = await entry.handler(context, async () => {
 			await dispatch(index + 1);
 		});
 
-		if (middlewareResponse instanceof Response) {
-			context.res = middlewareResponse;
+		if (isTypedMiddlewareReturn(typedResult)) {
+			const syntheticContract: Contract = { responses: entry.responses };
+			const response = await buildContractResponse(
+				syntheticContract,
+				typedResult as ServerHandlerOutput<Contract>,
+				false,
+			);
+			context.res = response;
 		}
 	};
 

@@ -1,6 +1,11 @@
 import type { Context, Hono, MiddlewareHandler } from "hono";
 import type { ContractMethod, ContractMethodMap } from "~/contract/contract.types.js";
-import { executeMiddlewareChain, normalizeBasePath, registerHonoRoute } from "~/hono/hono.util.js";
+import {
+	executeMiddlewareChain,
+	type MiddlewareEntry,
+	normalizeBasePath,
+	registerHonoRoute,
+} from "~/hono/hono.util.js";
 import type {
 	FilteredRouter,
 	GatewayOptions,
@@ -176,7 +181,11 @@ export function initHonoGateway<TRouter extends Record<string, unknown>>(
 		const serviceMiddleware = serviceConfig.middleware?.["*"] ?? [];
 		const pathMiddleware = serviceConfig.middleware?.[registration.serviceRouterPath] ?? [];
 
-		const middlewareChain = [...globalMiddleware, ...serviceMiddleware, ...pathMiddleware];
+		const rawMiddleware = [...globalMiddleware, ...serviceMiddleware, ...pathMiddleware];
+		const middlewareChain: Array<MiddlewareEntry> = rawMiddleware.map((mw) => ({
+			type: "vanilla" as const,
+			handler: mw,
+		}));
 
 		const prefix = basePath
 			? `${basePath}/${registration.namespace}`

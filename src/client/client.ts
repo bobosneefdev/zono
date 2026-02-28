@@ -6,6 +6,7 @@ import type {
 } from "~/client/client.types.js";
 import type { ErrorMode } from "~/contract/contract.error.js";
 import { parseContractFields } from "~/contract/contract.parse.js";
+import { mergeContractResponses } from "~/contract/contract.responses.js";
 import {
 	type Contract,
 	type ContractMethod,
@@ -18,7 +19,11 @@ import {
 	JSON_CONTENT_TYPES,
 	TEXT_CONTENT_TYPES,
 } from "~/internal/util.js";
-import { resolveRouteMethodContract, routeToSegments } from "~/router/router.resolve.js";
+import {
+	resolveRouteMethodContract,
+	resolveRouteMiddlewareResponses,
+	routeToSegments,
+} from "~/router/router.resolve.js";
 
 function getContractForRouteMethod<
 	TRouter,
@@ -267,12 +272,19 @@ export function createClient<
 			method,
 			path as ClientPathsAvailableGivenMethod<TRouter, typeof method>,
 		);
+		const middlewareResponses = resolveRouteMiddlewareResponses(router, path);
+		const additionalResponses =
+			options.additionalResponses && Object.keys(options.additionalResponses).length > 0
+				? mergeContractResponses(middlewareResponses, options.additionalResponses)
+				: Object.keys(middlewareResponses).length > 0
+					? middlewareResponses
+					: options.additionalResponses;
 		return await parseIncomingResponse(
 			contract,
 			response,
 			options.bypassIncomingParse ?? false,
 			options.serverErrorMode,
-			options.additionalResponses,
+			additionalResponses,
 		);
 	}
 
@@ -296,12 +308,19 @@ export function createClient<
 				method,
 				path as ClientPathsAvailableGivenMethod<TRouter, typeof method>,
 			);
+			const middlewareResponses = resolveRouteMiddlewareResponses(router, path);
+			const additionalResponses =
+				options.additionalResponses && Object.keys(options.additionalResponses).length > 0
+					? mergeContractResponses(middlewareResponses, options.additionalResponses)
+					: Object.keys(middlewareResponses).length > 0
+						? middlewareResponses
+						: options.additionalResponses;
 			return await parseIncomingResponse(
 				contract,
 				response,
 				options.bypassIncomingParse ?? false,
 				options.serverErrorMode,
-				options.additionalResponses,
+				additionalResponses,
 			);
 		},
 	} as Client<TRouter, TErrorMode, TAdditionalResponses>;

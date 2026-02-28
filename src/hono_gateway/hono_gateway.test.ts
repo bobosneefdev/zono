@@ -24,45 +24,49 @@ const serviceRouter = createRouter(
 		},
 	},
 	{
-		items: {
-			$id: {
-				CONTRACT: {
-					get: {
-						pathParams: z.object({ id: z.string() }),
-						responses: {
-							200: {
-								contentType: "application/json",
-								schema: z.object({ id: z.string(), name: z.string() }),
+		ROUTER: {
+			items: {
+				ROUTER: {
+					$id: {
+						CONTRACT: {
+							get: {
+								pathParams: z.object({ id: z.string() }),
+								responses: {
+									200: {
+										contentType: "application/json",
+										schema: z.object({ id: z.string(), name: z.string() }),
+									},
+								},
 							},
-						},
-					},
-					post: {
-						pathParams: z.object({ id: z.string() }),
-						payload: {
-							contentType: "application/json",
-							schema: z.object({ name: z.string() }),
-						},
-						responses: {
-							201: {
-								contentType: "application/json",
-								schema: z.object({ id: z.string(), name: z.string() }),
+							post: {
+								pathParams: z.object({ id: z.string() }),
+								payload: {
+									contentType: "application/json",
+									schema: z.object({ name: z.string() }),
+								},
+								responses: {
+									201: {
+										contentType: "application/json",
+										schema: z.object({ id: z.string(), name: z.string() }),
+									},
+								},
 							},
 						},
 					},
 				},
 			},
-		},
-		health: {
-			CONTRACT: {
-				get: {
-					query: {
-						type: "standard",
-						schema: z.object({ verbose: z.string().optional() }),
-					},
-					responses: {
-						200: {
-							contentType: "application/json",
-							schema: z.object({ status: z.string() }),
+			health: {
+				CONTRACT: {
+					get: {
+						query: {
+							type: "standard",
+							schema: z.object({ verbose: z.string().optional() }),
+						},
+						responses: {
+							200: {
+								contentType: "application/json",
+								schema: z.object({ status: z.string() }),
+							},
 						},
 					},
 				},
@@ -275,13 +279,15 @@ describe("initHonoGateway", () => {
 		const secondRouter = createRouter(
 			{ ping: { TYPE: "contract" } },
 			{
-				ping: {
-					CONTRACT: {
-						get: {
-							responses: {
-								200: {
-									contentType: "application/json",
-									schema: z.object({ pong: z.boolean() }),
+				ROUTER: {
+					ping: {
+						CONTRACT: {
+							get: {
+								responses: {
+									200: {
+										contentType: "application/json",
+										schema: z.object({ pong: z.boolean() }),
+									},
 								},
 							},
 						},
@@ -358,50 +364,54 @@ const nestedServiceRouter = createRouter(
 		},
 	},
 	{
-		posts: {
-			$postId: {
-				CONTRACT: {
-					get: {
-						pathParams: z.object({ postId: z.string() }),
-						responses: {
-							200: {
-								contentType: "application/json",
-								schema: z.object({ postId: z.string() }),
-							},
-						},
-					},
-				},
+		ROUTER: {
+			posts: {
 				ROUTER: {
-					comments: {
+					$postId: {
 						CONTRACT: {
 							get: {
 								pathParams: z.object({ postId: z.string() }),
 								responses: {
 									200: {
 										contentType: "application/json",
-										schema: z.object({
-											postId: z.string(),
-											comments: z.array(z.string()),
-										}),
+										schema: z.object({ postId: z.string() }),
 									},
 								},
 							},
 						},
 						ROUTER: {
-							$commentId: {
+							comments: {
 								CONTRACT: {
 									get: {
-										pathParams: z.object({
-											postId: z.string(),
-											commentId: z.string(),
-										}),
+										pathParams: z.object({ postId: z.string() }),
 										responses: {
 											200: {
 												contentType: "application/json",
 												schema: z.object({
 													postId: z.string(),
+													comments: z.array(z.string()),
+												}),
+											},
+										},
+									},
+								},
+								ROUTER: {
+									$commentId: {
+										CONTRACT: {
+											get: {
+												pathParams: z.object({
+													postId: z.string(),
 													commentId: z.string(),
 												}),
+												responses: {
+													200: {
+														contentType: "application/json",
+														schema: z.object({
+															postId: z.string(),
+															commentId: z.string(),
+														}),
+													},
+												},
 											},
 										},
 									},
@@ -411,14 +421,14 @@ const nestedServiceRouter = createRouter(
 					},
 				},
 			},
-		},
-		health: {
-			CONTRACT: {
-				get: {
-					responses: {
-						200: {
-							contentType: "application/json",
-							schema: z.object({ ok: z.boolean() }),
+			health: {
+				CONTRACT: {
+					get: {
+						responses: {
+							200: {
+								contentType: "application/json",
+								schema: z.object({ ok: z.boolean() }),
+							},
 						},
 					},
 				},

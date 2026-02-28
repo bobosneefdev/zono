@@ -25,67 +25,71 @@ const router = createRouter(
 		},
 	},
 	{
-		users: {
-			$id: {
-				CONTRACT: {
-					get: {
-						pathParams: z.object({
-							id: z.string(),
-						}),
-						headers: z.object({
-							"x-input-header": z.string(),
-						}),
-						responses: {
-							200: {
-								contentType: "application/json",
-								schema: z.object({
-									id: z.string(),
-									name: z
-										.string()
-										.transform(async (value) => value.toUpperCase()),
-								}),
-								headers: z.object({
-									"x-custom-header": z.string(),
-								}),
-							},
-						},
-					},
-					post: {
-						pathParams: z.object({
-							id: z.string(),
-						}),
-						payload: {
-							contentType: "application/json",
-							schema: z.object({
-								name: z.string(),
-							}),
-						},
-						responses: {
-							201: {
-								contentType: "application/json",
-								schema: z.object({
-									id: z.string(),
-									name: z.string(),
-								}),
-							},
-						},
-					},
-				},
+		ROUTER: {
+			users: {
 				ROUTER: {
-					$postId: {
+					$id: {
 						CONTRACT: {
 							get: {
 								pathParams: z.object({
 									id: z.string(),
-									postId: z.string(),
+								}),
+								headers: z.object({
+									"x-input-header": z.string(),
 								}),
 								responses: {
 									200: {
 										contentType: "application/json",
 										schema: z.object({
 											id: z.string(),
-											title: z.string(),
+											name: z
+												.string()
+												.transform(async (value) => value.toUpperCase()),
 										}),
+										headers: z.object({
+											"x-custom-header": z.string(),
+										}),
+									},
+								},
+							},
+							post: {
+								pathParams: z.object({
+									id: z.string(),
+								}),
+								payload: {
+									contentType: "application/json",
+									schema: z.object({
+										name: z.string(),
+									}),
+								},
+								responses: {
+									201: {
+										contentType: "application/json",
+										schema: z.object({
+											id: z.string(),
+											name: z.string(),
+										}),
+									},
+								},
+							},
+						},
+						ROUTER: {
+							$postId: {
+								CONTRACT: {
+									get: {
+										pathParams: z.object({
+											id: z.string(),
+											postId: z.string(),
+										}),
+										responses: {
+											200: {
+												contentType: "application/json",
+												schema: z.object({
+													id: z.string(),
+													title: z.string(),
+												}),
+											},
+										},
 									},
 								},
 							},
@@ -374,19 +378,23 @@ describe("initHono", () => {
 				},
 			},
 			{
-				items: {
-					$id: {
-						CONTRACT: {
-							get: {
-								pathParams: z.object({
-									id: z.string().regex(/^\d+$/),
-								}),
-								responses: {
-									200: {
-										contentType: "application/json",
-										schema: z.object({
-											id: z.string(),
+				ROUTER: {
+					items: {
+						ROUTER: {
+							$id: {
+								CONTRACT: {
+									get: {
+										pathParams: z.object({
+											id: z.string().regex(/^\d+$/),
 										}),
+										responses: {
+											200: {
+												contentType: "application/json",
+												schema: z.object({
+													id: z.string(),
+												}),
+											},
+										},
 									},
 								},
 							},
@@ -428,55 +436,64 @@ describe("initHono", () => {
 		expect(await response.json()).toEqual({ id: "abc" });
 	});
 
-	it("supports global and route-level middleware in initHono", async () => {
-		const app = new Hono();
-
-		initHono(
-			app,
-			router,
+	it("typed middleware at parent level applies to all children", async () => {
+		const mwRouter = createRouter(
 			{
-				users: {
-					$id: {
-						HANDLER: {
-							get: async (data) => {
-								return {
-									status: 200,
-									data: {
-										id: data.pathParams.id,
-										name: "john",
-									},
-									headers: {
-										"x-custom-header": "ok",
-									},
-								};
-							},
-							post: async (data) => {
-								return {
-									status: 201,
-									data: {
-										id: data.pathParams.id,
-										name: data.payload.name,
-									},
-								};
-							},
+				api: {
+					TYPE: "router",
+					ROUTER: {
+						$id: {
+							TYPE: "contract",
+							ROUTER: { posts: { TYPE: "contract" } },
 						},
-						MIDDLEWARE: [
-							async (context, next) => {
-								context.header("x-route-middleware", "users-id");
-								await next();
-							},
-						],
+					},
+				},
+			},
+			{
+				MIDDLEWARE: {
+					logger: {
+						429: {
+							contentType: "application/json",
+							schema: z.object({ blocked: z.boolean() }),
+						},
+					},
+				},
+				ROUTER: {
+					api: {
 						ROUTER: {
-							$postId: {
-								HANDLER: {
-									get: async (data) => {
-										return {
-											status: 200,
-											data: {
-												id: data.pathParams.postId,
-												title: "post",
+							$id: {
+								MIDDLEWARE: {
+									auth: {
+										401: {
+											contentType: "application/json",
+											schema: z.object({ error: z.string() }),
+										},
+									},
+								},
+								CONTRACT: {
+									get: {
+										pathParams: z.object({ id: z.string() }),
+										responses: {
+											200: {
+												contentType: "application/json",
+												schema: z.object({ id: z.string() }),
 											},
-										};
+										},
+									},
+								},
+								ROUTER: {
+									posts: {
+										CONTRACT: {
+											get: {
+												pathParams: z.object({ id: z.string() }),
+												responses: {
+													200: {
+														contentType: "application/json",
+														schema: z.object({ count: z.number() }),
+													},
+												},
+											},
+										},
 									},
 								},
 							},
@@ -484,34 +501,186 @@ describe("initHono", () => {
 					},
 				},
 			},
-			{
-				globalMiddleware: [
-					async (context, next) => {
-						context.header("x-global-middleware", "enabled");
-						await next();
+		);
+
+		const app = new Hono();
+		initHono(app, mwRouter, {
+			MIDDLEWARE: {
+				logger: async (_c, next) => {
+					await next();
+				},
+			},
+			api: {
+				$id: {
+					MIDDLEWARE: {
+						auth: async (_c, next) => {
+							await next();
+						},
 					},
-				],
+					HANDLER: {
+						get: async (data) => ({ status: 200, data: { id: data.pathParams.id } }),
+					},
+					ROUTER: {
+						posts: {
+							HANDLER: {
+								get: async (_data) => ({ status: 200, data: { count: 5 } }),
+							},
+						},
+					},
+				},
+			},
+		});
+
+		const idResponse = await app.request("http://localhost/api/abc", { method: "GET" });
+		expect(idResponse.status).toBe(200);
+		expect(await idResponse.json()).toEqual({ id: "abc" });
+
+		const postsResponse = await app.request("http://localhost/api/abc/posts", {
+			method: "GET",
+		});
+		expect(postsResponse.status).toBe(200);
+		expect(await postsResponse.json()).toEqual({ count: 5 });
+	});
+
+	it("typed middleware returning { status, data } short-circuits with correct response", async () => {
+		const mwRouter = createRouter(
+			{ limit: { TYPE: "contract" } },
+			{
+				MIDDLEWARE: {
+					rateLimiter: {
+						429: {
+							contentType: "application/json",
+							schema: z.object({ retryAfter: z.number().int() }),
+						},
+					},
+				},
+				ROUTER: {
+					limit: {
+						CONTRACT: {
+							get: {
+								responses: {
+									200: {
+										contentType: "application/json",
+										schema: z.object({ ok: z.literal(true) }),
+									},
+								},
+							},
+						},
+					},
+				},
 			},
 		);
 
-		const usersResponse = await app.request("http://localhost/users/123", {
-			method: "GET",
-			headers: {
-				"x-input-header": "ok",
+		const app = new Hono();
+		initHono(app, mwRouter, {
+			MIDDLEWARE: {
+				rateLimiter: () => Promise.resolve({ status: 429, data: { retryAfter: 60 } }),
 			},
-		});
+			limit: {
+				HANDLER: {
+					get: async () => ({ status: 200, data: { ok: true } }),
+				},
+			},
+		} as Parameters<typeof initHono>[2]);
 
-		expect(usersResponse.status).toBe(200);
-		expect(usersResponse.headers.get("x-global-middleware")).toBe("enabled");
-		expect(usersResponse.headers.get("x-route-middleware")).toBe("users-id");
+		const response = await app.request("http://localhost/limit", { method: "GET" });
+		expect(response.status).toBe(429);
+		expect(response.headers.get("content-type")).toContain("application/json");
+		expect(await response.json()).toEqual({ retryAfter: 60 });
+	});
 
-		const postsResponse = await app.request("http://localhost/users/123/abc", {
-			method: "GET",
-		});
+	it("typed middleware calling next() continues to handler", async () => {
+		const mwRouter = createRouter(
+			{ pass: { TYPE: "contract" } },
+			{
+				MIDDLEWARE: {
+					checked: {
+						401: {
+							contentType: "application/json",
+							schema: z.object({ error: z.string() }),
+						},
+					},
+				},
+				ROUTER: {
+					pass: {
+						CONTRACT: {
+							get: {
+								responses: {
+									200: {
+										contentType: "application/json",
+										schema: z.object({ passed: z.boolean() }),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		);
 
-		expect(postsResponse.status).toBe(200);
-		expect(postsResponse.headers.get("x-global-middleware")).toBe("enabled");
-		expect(postsResponse.headers.get("x-route-middleware")).toBeNull();
+		const app = new Hono();
+		initHono(app, mwRouter, {
+			MIDDLEWARE: {
+				checked: async (_c: Context, next: () => Promise<void>) => {
+					await next();
+				},
+			},
+			pass: {
+				HANDLER: {
+					get: async () => ({ status: 200, data: { passed: true } }),
+				},
+			},
+		} as Parameters<typeof initHono>[2]);
+
+		const response = await app.request("http://localhost/pass", { method: "GET" });
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ passed: true });
+	});
+
+	it("null typed middleware is skipped in chain", async () => {
+		const mwRouter = createRouter(
+			{ skip: { TYPE: "contract" } },
+			{
+				MIDDLEWARE: {
+					external: {
+						429: {
+							contentType: "application/json",
+							schema: z.object({ busy: z.boolean() }),
+						},
+					},
+				},
+				ROUTER: {
+					skip: {
+						CONTRACT: {
+							get: {
+								responses: {
+									200: {
+										contentType: "application/json",
+										schema: z.object({ ok: z.boolean() }),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		);
+
+		const app = new Hono();
+		initHono(app, mwRouter, {
+			MIDDLEWARE: {
+				external: null,
+			},
+			skip: {
+				HANDLER: {
+					get: async () => ({ status: 200, data: { ok: true } }),
+				},
+			},
+		} as Parameters<typeof initHono>[2]);
+
+		const response = await app.request("http://localhost/skip", { method: "GET" });
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ ok: true });
 	});
 
 	it("throws when handler map is not a record", () => {
@@ -548,47 +717,46 @@ describe("initHono", () => {
 		);
 	});
 
-	it("throws when middleware is not an array", () => {
-		const app = new Hono();
-		const handlersWithInvalidMiddleware = {
-			users: {
-				$id: {
-					HANDLER: {
-						get: async (
-							data: ContractOutput<NonNullable<typeof router.users.$id.CONTRACT.get>>,
-						) => ({
-							status: 200,
-							data: { id: data.pathParams.id, name: "john" },
-							headers: { "x-custom-header": "ok" },
-						}),
+	it("throws when middleware is not a record", () => {
+		const mwRouter = createRouter(
+			{ resource: { TYPE: "contract" } },
+			{
+				MIDDLEWARE: {
+					guard: {
+						401: {
+							contentType: "application/json",
+							schema: z.object({ error: z.string() }),
+						},
 					},
-					MIDDLEWARE: "not-an-array",
-					ROUTER: {
-						$postId: {
-							HANDLER: {
-								get: async (
-									data: ContractOutput<
-										NonNullable<
-											typeof router.users.$id.ROUTER.$postId.CONTRACT.get
-										>
-									>,
-								) => ({
-									status: 200,
-									data: {
-										id: data.pathParams.postId,
-										title: "post",
+				},
+				ROUTER: {
+					resource: {
+						CONTRACT: {
+							get: {
+								responses: {
+									200: {
+										contentType: "application/json",
+										schema: z.object({ ok: z.boolean() }),
 									},
-								}),
+								},
 							},
 						},
 					},
 				},
 			},
-		} as unknown as ServerHandlerTree<typeof router, [Context]>;
-
-		expect(() => initHono(app, router, handlersWithInvalidMiddleware)).toThrow(
-			"Middleware for route must be an array: /users/:id",
 		);
+
+		const app = new Hono();
+		expect(() =>
+			initHono(app, mwRouter, {
+				MIDDLEWARE: "not-a-record" as unknown as ServerHandlerTree<
+					typeof mwRouter
+				>["MIDDLEWARE"],
+				resource: {
+					HANDLER: { get: async () => ({ status: 200, data: { ok: true } }) },
+				},
+			}),
+		).toThrow("Middleware must be a record of typed handlers: /");
 	});
 
 	it("registers options method route", async () => {
@@ -597,11 +765,13 @@ describe("initHono", () => {
 				ping: { TYPE: "contract" },
 			},
 			{
-				ping: {
-					CONTRACT: {
-						options: {
-							responses: {
-								204: { contentType: null },
+				ROUTER: {
+					ping: {
+						CONTRACT: {
+							options: {
+								responses: {
+									204: { contentType: null },
+								},
 							},
 						},
 					},
@@ -679,19 +849,21 @@ describe("initHono", () => {
 				},
 			},
 			{
-				uploads: {
-					CONTRACT: {
-						post: {
-							payload: {
-								contentType: "multipart/form-data",
-								schema: z.instanceof(FormData),
-							},
-							responses: {
-								200: {
-									contentType: "application/json",
-									schema: z.object({
-										name: z.string(),
-									}),
+				ROUTER: {
+					uploads: {
+						CONTRACT: {
+							post: {
+								payload: {
+									contentType: "multipart/form-data",
+									schema: z.instanceof(FormData),
+								},
+								responses: {
+									200: {
+										contentType: "application/json",
+										schema: z.object({
+											name: z.string(),
+										}),
+									},
 								},
 							},
 						},
@@ -830,48 +1002,50 @@ describe("initHono", () => {
 				nullish: { TYPE: "contract" },
 			},
 			{
-				json: {
-					CONTRACT: {
-						get: {
-							responses: {
-								200: {
-									contentType: "application/json",
-									schema: z.object({ value: z.string() }),
+				ROUTER: {
+					json: {
+						CONTRACT: {
+							get: {
+								responses: {
+									200: {
+										contentType: "application/json",
+										schema: z.object({ value: z.string() }),
+									},
 								},
 							},
 						},
 					},
-				},
-				text: {
-					CONTRACT: {
-						get: {
-							responses: {
-								200: {
-									contentType: "text/plain",
-									schema: z.string(),
+					text: {
+						CONTRACT: {
+							get: {
+								responses: {
+									200: {
+										contentType: "text/plain",
+										schema: z.string(),
+									},
 								},
 							},
 						},
 					},
-				},
-				bytes: {
-					CONTRACT: {
-						get: {
-							responses: {
-								200: {
-									contentType: "application/octet-stream",
-									schema: z.instanceof(Uint8Array),
+					bytes: {
+						CONTRACT: {
+							get: {
+								responses: {
+									200: {
+										contentType: "application/octet-stream",
+										schema: z.instanceof(Uint8Array),
+									},
 								},
 							},
 						},
 					},
-				},
-				nullish: {
-					CONTRACT: {
-						get: {
-							responses: {
-								204: {
-									contentType: null,
+					nullish: {
+						CONTRACT: {
+							get: {
+								responses: {
+									204: {
+										contentType: null,
+									},
 								},
 							},
 						},

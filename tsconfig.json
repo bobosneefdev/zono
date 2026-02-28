@@ -15,7 +15,6 @@
 		"baseUrl": ".",
 		"paths": {
 			"~/*": ["src/*"],
-			"@bobosneefdev/zono/*": ["dist/*"]
 		}
 	},
 	"include": ["src"],

@@ -1,4 +1,10 @@
-import type { Contract, ContractMethod, ContractMethodMap } from "~/contract/contract.types.js";
+import { mergeContractResponses } from "~/contract/contract.responses.js";
+import type {
+	Contract,
+	ContractMethod,
+	ContractMethodMap,
+	ContractResponses,
+} from "~/contract/contract.types.js";
 import { CONTRACT_METHOD_ORDER, isContractNode, isRecord, isRouterNode } from "~/internal/util.js";
 import type {
 	RouterContractGivenPath,
@@ -28,6 +34,51 @@ export function routerDotPathToParamPath(dotPath: string): string {
 	);
 
 	return `/${mapped.join("/")}`;
+}
+
+function flattenNodeMiddleware(node: unknown): ContractResponses {
+	if (!isRecord(node) || !("MIDDLEWARE" in node)) {
+		return {};
+	}
+	const mw = node.MIDDLEWARE;
+	if (!isRecord(mw)) {
+		return {};
+	}
+	const entries = Object.values(mw).filter(
+		(v): v is ContractResponses => isRecord(v) && typeof v === "object",
+	);
+	return entries.length === 0 ? {} : mergeContractResponses(...entries);
+}
+
+export function resolveRouteMiddlewareResponses(
+	router: unknown,
+	routePath: string,
+): ContractResponses {
+	const dotPath = routePathToDotPath(routePath);
+	const keys = dotPath.length === 0 ? [] : dotPath.split(".");
+
+	const accumulated: Array<ContractResponses> = [];
+	let current: unknown = router;
+
+	accumulated.push(flattenNodeMiddleware(current));
+
+	for (const key of keys) {
+		if (!isRecord(current)) {
+			throw new Error(`Unknown path ${routePath}`);
+		}
+
+		if (key in current) {
+			current = current[key];
+		} else if (isRouterNode(current) && key in current.ROUTER) {
+			current = current.ROUTER[key];
+		} else {
+			throw new Error(`Unknown path ${routePath}`);
+		}
+
+		accumulated.push(flattenNodeMiddleware(current));
+	}
+
+	return accumulated.length === 1 ? accumulated[0] : mergeContractResponses(...accumulated);
 }
 
 export function resolveRouteContractMap<TRouter, TPath extends RouterPath<TRouter>>(
