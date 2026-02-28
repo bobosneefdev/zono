@@ -1,9 +1,9 @@
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import z from "zod";
 import { createClient } from "~/client/client.js";
 import { createRoutes } from "~/contract/routes.js";
 import type { RouterShape } from "~/contract/shape.types.js";
-import { createHonoMiddlewareHandlers, createHonoRouteHandlers, initHono } from "~/hono/hono.js";
+import { initHono } from "~/hono/hono.js";
 import {
 	generateHonoGatewayRoutesAndMiddleware,
 	initHonoGateway,
@@ -104,22 +104,26 @@ const middleware = createMiddleware(routes, {
 
 const app = new Hono();
 
-initHono(app, routes, {
-	routeHandlers: createHonoRouteHandlers(routes, {
+initHono(
+	app,
+	routes,
+	{
 		ROUTER: {
 			users: {
 				ROUTER: {
 					register: {
 						HANDLER: {
-							post: async (input) => ({
-								status: 201,
-								contentType: "application/json",
-								body: {
-									id: crypto.randomUUID(),
-									name: input.body.name,
-									email: input.body.email,
-								},
-							}),
+							post: async (input, _ctx: Context, _auth: string | undefined) => {
+								return {
+									status: 201 as const,
+									contentType: "application/json" as const,
+									body: {
+										id: crypto.randomUUID(),
+										name: input.body.name,
+										email: input.body.email,
+									},
+								};
+							},
 						},
 					},
 					$userId: {
@@ -127,15 +131,15 @@ initHono(app, routes, {
 							get: async (input) => {
 								if (input.pathParams.userId.endsWith("0")) {
 									return {
-										status: 404,
-										contentType: "application/json",
+										status: 404 as const,
+										contentType: "application/json" as const,
 										body: { message: "User not found" },
 									};
 								}
 
 								return {
-									status: 200,
-									contentType: "application/json",
+									status: 200 as const,
+									contentType: "application/json" as const,
 									body: {
 										id: input.pathParams.userId,
 										name: "Example User",
@@ -150,23 +154,33 @@ initHono(app, routes, {
 			health: {
 				HANDLER: {
 					get: async () => ({
-						status: 200,
-						contentType: "application/json",
-						body: { status: "ok" },
+						status: 200 as const,
+						contentType: "application/json" as const,
+						body: { status: "ok" as const },
 					}),
 				},
 			},
 		},
-	}),
+	},
 	middleware,
-	middlewareHandlers: createHonoMiddlewareHandlers(middleware, {
+	{
 		MIDDLEWARE: {
-			rateLimit: async (_ctx, next) => {
+			rateLimit: async (_ctx, _auth, next) => {
 				await next();
 			},
 		},
-	}),
-	errorMode: "public",
+	},
+	{
+		errorMode: "public",
+		transformContextParams: async (params: [Context]) => {
+			return [...params, params[0].req.header("Authorization") ?? "no-auth"] as const;
+		},
+	},
+);
+
+Bun.serve({
+	fetch: app.fetch,
+	port: 3000,
 });
 
 const client = createClient(routes, {
@@ -184,6 +198,7 @@ const gateway = generateHonoGatewayRoutesAndMiddleware({
 
 const gatewayMiddleware = createMiddleware(gateway.routes, {
 	MIDDLEWARE: {
+		// This would be if your middleware should have no responses possible
 		requestLogging: {},
 	},
 });
@@ -195,14 +210,20 @@ initHonoGateway(gatewayApp, gateway.routes, {
 		usersService: "http://localhost:3000",
 	},
 	middleware: gatewayMiddleware,
-	middlewareHandlers: createHonoMiddlewareHandlers(gatewayMiddleware, {
+	middlewareHandlers: {
 		MIDDLEWARE: {
 			requestLogging: async (_ctx, next) => {
+				console.log("Request logging");
 				await next();
 			},
 		},
-	}),
+	},
 	errorMode: "public",
+});
+
+Bun.serve({
+	fetch: gatewayApp.fetch,
+	port: 4000,
 });
 
 const gatewayClient = createClient(gateway.routes, {
@@ -230,10 +251,9 @@ const gatewayClient = createClient(gateway.routes, {
 
 	const gatewayUser = await gatewayClient.usersService.users.$userId.get({
 		pathParams: {
-			userId: "550e8400-e29b-41d4-a716-446655440000",
+			userId: crypto.randomUUID(),
 		},
 	});
-
 	if (gatewayUser.status === 200) {
 		console.log("Gateway fetched user email:", gatewayUser.body.email);
 	}

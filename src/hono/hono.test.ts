@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import type { Context } from "hono";
 import { Hono } from "hono";
 import z from "zod";
 import { createRoutes } from "~/contract/routes.js";
 import type { RouterShape } from "~/contract/shape.types.js";
-import { createHonoMiddlewareHandlers, createHonoRouteHandlers, initHono } from "~/hono/hono.js";
+import { initHono } from "~/hono/hono.js";
 import { createMiddleware } from "~/middleware/middleware.js";
 
 const shape = {
@@ -113,8 +114,10 @@ const middleware = createMiddleware(routes, {
 function createTestApp() {
 	const app = new Hono();
 
-	initHono(app, routes, {
-		routeHandlers: createHonoRouteHandlers(routes, {
+	initHono(
+		app,
+		routes,
+		{
 			ROUTER: {
 				users: {
 					ROUTER: {
@@ -155,9 +158,9 @@ function createTestApp() {
 					},
 				},
 			},
-		}),
+		},
 		middleware,
-		middlewareHandlers: createHonoMiddlewareHandlers(middleware, {
+		{
 			MIDDLEWARE: {
 				rateLimit: async (_ctx, next) => {
 					await next();
@@ -176,9 +179,11 @@ function createTestApp() {
 					},
 				},
 			},
-		}),
-		errorMode: "public",
-	});
+		},
+		{
+			errorMode: "public",
+		},
+	);
 
 	return app;
 }
@@ -241,8 +246,10 @@ describe("initHono", () => {
 
 	test("middleware can short-circuit with typed response", async () => {
 		const app = new Hono();
-		initHono(app, routes, {
-			routeHandlers: createHonoRouteHandlers(routes, {
+		initHono(
+			app,
+			routes,
+			{
 				ROUTER: {
 					users: {
 						ROUTER: {
@@ -280,9 +287,9 @@ describe("initHono", () => {
 						},
 					},
 				},
-			}),
+			},
 			middleware,
-			middlewareHandlers: createHonoMiddlewareHandlers(middleware, {
+			{
 				MIDDLEWARE: {
 					rateLimit: async () => {
 						return {
@@ -305,13 +312,135 @@ describe("initHono", () => {
 						},
 					},
 				},
-			}),
-			errorMode: "public",
-		});
+			},
+			{
+				errorMode: "public",
+			},
+		);
 
 		const res = await app.request("/health");
 		expect(res.status).toBe(429);
 		const body = await res.json();
 		expect(body).toEqual({ retryAfter: 60 });
+	});
+
+	test("transformContextParams passes transformed params to handlers", async () => {
+		const app = new Hono();
+		initHono(
+			app,
+			routes,
+			{
+				ROUTER: {
+					users: {
+						ROUTER: {
+							register: {
+								HANDLER: {
+									post: () => ({
+										status: 201 as const,
+										contentType: "application/json" as const,
+										body: { id: "x", name: "n", email: "e@e.com" },
+									}),
+								},
+							},
+							$userId: {
+								HANDLER: {
+									get: () => ({
+										status: 200 as const,
+										contentType: "application/json" as const,
+										body: { id: "x", name: "n", email: "e@e.com" },
+									}),
+								},
+							},
+						},
+					},
+					health: {
+						HANDLER: {
+							get: (_input, _ctx: Context, authValue) => ({
+								status: 200 as const,
+								contentType: "application/json" as const,
+								body: { status: authValue ?? "no-auth" },
+							}),
+						},
+					},
+				},
+			},
+			undefined,
+			undefined,
+			{
+				transformContextParams: ([ctx]: [Context]) =>
+					[ctx, ctx.req.header("Authorization")] as const,
+				errorMode: "public",
+			},
+		);
+
+		const resWithAuth = await app.request("/health", {
+			headers: { Authorization: "Bearer secret-token" },
+		});
+		expect(resWithAuth.status).toBe(200);
+		const bodyWithAuth = await resWithAuth.json();
+		expect(bodyWithAuth).toEqual({ status: "Bearer secret-token" });
+
+		const resWithoutAuth = await app.request("/health");
+		expect(resWithoutAuth.status).toBe(200);
+		const bodyWithoutAuth = await resWithoutAuth.json();
+		expect(bodyWithoutAuth).toEqual({ status: "no-auth" });
+	});
+
+	test("transformContextParams supports async transform", async () => {
+		const app = new Hono();
+		initHono(
+			app,
+			routes,
+			{
+				ROUTER: {
+					users: {
+						ROUTER: {
+							register: {
+								HANDLER: {
+									post: () => ({
+										status: 201 as const,
+										contentType: "application/json" as const,
+										body: { id: "x", name: "n", email: "e@e.com" },
+									}),
+								},
+							},
+							$userId: {
+								HANDLER: {
+									get: () => ({
+										status: 200 as const,
+										contentType: "application/json" as const,
+										body: { id: "x", name: "n", email: "e@e.com" },
+									}),
+								},
+							},
+						},
+					},
+					health: {
+						HANDLER: {
+							get: (_input, _ctx: Context, resolved) => ({
+								status: 200 as const,
+								contentType: "application/json" as const,
+								body: { status: resolved },
+							}),
+						},
+					},
+				},
+			},
+			undefined,
+			undefined,
+			{
+				transformContextParams: async ([ctx]: [Context]) => {
+					const auth = ctx.req.header("Authorization");
+					await new Promise((r) => setTimeout(r, 0));
+					return [ctx, auth ?? "async-no-auth"] as const;
+				},
+				errorMode: "public",
+			},
+		);
+
+		const res = await app.request("/health");
+		expect(res.status).toBe(200);
+		const body = await res.json();
+		expect(body).toEqual({ status: "async-no-auth" });
 	});
 });

@@ -1,5 +1,6 @@
 export { createHonoMiddlewareHandlers, createHonoRouteHandlers, initHono } from "~/hono/hono.js";
 export type {
+	HonoContextParams,
 	HonoHandler,
 	HonoHandlerMethodMap,
 	HonoMiddlewareHandler,

@@ -4,7 +4,7 @@ import z from "zod";
 import { createClient } from "~/client/client.js";
 import { createRoutes } from "~/contract/routes.js";
 import type { RouterShape } from "~/contract/shape.types.js";
-import { createHonoMiddlewareHandlers, createHonoRouteHandlers, initHono } from "~/hono/hono.js";
+import { initHono } from "~/hono/hono.js";
 import {
 	generateHonoGatewayRoutesAndMiddleware,
 	initHonoGateway,
@@ -79,8 +79,10 @@ let gatewayServer: ReturnType<typeof Bun.serve>;
 
 beforeAll(() => {
 	const serviceApp = new Hono();
-	initHono(serviceApp, serviceRoutes, {
-		routeHandlers: createHonoRouteHandlers(serviceRoutes, {
+	initHono(
+		serviceApp,
+		serviceRoutes,
+		{
 			ROUTER: {
 				items: {
 					HANDLER: {
@@ -108,17 +110,19 @@ beforeAll(() => {
 					},
 				},
 			},
-		}),
-		middleware: serviceMiddleware,
-		middlewareHandlers: createHonoMiddlewareHandlers(serviceMiddleware, {
+		},
+		serviceMiddleware,
+		{
 			MIDDLEWARE: {
 				auth: async (_ctx, next) => {
 					await next();
 				},
 			},
-		}),
-		errorMode: "public",
-	});
+		},
+		{
+			errorMode: "public",
+		},
+	);
 	serviceServer = Bun.serve({ fetch: serviceApp.fetch, port: SERVICE_PORT });
 
 	const gateway = generateHonoGatewayRoutesAndMiddleware({
@@ -140,13 +144,13 @@ beforeAll(() => {
 			inventory: `http://localhost:${SERVICE_PORT}`,
 		},
 		middleware: gatewayMiddleware,
-		middlewareHandlers: createHonoMiddlewareHandlers(gatewayMiddleware, {
+		middlewareHandlers: {
 			MIDDLEWARE: {
 				logging: async (_ctx, next) => {
 					await next();
 				},
 			},
-		}),
+		},
 		errorMode: "public",
 	});
 	gatewayServer = Bun.serve({ fetch: gatewayApp.fetch, port: GATEWAY_PORT });

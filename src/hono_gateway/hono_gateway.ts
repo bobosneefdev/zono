@@ -124,7 +124,9 @@ function collectGatewayMiddleware(
 			const handler = (mwHandlers.MIDDLEWARE as Record<string, unknown>)[name];
 			if (handler === null || handler === undefined || typeof handler !== "function")
 				continue;
-			entries.push({ handler: handler as MiddlewareEntry["handler"] });
+			entries.push({
+				handler: handler as MiddlewareEntry<ReadonlyArray<unknown>>["handler"],
+			});
 		}
 	}
 
@@ -147,7 +149,9 @@ function collectGatewayMiddleware(
 				const handler = (currentHandlers.MIDDLEWARE as Record<string, unknown>)[name];
 				if (handler === null || handler === undefined || typeof handler !== "function")
 					continue;
-				entries.push({ handler: handler as MiddlewareEntry["handler"] });
+				entries.push({
+					handler: handler as MiddlewareEntry<ReadonlyArray<unknown>>["handler"],
+				});
 			}
 		}
 	}
@@ -207,7 +211,9 @@ export function initHonoGateway<TRoutes, TMiddleware = unknown>(
 			: registration.gatewayHttpPath;
 
 		registerHonoRoute(app, registration.method, path, (context) =>
-			executeMiddlewareChain(context, middlewareChain, proxyHandler),
+			executeMiddlewareChain(context, middlewareChain, (ctx) => proxyHandler(ctx), [
+				context,
+			] as const),
 		);
 	}
 

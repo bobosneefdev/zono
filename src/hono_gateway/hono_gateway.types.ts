@@ -1,5 +1,5 @@
 import type { ErrorMode } from "~/contract/contract.error.js";
-import type { HonoMiddlewareHandlerTree } from "~/hono/hono.types.js";
+import type { HonoContextParams, HonoMiddlewareHandlerTree } from "~/hono/hono.types.js";
 
 export type GatewayServiceInput = {
 	routes: unknown;
@@ -25,12 +25,16 @@ export type GeneratedGateway<T extends GatewayInput> = {
 	middleware: GeneratedGatewayMiddleware<T>;
 };
 
-export type GatewayOptions<TRoutes, TMiddleware = unknown> = {
+export type GatewayOptions<
+	TRoutes,
+	TMiddleware = unknown,
+	TContextParams extends HonoContextParams = [import("hono").Context],
+> = {
 	services: TRoutes extends { ROUTER: infer R extends Record<string, unknown> }
 		? { [K in keyof R & string]: string }
 		: Record<string, string>;
 	middleware?: TMiddleware;
-	middlewareHandlers?: HonoMiddlewareHandlerTree<TMiddleware>;
+	middlewareHandlers?: HonoMiddlewareHandlerTree<TMiddleware, TContextParams>;
 	errorMode?: ErrorMode;
 	basePath?: string;
 };

@@ -1,13 +1,13 @@
 import type { Context, Hono } from "hono";
 import type { ContractMethod } from "~/contract/contract.types.js";
+import type { PossiblePromise } from "~/internal/util.types.js";
 
-export type MiddlewareHandlerFn = (
-	ctx: Context,
-	next: () => Promise<void>,
-) => Promise<void | { status: number; contentType?: string | null; body?: unknown }>;
+export type MiddlewareHandlerFn<TContextParams extends ReadonlyArray<unknown> = [Context]> = (
+	...contextParamsAndNext: [...contextParams: TContextParams, next: () => Promise<void>]
+) => PossiblePromise<void | { status: number; contentType?: string | null; body?: unknown }>;
 
-export type MiddlewareEntry = {
-	handler: MiddlewareHandlerFn;
+export type MiddlewareEntry<TContextParams extends ReadonlyArray<unknown> = [Context]> = {
+	handler: MiddlewareHandlerFn<TContextParams>;
 };
 
 export function normalizeBasePath(basePath: string | undefined): string {
@@ -48,14 +48,15 @@ function buildMiddlewareResponse(result: {
 	return new Response(encodedBody, { status: result.status, headers });
 }
 
-export async function executeMiddlewareChain(
+export async function executeMiddlewareChain<TContextParams extends ReadonlyArray<unknown>>(
 	context: Context,
-	middleware: Array<MiddlewareEntry>,
-	finalHandler: (context: Context) => Promise<Response>,
+	middleware: Array<MiddlewareEntry<TContextParams>>,
+	finalHandler: (context: Context, contextParams: TContextParams) => Promise<Response>,
+	contextParams: TContextParams,
 ): Promise<Response> {
 	const dispatch = async (index: number): Promise<void> => {
 		if (index >= middleware.length) {
-			const response = await finalHandler(context);
+			const response = await finalHandler(context, contextParams);
 			const mergedHeaders = new Headers(context.res.headers);
 			for (const [key, value] of response.headers.entries()) {
 				mergedHeaders.set(key, value);
@@ -68,7 +69,7 @@ export async function executeMiddlewareChain(
 		}
 
 		const entry = middleware[index];
-		const typedResult = await entry.handler(context, async () => {
+		const typedResult = await entry.handler(...contextParams, async () => {
 			await dispatch(index + 1);
 		});
 

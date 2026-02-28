@@ -2,6 +2,7 @@ import type { Context, Hono } from "hono";
 import type { ErrorMode } from "~/contract/contract.error.js";
 import type { Contract, ContractMethod, ContractMethodMap } from "~/contract/contract.types.js";
 import type {
+	HonoContextParams,
 	HonoMiddlewareHandlerTree,
 	HonoOptions,
 	HonoRouteHandlerTree,
@@ -23,6 +24,7 @@ import {
 	isRecord,
 	isRouterNode,
 } from "~/internal/util.js";
+import { MiddlewareDefinition } from "~/middleware/index.js";
 
 async function parseRequestBody(context: Context): Promise<unknown> {
 	const contentType = context.req.header("content-type") ?? "";
@@ -38,21 +40,28 @@ type ResolvedHonoOptions = {
 	bypassIncomingParse: boolean;
 	bypassOutgoingParse: boolean;
 	errorMode: ErrorMode;
+	transformContextParams?: (
+		params: [Context],
+	) => Promise<ReadonlyArray<unknown>> | ReadonlyArray<unknown>;
 };
 
 type RouteRegistration = {
 	path: string;
 	method: ContractMethod;
 	contract: Contract;
-	middleware: Array<MiddlewareEntry>;
-	handler: (context: Context, options: ResolvedHonoOptions) => Promise<Response>;
+	middleware: Array<MiddlewareEntry<ReadonlyArray<unknown>>>;
+	handler: (
+		context: Context,
+		contextParams: ReadonlyArray<unknown>,
+		options: ResolvedHonoOptions,
+	) => Promise<Response>;
 };
 
 function collectMiddlewareEntries(
 	mwDefNode: Record<string, unknown>,
 	mwHandlerNode: Record<string, unknown>,
-): Array<MiddlewareEntry> {
-	const entries: Array<MiddlewareEntry> = [];
+): Array<MiddlewareEntry<ReadonlyArray<unknown>>> {
+	const entries: Array<MiddlewareEntry<ReadonlyArray<unknown>>> = [];
 	const mwDef = mwDefNode.MIDDLEWARE as Record<string, unknown> | undefined;
 	const mwHandlers = mwHandlerNode.MIDDLEWARE as Record<string, unknown> | undefined;
 
@@ -63,7 +72,7 @@ function collectMiddlewareEntries(
 		if (handler === null || handler === undefined) continue;
 		if (typeof handler !== "function") continue;
 		entries.push({
-			handler: handler as MiddlewareEntry["handler"],
+			handler: handler as MiddlewareEntry<ReadonlyArray<unknown>>["handler"],
 		});
 	}
 
@@ -76,7 +85,7 @@ function collectRoutes(
 	mwDef: Record<string, unknown> | undefined,
 	mwHandlers: Record<string, unknown> | undefined,
 	dotPathPrefix: string,
-	accumulatedMiddleware: Array<MiddlewareEntry>,
+	accumulatedMiddleware: Array<MiddlewareEntry<ReadonlyArray<unknown>>>,
 ): Array<RouteRegistration> {
 	const registrations: Array<RouteRegistration> = [];
 
@@ -137,7 +146,11 @@ function collectRoutes(
 					method,
 					contract,
 					middleware: nodeMiddleware,
-					handler: async (context: Context, options: ResolvedHonoOptions) => {
+					handler: async (
+						context: Context,
+						contextParams: ReadonlyArray<unknown>,
+						options: ResolvedHonoOptions,
+					) => {
 						const rawInput = {
 							pathParams: context.req.param(),
 							query: context.req.query(),
@@ -157,9 +170,9 @@ function collectRoutes(
 						}
 						const handlerFn = resolvedHandler as (
 							input: unknown,
-							ctx: Context,
+							...params: ReadonlyArray<unknown>
 						) => Promise<unknown>;
-						const result = await handlerFn(parseResult.data, context);
+						const result = await handlerFn(parseResult.data, ...contextParams);
 						return buildContractResponse(
 							contract,
 							result as ServerHandlerOutput<Contract>,
@@ -190,37 +203,51 @@ function collectRoutes(
 	return registrations;
 }
 
-export function createHonoRouteHandlers<TRoutes>(
+export function createHonoRouteHandlers<
+	TRoutes,
+	TContextParams extends HonoContextParams = [Context],
+>(
 	_routes: TRoutes,
-	handlers: HonoRouteHandlerTree<TRoutes>,
-): HonoRouteHandlerTree<TRoutes> {
+	handlers: HonoRouteHandlerTree<TRoutes, TContextParams>,
+): HonoRouteHandlerTree<TRoutes, TContextParams> {
 	return handlers;
 }
 
-export function createHonoMiddlewareHandlers<TMiddleware>(
+export function createHonoMiddlewareHandlers<
+	TMiddleware,
+	TContextParams extends HonoContextParams = [Context],
+>(
 	_middleware: TMiddleware,
-	handlers: HonoMiddlewareHandlerTree<TMiddleware>,
-): HonoMiddlewareHandlerTree<TMiddleware> {
+	handlers: HonoMiddlewareHandlerTree<TMiddleware, TContextParams>,
+): HonoMiddlewareHandlerTree<TMiddleware, TContextParams> {
 	return handlers;
 }
 
-export function initHono<TRoutes, TMiddleware = unknown>(
+export function initHono<
+	TRoutes,
+	TMiddleware extends MiddlewareDefinition<TRoutes> = MiddlewareDefinition<TRoutes>,
+	TContextParams extends HonoContextParams = [Context],
+>(
 	app: Hono,
 	routes: TRoutes,
-	options: HonoOptions<TRoutes, TMiddleware>,
+	routeHandlers: HonoRouteHandlerTree<TRoutes, TContextParams>,
+	middleware?: TMiddleware,
+	middlewareHandlers?: HonoMiddlewareHandlerTree<TMiddleware, TContextParams>,
+	options?: HonoOptions<TContextParams>,
 ): Hono {
 	const resolvedOptions: ResolvedHonoOptions = {
-		basePath: normalizeBasePath(options.basePath),
-		bypassIncomingParse: options.bypassIncomingParse ?? false,
-		bypassOutgoingParse: options.bypassOutgoingParse ?? false,
-		errorMode: options.errorMode ?? "hidden",
+		basePath: normalizeBasePath(options?.basePath),
+		bypassIncomingParse: options?.bypassIncomingParse ?? false,
+		bypassOutgoingParse: options?.bypassOutgoingParse ?? false,
+		errorMode: options?.errorMode ?? "hidden",
+		transformContextParams: options?.transformContextParams,
 	};
 
 	const registrations = collectRoutes(
 		routes as Record<string, unknown>,
-		options.routeHandlers as Record<string, unknown>,
-		options.middleware as Record<string, unknown> | undefined,
-		options.middlewareHandlers as Record<string, unknown> | undefined,
+		routeHandlers as Record<string, unknown>,
+		middleware as Record<string, unknown> | undefined,
+		middlewareHandlers as Record<string, unknown> | undefined,
 		"",
 		[],
 	);
@@ -230,11 +257,19 @@ export function initHono<TRoutes, TMiddleware = unknown>(
 			? `${resolvedOptions.basePath}${registration.path}`
 			: registration.path;
 
-		registerHonoRoute(app, registration.method, path, (context) =>
-			executeMiddlewareChain(context, registration.middleware, (ctx) =>
-				registration.handler(ctx, resolvedOptions),
-			),
-		);
+		registerHonoRoute(app, registration.method, path, async (context) => {
+			const contextParams = resolvedOptions.transformContextParams
+				? await Promise.resolve(resolvedOptions.transformContextParams([context]))
+				: ([context] as const);
+
+			return executeMiddlewareChain(
+				context,
+				registration.middleware,
+				(ctx, resolvedContextParams) =>
+					registration.handler(ctx, resolvedContextParams, resolvedOptions),
+				contextParams,
+			);
+		});
 	}
 
 	return app;

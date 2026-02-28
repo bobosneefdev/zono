@@ -1,3 +1,4 @@
+import { Prettify } from "ts-essentials";
 import z from "zod";
 import type { ErrorMode, ValidationErrorBody } from "~/contract/contract.error.js";
 import type { ContractInput } from "~/contract/contract.io.js";
@@ -41,12 +42,14 @@ type CollectFromSingleMiddleware<
 type CollectAllMiddlewareResponses<
 	TMiddlewares extends ReadonlyArray<unknown>,
 	TPath extends ReadonlyArray<string>,
-> = TMiddlewares extends readonly [infer Head, ...infer Tail extends ReadonlyArray<unknown>]
-	? MergeContractResponses<
-			CollectFromSingleMiddleware<Head, TPath>,
-			CollectAllMiddlewareResponses<Tail, TPath>
-		>
-	: Record<never, never>;
+> = Prettify<
+	TMiddlewares extends readonly [infer Head, ...infer Tail extends ReadonlyArray<unknown>]
+		? MergeContractResponses<
+				CollectFromSingleMiddleware<Head, TPath>,
+				CollectAllMiddlewareResponses<Tail, TPath>
+			>
+		: Record<never, never>
+>;
 
 type ResponseBodyForStatus<TResponses, TStatus extends number> = TStatus extends keyof TResponses
 	? TResponses[TStatus] extends { schema: infer TSchema extends z.ZodType }

@@ -4,7 +4,7 @@ import z from "zod";
 import { createClient } from "~/client/client.js";
 import { createRoutes } from "~/contract/routes.js";
 import type { RouterShape } from "~/contract/shape.types.js";
-import { createHonoRouteHandlers, initHono } from "~/hono/hono.js";
+import { initHono } from "~/hono/hono.js";
 import { createMiddleware } from "~/middleware/middleware.js";
 
 const shape = {
@@ -97,8 +97,10 @@ const PORT = 19876;
 
 beforeAll(() => {
 	const app = new Hono();
-	initHono(app, routes, {
-		routeHandlers: createHonoRouteHandlers(routes, {
+	initHono(
+		app,
+		routes,
+		{
 			ROUTER: {
 				users: {
 					ROUTER: {
@@ -136,9 +138,13 @@ beforeAll(() => {
 					},
 				},
 			},
-		}),
-		errorMode: "public",
-	});
+		},
+		undefined,
+		undefined,
+		{
+			errorMode: "public",
+		},
+	);
 	server = Bun.serve({ fetch: app.fetch, port: PORT });
 });
 
