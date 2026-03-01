@@ -25,6 +25,7 @@ import {
 	dotPathToParamPath,
 	getContractMethods,
 	isContractNode,
+	isMiddlewareNode,
 	isRecord,
 	isRouterNode,
 } from "~/internal/util.js";
@@ -58,17 +59,16 @@ type RouteRegistration = {
 };
 
 function collectMiddlewareEntries(
-	mwDefNode: Record<string, unknown>,
-	mwHandlerNode: Record<string, unknown>,
+	mwDefNode: unknown,
+	mwHandlerNode: unknown,
 ): Array<MiddlewareEntry<ReadonlyArray<unknown>>> {
 	const entries: Array<MiddlewareEntry<ReadonlyArray<unknown>>> = [];
-	const mwDef = mwDefNode.MIDDLEWARE as Record<string, unknown> | undefined;
-	const mwHandlers = mwHandlerNode.MIDDLEWARE as Record<string, unknown> | undefined;
+	if (!isMiddlewareNode(mwDefNode) || !isMiddlewareNode(mwHandlerNode)) {
+		return entries;
+	}
 
-	if (!mwDef || !mwHandlers) return entries;
-
-	for (const name of Object.keys(mwDef)) {
-		const handler = mwHandlers[name];
+	for (const name of Object.keys(mwDefNode.MIDDLEWARE)) {
+		const handler = mwHandlerNode.MIDDLEWARE[name];
 		if (handler === null || handler === undefined) continue;
 		if (typeof handler !== "function") continue;
 		entries.push({
@@ -109,21 +109,14 @@ function collectRoutes(
 
 		const nodePath = dotPathPrefix ? `${dotPathPrefix}.${key}` : key;
 
-		const childMwDef = mwDef?.ROUTER
-			? (mwDef.ROUTER as Record<string, unknown>)[key]
-			: undefined;
-		const childMwHandlers = mwHandlers?.ROUTER
-			? (mwHandlers.ROUTER as Record<string, unknown>)[key]
-			: undefined;
+		const childMwDef = isRouterNode(mwDef) ? mwDef.ROUTER[key] : undefined;
+		const childMwHandlers = isRouterNode(mwHandlers) ? mwHandlers.ROUTER[key] : undefined;
 
 		let nodeMiddleware = effectiveMiddleware;
-		if (isRecord(childMwDef) && isRecord(childMwHandlers)) {
+		if (childMwDef && childMwHandlers) {
 			nodeMiddleware = [
 				...effectiveMiddleware,
-				...collectMiddlewareEntries(
-					childMwDef as Record<string, unknown>,
-					childMwHandlers as Record<string, unknown>,
-				),
+				...collectMiddlewareEntries(childMwDef, childMwHandlers),
 			];
 		}
 

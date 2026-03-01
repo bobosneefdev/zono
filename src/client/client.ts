@@ -4,6 +4,7 @@ import { parseResponseBody } from "~/internal/body.util.js";
 import { parseContractFields } from "~/internal/parse.js";
 import { parseSchemaForChannel } from "~/internal/schema_channels.js";
 import { CONTRACT_METHOD_ORDER, isRecord } from "~/internal/util.js";
+import type { SchemaTransformedOutput } from "~/internal/util.types.js";
 import type {
 	ClientOptions,
 	ClientOptionsDefaultHeaderValue,
@@ -140,8 +141,8 @@ async function parseIncomingResponse(
 	additionalResponses: ContractResponses | undefined,
 ): Promise<{
 	status: number;
-	body: unknown;
-	headers: unknown;
+	body: undefined | SchemaTransformedOutput<import("zod").ZodType>;
+	headers: undefined | SchemaTransformedOutput<import("zod").ZodType>;
 	response: Response;
 }> {
 	if (
@@ -161,17 +162,13 @@ async function parseIncomingResponse(
 	const body = await parseResponseBody(
 		statusDefinition.contentType,
 		response,
-		statusDefinition.schema as unknown as import("zod").ZodType,
+		statusDefinition.schema,
 	);
 
-	let headers: unknown;
+	let headers: undefined | SchemaTransformedOutput<import("zod").ZodType>;
 	if (statusDefinition.headers) {
 		const rawHeaders = Object.fromEntries(response.headers.entries());
-		headers = await parseSchemaForChannel(
-			statusDefinition.headers as unknown as import("zod").ZodType,
-			rawHeaders,
-			"transformed",
-		);
+		headers = await parseSchemaForChannel(statusDefinition.headers, rawHeaders, "transformed");
 	}
 
 	return { status: response.status, body, headers, response };

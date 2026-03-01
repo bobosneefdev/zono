@@ -216,8 +216,8 @@ const honoRouteHandlers = createHonoRouteHandlers(routes, honoOptions, {
 
 const honoMiddlewareHandlers = createHonoMiddlewareHandlers(middleware, honoOptions, {
 	MIDDLEWARE: {
-		rateLimit: async (_ctx, next, _auth) => {
-			await next();
+		rateLimit: async (ctx, _next, _auth) => {
+			return ctx.json({ retryAfterSeconds: 60 }, 429);
 		},
 	},
 });

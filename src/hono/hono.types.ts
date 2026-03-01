@@ -1,5 +1,6 @@
 import type { Context, TypedResponse } from "hono";
 import type { StatusCode } from "hono/utils/http-status";
+import type z from "zod";
 import type { ErrorMode } from "~/contract/contract.error.js";
 import type { ContractOutput } from "~/contract/contract.io.js";
 import type {
@@ -9,7 +10,11 @@ import type {
 	ContractResponseStatuses,
 	ContractResponses,
 } from "~/contract/contract.types.js";
-import type { PossiblePromise, ResponseBodyForStatus } from "~/internal/util.types.js";
+import type {
+	PossiblePromise,
+	ResponseBodyForStatus,
+	SchemaHttpSafeInput,
+} from "~/internal/util.types.js";
 import type { MiddlewareContractMap } from "~/middleware/middleware.types.js";
 
 export type HonoContextParams = ReadonlyArray<unknown>;
@@ -31,7 +36,12 @@ export type HonoContractTypedResponse<TContract extends Contract> = {
 }[ContractResponseStatuses<TContract>];
 
 export type HonoMiddlewareTypedResponse<TResponses extends ContractResponses> = {
-	[S in Extract<keyof TResponses, number>]: TypedResponse<unknown, S & StatusCode>;
+	[S in Extract<keyof TResponses, number>]: TypedResponse<
+		TResponses[S] extends { schema: infer TSchema extends z.ZodType }
+			? SchemaHttpSafeInput<TSchema>
+			: undefined,
+		S & StatusCode
+	>;
 }[Extract<keyof TResponses, number>];
 
 export type HonoHandler<

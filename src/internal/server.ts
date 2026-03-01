@@ -55,14 +55,14 @@ export async function buildContractResponse<TContract extends Contract>(
 	const encodedBody = await encodeResponseBody(
 		statusDefinition.contentType,
 		rawBody,
-		statusDefinition.schema as unknown as z.ZodType,
+		statusDefinition.schema,
 	);
 
 	let responseHeaders: HeadersInit | undefined;
 	if (statusDefinition.headers) {
 		const rawHeaders = "headers" in result ? result.headers : undefined;
 		const parsedHeaders = await parseSchemaForChannel(
-			statusDefinition.headers as unknown as z.ZodType,
+			statusDefinition.headers,
 			rawHeaders,
 			"http-safe",
 		);

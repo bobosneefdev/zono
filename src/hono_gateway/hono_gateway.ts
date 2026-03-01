@@ -18,6 +18,7 @@ import {
 	dotPathToSlashPath,
 	getContractMethods,
 	isContractNode,
+	isMiddlewareNode,
 	isRecord,
 	isRouterNode,
 } from "~/internal/util.js";
@@ -122,9 +123,9 @@ function collectGatewayMiddleware(
 	const entries: Array<MiddlewareEntry> = [];
 	if (!isRecord(mwDef) || !isRecord(mwHandlers)) return entries;
 
-	if (isRecord(mwDef.MIDDLEWARE) && isRecord(mwHandlers.MIDDLEWARE)) {
+	if (isMiddlewareNode(mwDef) && isMiddlewareNode(mwHandlers)) {
 		for (const name of Object.keys(mwDef.MIDDLEWARE)) {
-			const handler = (mwHandlers.MIDDLEWARE as Record<string, unknown>)[name];
+			const handler = mwHandlers.MIDDLEWARE[name];
 			if (handler === null || handler === undefined || typeof handler !== "function")
 				continue;
 			entries.push({
@@ -136,20 +137,23 @@ function collectGatewayMiddleware(
 	let currentDef: Record<string, unknown> = mwDef;
 	let currentHandlers: Record<string, unknown> = mwHandlers;
 	for (const segment of pathSegments) {
-		const defRouter = currentDef.ROUTER as Record<string, unknown> | undefined;
-		const handlerRouter = currentHandlers.ROUTER as Record<string, unknown> | undefined;
+		const defRouter = isRouterNode(currentDef) ? currentDef.ROUTER : undefined;
+		const handlerRouter = isRouterNode(currentHandlers)
+			? currentHandlers.ROUTER
+			: undefined;
 		if (!defRouter || !handlerRouter) break;
 
-		const nextDef = defRouter[segment] as Record<string, unknown> | undefined;
-		const nextHandler = handlerRouter[segment] as Record<string, unknown> | undefined;
+		const nextDef = defRouter[segment];
+		const nextHandler = handlerRouter[segment];
 		if (!nextDef || !nextHandler) break;
+		if (!isRecord(nextDef) || !isRecord(nextHandler)) break;
 
 		currentDef = nextDef;
 		currentHandlers = nextHandler;
 
-		if (isRecord(currentDef.MIDDLEWARE) && isRecord(currentHandlers.MIDDLEWARE)) {
+		if (isMiddlewareNode(currentDef) && isMiddlewareNode(currentHandlers)) {
 			for (const name of Object.keys(currentDef.MIDDLEWARE)) {
-				const handler = (currentHandlers.MIDDLEWARE as Record<string, unknown>)[name];
+				const handler = currentHandlers.MIDDLEWARE[name];
 				if (handler === null || handler === undefined || typeof handler !== "function")
 					continue;
 				entries.push({

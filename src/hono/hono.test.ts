@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import z from "zod";
 import type { RouterShape } from "~/contract/contract.types.js";
 import { createRoutes } from "~/contract/routes.js";
-import { createHono } from "~/hono/hono.js";
+import { createHono, createHonoMiddlewareHandlers, createHonoOptions } from "~/hono/hono.js";
 import { createMiddleware } from "~/middleware/middleware.js";
 
 const shape = {
@@ -131,6 +131,17 @@ const middleware = createMiddleware(routes, {
 					},
 				},
 			},
+		},
+	},
+});
+
+const middlewareOptions = createHonoOptions({ errorMode: "public" });
+
+createHonoMiddlewareHandlers(middleware, middlewareOptions, {
+	MIDDLEWARE: {
+		// @ts-expect-error rateLimit 429 must match declared JSON schema
+		rateLimit: async (ctx, _next) => {
+			return ctx.text("blocked", 429);
 		},
 	},
 });

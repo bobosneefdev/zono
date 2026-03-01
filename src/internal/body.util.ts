@@ -16,9 +16,10 @@ export async function resolveRequestBody(
 export async function encodeResponseBody(
 	contentType: string | null,
 	body: unknown,
-	schema: z.ZodType,
+	schema?: z.ZodType,
 ): Promise<BodyInit | null> {
 	if (contentType === null) return null;
+	if (!schema) return null;
 	const parsedBody = await parseSchemaForChannel(schema, body, "http-safe");
 	if (JSON_CONTENT_TYPES.has(contentType)) {
 		return JSON.stringify(parsedBody);
@@ -35,9 +36,10 @@ export async function encodeResponseBody(
 export async function parseResponseBody(
 	contentType: string | null,
 	response: Response,
-	schema: z.ZodType,
+	schema?: z.ZodType,
 ): Promise<unknown> {
 	if (contentType === null) return undefined;
+	if (!schema) return undefined;
 	let rawBody: unknown;
 	if (JSON_CONTENT_TYPES.has(contentType)) {
 		rawBody = await response.clone().json();

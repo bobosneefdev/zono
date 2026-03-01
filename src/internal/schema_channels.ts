@@ -109,16 +109,37 @@ export function validateRouteContractSchema(schema: z.ZodType): void {
 
 export function resolveSchemaForChannel<TSchema extends z.ZodType>(
 	schema: TSchema,
+	channel: "http-safe",
+): z.ZodType<z.input<TSchema>, z.input<TSchema>>;
+export function resolveSchemaForChannel<TSchema extends z.ZodType>(
+	schema: TSchema,
+	channel: "transformed",
+): z.ZodType<z.output<TSchema>, z.input<TSchema>>;
+export function resolveSchemaForChannel<TSchema extends z.ZodType>(
+	schema: TSchema,
 	channel: SchemaChannel,
 ): z.ZodType {
 	return channel === "http-safe" ? getHttpSafeBaseSchema(schema) : schema;
 }
 
-export async function parseSchemaForChannel(
-	schema: z.ZodType,
+export async function parseSchemaForChannel<TSchema extends z.ZodType>(
+	schema: TSchema,
+	value: unknown,
+	channel: "http-safe",
+): Promise<z.input<TSchema>>;
+export async function parseSchemaForChannel<TSchema extends z.ZodType>(
+	schema: TSchema,
+	value: unknown,
+	channel: "transformed",
+): Promise<z.output<TSchema>>;
+export async function parseSchemaForChannel<TSchema extends z.ZodType>(
+	schema: TSchema,
 	value: unknown,
 	channel: SchemaChannel,
 ): Promise<unknown> {
-	const parser = resolveSchemaForChannel(schema, channel);
-	return await parser.parseAsync(value);
+	if (channel === "http-safe") {
+		return await resolveSchemaForChannel(schema, "http-safe").parseAsync(value);
+	}
+
+	return await resolveSchemaForChannel(schema, "transformed").parseAsync(value);
 }
