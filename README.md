@@ -402,11 +402,9 @@ Zono exports focused subpath modules:
 
 - `@bobosneefdev/zono/contract` — route contracts + shared contract utilities
 - `@bobosneefdev/zono/client` — typed HTTP client
-- `@bobosneefdev/zono/server` — server handler and response utilities
 - `@bobosneefdev/zono/middleware` — middleware contract utilities
 - `@bobosneefdev/zono/hono` — Hono adapter
 - `@bobosneefdev/zono/hono-gateway` — Hono gateway composition utilities
-- `@bobosneefdev/zono/sveltekit` — SvelteKit adapter
 
 ## Examples
 
