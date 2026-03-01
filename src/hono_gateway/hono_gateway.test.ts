@@ -4,8 +4,9 @@ import z from "zod";
 import { createClient } from "~/client/client.js";
 import { createRoutes } from "~/contract/routes.js";
 import type { RouterShape } from "~/contract/shape.types.js";
-import { initHono } from "~/hono/hono.js";
+import { createHonoMiddlewareHandlers, initHono } from "~/hono/hono.js";
 import {
+	createGatewayOptions,
 	generateHonoGatewayRoutesAndMiddleware,
 	initHonoGateway,
 } from "~/hono_gateway/hono_gateway.js";
@@ -138,21 +139,31 @@ beforeAll(() => {
 		},
 	});
 
-	const gatewayApp = new Hono();
-	initHonoGateway(gatewayApp, gateway.routes, {
+	const gatewayOptions = createGatewayOptions(gateway.routes, {
 		services: {
 			inventory: `http://localhost:${SERVICE_PORT}`,
 		},
-		middleware: gatewayMiddleware,
-		middlewareHandlers: {
-			MIDDLEWARE: {
-				logging: async (_ctx, next) => {
-					await next();
-				},
-			},
-		},
 		errorMode: "public",
 	});
+
+	const gatewayMiddlewareHandlers = createHonoMiddlewareHandlers(gatewayMiddleware, gatewayOptions, {
+		MIDDLEWARE: {
+			logging: async (_ctx, next) => {
+				await next();
+			},
+		}
+	});
+
+	const gatewayApp = new Hono();
+
+	initHonoGateway(
+		gatewayApp,
+		gateway.routes,
+		gatewayMiddleware,
+		gatewayMiddlewareHandlers,
+		gatewayOptions,
+	);
+
 	gatewayServer = Bun.serve({ fetch: gatewayApp.fetch, port: GATEWAY_PORT });
 });
 

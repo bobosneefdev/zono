@@ -245,12 +245,11 @@ const gatewayMiddleware = createMiddleware(gateway.routes, {
 
 const gatewayApp = new Hono();
 
-initHonoGateway(gatewayApp, gateway.routes, {
-	services: {
-		usersService: "http://localhost:3000",
-	},
-	middleware: gatewayMiddleware,
-	middlewareHandlers: {
+initHonoGateway(
+	gatewayApp,
+	gateway.routes,
+	gatewayMiddleware,
+	{
 		MIDDLEWARE: {
 			requestLogging: async (_ctx, next) => {
 				console.log("Request logging");
@@ -258,8 +257,13 @@ initHonoGateway(gatewayApp, gateway.routes, {
 			},
 		},
 	},
-	errorMode: "public",
-});
+	{
+		services: {
+			usersService: "http://localhost:3000",
+		},
+		errorMode: "public",
+	},
+);
 
 Bun.serve({
 	fetch: gatewayApp.fetch,

@@ -1,5 +1,6 @@
 import type { Context, Hono } from "hono";
 import type { ContractMethod, ContractMethodMap } from "~/contract/contract.types.js";
+import { HonoContextParams, HonoMiddlewareHandlerTree } from "~/hono/hono.types.js";
 import {
 	executeMiddlewareChain,
 	type MiddlewareEntry,
@@ -181,10 +182,13 @@ export function generateHonoGatewayRoutesAndMiddleware<const T extends GatewayIn
 export function initHonoGateway<
 	TRoutes,
 	TMiddleware extends MiddlewareDefinition<TRoutes> = MiddlewareDefinition<TRoutes>,
+	TContextParams extends HonoContextParams = []
 >(
 	app: Hono,
 	routes: TRoutes,
-	options: GatewayOptions<TRoutes, TMiddleware>,
+	middleware: TMiddleware,
+	middlewareHandlers: HonoMiddlewareHandlerTree<TMiddleware, TContextParams>,
+	options: GatewayOptions<TRoutes, TContextParams>,
 ): Hono {
 	const basePath = normalizeBasePath(options.basePath);
 	app.notFound(() => buildNotFoundErrorResponse());
@@ -204,8 +208,8 @@ export function initHonoGateway<
 			.split("/")
 			.filter(Boolean);
 		const middlewareChain = collectGatewayMiddleware(
-			options.middleware,
-			options.middlewareHandlers,
+			middleware,
+			middlewareHandlers,
 			gatewayPathSegments.map((s) => (s.startsWith(":") ? `$${s.slice(1)}` : s)),
 		);
 
@@ -226,4 +230,11 @@ export function initHonoGateway<
 	}
 
 	return app;
+}
+
+export function createGatewayOptions<
+	TRoutes,
+	TContextParams extends HonoContextParams = [],
+>(_routes: TRoutes, options: GatewayOptions<TRoutes, TContextParams>): GatewayOptions<TRoutes, TContextParams> {
+	return options;
 }
