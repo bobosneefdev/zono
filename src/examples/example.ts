@@ -10,6 +10,7 @@ import {
 	createHonoRouteHandlers,
 } from "~/hono/hono.js";
 import {
+	createGatewayOptions,
 	createHonoGateway,
 	generateHonoGatewayRoutesAndMiddleware,
 } from "~/hono_gateway/hono_gateway.js";
@@ -37,9 +38,9 @@ const shape = {
 } as const satisfies RouterShape;
 
 const userSchema = z.object({
-	id: z.string().uuid(),
+	id: z.uuid(),
 	name: z.string(),
-	email: z.string().email(),
+	email: z.email(),
 });
 
 const routes = createRoutes(shape, {
@@ -227,17 +228,32 @@ const client = createClient(routes, {
 	serverErrorMode: "public",
 });
 
-const gateway = generateHonoGatewayRoutesAndMiddleware({
+const { routes: gatewayRoutes, middleware: gatewayMiddleware } = generateHonoGatewayRoutesAndMiddleware({
 	usersService: {
 		routes,
 		middleware,
 	},
 });
 
-const gatewayMiddleware = createMiddleware(gateway.routes, {
+const gatewayOptions = createGatewayOptions(gatewayRoutes, {
+	services: {
+		usersService: "http://localhost:3000",
+	},
+});
+
+const gatewayCustomMiddleware = createMiddleware(gatewayRoutes, {
 	MIDDLEWARE: {
 		// Example of what it looks like if your middleware never returns a response
 		requestLogging: {},
+	},
+});
+
+const gatewayCustomMiddlewareHandlers = createHonoMiddlewareHandlers(gatewayCustomMiddleware, gatewayOptions, {
+	MIDDLEWARE: {
+		requestLogging: async (_ctx, next) => {
+			console.log("Gateway request logging middleware");
+			await next();
+		},
 	},
 });
 
@@ -245,22 +261,10 @@ const gatewayApp = new Hono();
 
 createHonoGateway(
 	gatewayApp,
-	gateway.routes,
-	gatewayMiddleware,
-	{
-		MIDDLEWARE: {
-			requestLogging: async (_ctx, next) => {
-				console.log("Request logging");
-				await next();
-			},
-		},
-	},
-	{
-		services: {
-			usersService: "http://localhost:3000",
-		},
-		errorMode: "public",
-	},
+	gatewayRoutes,
+	gatewayCustomMiddleware,
+	gatewayCustomMiddlewareHandlers,
+	gatewayOptions,
 );
 
 Bun.serve({
@@ -268,9 +272,9 @@ Bun.serve({
 	port: 4000,
 });
 
-const gatewayClient = createClient(gateway.routes, {
+const gatewayClient = createClient(gatewayRoutes, {
 	baseUrl: "http://localhost:4000",
-	middleware: [gateway.middleware, gatewayMiddleware],
+	middleware: [gatewayMiddleware, gatewayCustomMiddleware],
 	serverErrorMode: "public",
 });
 
