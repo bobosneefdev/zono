@@ -4,7 +4,7 @@ import z from "zod";
 import { createClient } from "~/client/client.js";
 import type { RouterShape } from "~/contract/contract.types.js";
 import { createRoutes } from "~/contract/routes.js";
-import { createHono } from "~/hono/hono.js";
+import { initHono } from "~/hono/hono.js";
 import { createMiddleware } from "~/middleware/middleware.js";
 
 const shape = {
@@ -121,7 +121,7 @@ const PORT = 19876;
 
 beforeAll(() => {
 	const app = new Hono();
-	createHono(
+	initHono(
 		app,
 		routes,
 		{

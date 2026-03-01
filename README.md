@@ -37,9 +37,13 @@ Adapter peer dependencies as needed:
 - `hono` for `@bobosneefdev/zono/hono` and `@bobosneefdev/zono/hono-gateway`
 - `@sveltejs/kit` for `@bobosneefdev/zono/sveltekit`
 
-## Quick Start (latest usage pattern)
+## Quick Start (server + gateway + client)
 
-This quick start reflects the style used in `src/examples/example.ts`.
+This quick start reflects the style used in `src/examples/example.ts`, and shows a relatable flow:
+
+- an **ordering service** (your real backend)
+- a **gateway** (single entrypoint in front of one or more services)
+- a **typed client** calling both
 
 Route and middleware handlers return native Hono responses via context helpers like `ctx.json`.
 
@@ -50,62 +54,88 @@ import type { RouterShape } from "@bobosneefdev/zono/contract";
 import { createRoutes } from "@bobosneefdev/zono/contract";
 import { createClient } from "@bobosneefdev/zono/client";
 import {
-  createHono,
   createHonoMiddlewareHandlers,
   createHonoOptions,
   createHonoRouteHandlers,
+  initHono,
 } from "@bobosneefdev/zono/hono";
+import {
+  createGatewayOptions,
+  generateHonoGatewayRoutesAndMiddleware,
+  initHonoGateway,
+} from "@bobosneefdev/zono/hono-gateway";
 import { createMiddleware } from "@bobosneefdev/zono/middleware";
 
 const shape = {
   ROUTER: {
-    users: {
+    menu: { CONTRACT: true },
+    orders: {
       ROUTER: {
-        register: { CONTRACT: true },
-        $userId: { CONTRACT: true },
+        create: { CONTRACT: true },
+        $orderId: { CONTRACT: true },
       },
     },
     health: { CONTRACT: true },
   },
 } as const satisfies RouterShape;
 
-const userSchema = z.object({
-  id: z.string().uuid(),
+const menuItemSchema = z.object({
+  id: z.string(),
   name: z.string(),
-  email: z.string().email(),
+  priceCents: z.number().int().positive(),
+});
+
+const orderSchema = z.object({
+  orderId: z.string().uuid(),
+  itemId: z.string(),
+  quantity: z.number().int().positive(),
+  status: z.enum(["received", "preparing", "ready"]),
+  etaMinutes: z.number().int().nonnegative(),
 });
 
 const routes = createRoutes(shape, {
   ROUTER: {
-    users: {
+    menu: {
+      CONTRACT: {
+        get: {
+          responses: {
+            200: {
+              contentType: "application/json",
+              schema: z.object({ items: z.array(menuItemSchema) }),
+            },
+          },
+        },
+      },
+    },
+    orders: {
       ROUTER: {
-        register: {
+        create: {
           CONTRACT: {
             post: {
               body: {
                 contentType: "application/json",
                 schema: z.object({
-                  name: z.string(),
-                  email: z.string().email(),
+                  itemId: z.string(),
+                  quantity: z.number().int().positive(),
                 }),
               },
               responses: {
                 201: {
                   contentType: "application/json",
-                  schema: userSchema,
+                  schema: orderSchema,
                 },
               },
             },
           },
         },
-        $userId: {
+        $orderId: {
           CONTRACT: {
             get: {
-              pathParams: z.object({ userId: z.string().uuid() }),
+              pathParams: z.object({ orderId: z.string().uuid() }),
               responses: {
                 200: {
                   contentType: "application/json",
-                  schema: userSchema,
+                  schema: orderSchema,
                 },
                 404: {
                   contentType: "application/json",
@@ -145,43 +175,53 @@ const middleware = createMiddleware(routes, {
 
 const honoOptions = createHonoOptions({
   errorMode: "public",
-  additionalHandlerParams: async (ctx) => {
-    return [ctx.req.header("Authorization") ?? "no-auth"] as const;
-  },
 });
+
+const ordersDb = new Map<string, z.infer<typeof orderSchema>>();
 
 const honoRouteHandlers = createHonoRouteHandlers(routes, honoOptions, {
   ROUTER: {
-    users: {
+    menu: {
+      HANDLER: {
+        get: async (_input, ctx) =>
+          ctx.json(
+            {
+              items: [
+                { id: "latte", name: "Caffè Latte", priceCents: 550 },
+                { id: "espresso", name: "Espresso", priceCents: 350 },
+              ],
+            },
+            200,
+          ),
+      },
+    },
+    orders: {
       ROUTER: {
-        register: {
+        create: {
           HANDLER: {
-            post: async (input, ctx, _auth) =>
-              ctx.json(
-                {
-                  id: crypto.randomUUID(),
-                  name: input.body.name,
-                  email: input.body.email,
-                },
-                201,
-              ),
+            post: async (input, ctx) => {
+              const order = {
+                orderId: crypto.randomUUID(),
+                itemId: input.body.itemId,
+                quantity: input.body.quantity,
+                status: "received" as const,
+                etaMinutes: 12,
+              };
+
+              ordersDb.set(order.orderId, order);
+              return ctx.json(order, 201);
+            },
           },
         },
-        $userId: {
+        $orderId: {
           HANDLER: {
             get: async (input, ctx) => {
-              if (input.pathParams.userId.endsWith("0")) {
-                return ctx.json({ message: "User not found" }, 404);
+              const order = ordersDb.get(input.pathParams.orderId);
+              if (!order) {
+                return ctx.json({ message: "Order not found" }, 404);
               }
 
-              return ctx.json(
-                {
-                  id: input.pathParams.userId,
-                  name: "Example User",
-                  email: "user@example.com",
-                },
-                200,
-              );
+              return ctx.json(order, 200);
             },
           },
         },
@@ -197,44 +237,108 @@ const honoRouteHandlers = createHonoRouteHandlers(routes, honoOptions, {
 
 const honoMiddlewareHandlers = createHonoMiddlewareHandlers(middleware, honoOptions, {
   MIDDLEWARE: {
-    rateLimit: async (_ctx, next, _auth) => {
+    rateLimit: async (_ctx, next) => {
       await next();
     },
   },
 });
 
-const app = new Hono();
-createHono(app, routes, honoRouteHandlers, middleware, honoMiddlewareHandlers, honoOptions);
+const orderingServiceApp = new Hono();
+initHono(
+  orderingServiceApp,
+  routes,
+  honoRouteHandlers,
+  middleware,
+  honoMiddlewareHandlers,
+  honoOptions,
+);
 
 Bun.serve({
-  fetch: app.fetch,
+  fetch: orderingServiceApp.fetch,
   port: 3000,
 });
 
-const client = createClient(routes, {
+const { routes: gatewayRoutes, middleware: gatewayMiddleware } =
+  generateHonoGatewayRoutesAndMiddleware({
+    orderingService: {
+      routes,
+      middleware,
+    },
+  });
+
+const gatewayOptions = createGatewayOptions(gatewayRoutes, {
+  services: {
+    orderingService: "http://localhost:3000",
+  },
+});
+
+const gatewayAuditMiddleware = createMiddleware(gatewayRoutes, {
+  MIDDLEWARE: {
+    requestLogging: {},
+  },
+});
+
+const gatewayAuditHandlers = createHonoMiddlewareHandlers(
+  gatewayAuditMiddleware,
+  gatewayOptions,
+  {
+    MIDDLEWARE: {
+      requestLogging: async (ctx, next) => {
+        console.log(`[gateway] ${ctx.req.method} ${ctx.req.path}`);
+        await next();
+      },
+    },
+  },
+);
+
+const gatewayApp = new Hono();
+initHonoGateway(
+  gatewayApp,
+  gatewayRoutes,
+  gatewayAuditMiddleware,
+  gatewayAuditHandlers,
+  gatewayOptions,
+);
+
+Bun.serve({
+  fetch: gatewayApp.fetch,
+  port: 4000,
+});
+
+const serviceClient = createClient(routes, {
   baseUrl: "http://localhost:3000",
   middleware: [middleware],
   serverErrorMode: "public",
 });
 
-const created = await client.users.register.post({
-  body: { name: "Ada Lovelace", email: "ada@example.com" },
+const gatewayClient = createClient(gatewayRoutes, {
+  baseUrl: "http://localhost:4000",
+  middleware: [gatewayMiddleware, gatewayAuditMiddleware],
+  serverErrorMode: "public",
 });
 
-if (created.status === 201) {
-  console.log(created.body.id);
-}
-
-const fetched = await client.users.$userId.get({
-  pathParams: { userId: crypto.randomUUID() },
+const directOrder = await serviceClient.orders.create.post({
+  body: { itemId: "latte", quantity: 2 },
 });
 
-if (fetched.status === 200) {
-  console.log(fetched.body.email);
+if (directOrder.status === 201) {
+  console.log("Direct service order ID:", directOrder.body.orderId);
 }
 
-if (fetched.status === 404) {
-  console.log(fetched.body.message);
+const gatewayOrder = await gatewayClient.orderingService.orders.create.post({
+  body: { itemId: "espresso", quantity: 1 },
+});
+
+if (gatewayOrder.status === 201) {
+  console.log("Gateway order ID:", gatewayOrder.body.orderId);
+
+  const fetched = await gatewayClient.orderingService.orders.$orderId.get({
+    pathParams: { orderId: gatewayOrder.body.orderId },
+  });
+
+  if (fetched.status === 200) {
+    console.log("Gateway fetched order status:", fetched.body.status);
+  }
 }
 ```
 

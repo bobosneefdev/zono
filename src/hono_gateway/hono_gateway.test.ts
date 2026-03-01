@@ -4,10 +4,10 @@ import z from "zod";
 import { createClient } from "~/client/client.js";
 import type { RouterShape } from "~/contract/contract.types.js";
 import { createRoutes } from "~/contract/routes.js";
-import { createHono, createHonoMiddlewareHandlers } from "~/hono/hono.js";
+import { initHono, createHonoMiddlewareHandlers } from "~/hono/hono.js";
 import {
 	createGatewayOptions,
-	createHonoGateway,
+	initHonoGateway,
 	generateHonoGatewayRoutesAndMiddleware,
 } from "~/hono_gateway/hono_gateway.js";
 import { createMiddleware } from "~/middleware/middleware.js";
@@ -80,7 +80,7 @@ let gatewayServer: ReturnType<typeof Bun.serve>;
 
 beforeAll(() => {
 	const serviceApp = new Hono();
-	createHono(
+	initHono(
 		serviceApp,
 		serviceRoutes,
 		{
@@ -149,7 +149,7 @@ beforeAll(() => {
 
 	const gatewayApp = new Hono();
 
-	createHonoGateway(
+	initHonoGateway(
 		gatewayApp,
 		gateway.routes,
 		gatewayMiddleware,

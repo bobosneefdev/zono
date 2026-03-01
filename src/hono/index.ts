@@ -1,5 +1,5 @@
 export {
-	createHono,
+	initHono as createHono,
 	createHonoMiddlewareHandlers,
 	createHonoOptions,
 	createHonoRouteHandlers,

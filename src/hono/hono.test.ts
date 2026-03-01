@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import z from "zod";
 import type { RouterShape } from "~/contract/contract.types.js";
 import { createRoutes } from "~/contract/routes.js";
-import { createHono, createHonoMiddlewareHandlers, createHonoOptions } from "~/hono/hono.js";
+import { initHono, createHonoMiddlewareHandlers, createHonoOptions } from "~/hono/hono.js";
 import { createMiddleware } from "~/middleware/middleware.js";
 
 const shape = {
@@ -149,7 +149,7 @@ createHonoMiddlewareHandlers(middleware, middlewareOptions, {
 function createTestApp() {
 	const app = new Hono();
 
-	createHono(
+	initHono(
 		app,
 		routes,
 		{
@@ -293,7 +293,7 @@ describe("createHono", () => {
 
 	test("returns hard-coded 500 body when handler throws", async () => {
 		const app = new Hono();
-		createHono(
+		initHono(
 			app,
 			routes,
 			{
@@ -371,7 +371,7 @@ describe("createHono", () => {
 
 	test("middleware can short-circuit with typed response", async () => {
 		const app = new Hono();
-		createHono(
+		initHono(
 			app,
 			routes,
 			{
@@ -442,7 +442,7 @@ describe("createHono", () => {
 
 	test("additionalHandlerParams passes additional params to handlers", async () => {
 		const app = new Hono();
-		createHono(
+		initHono(
 			app,
 			routes,
 			{
@@ -500,7 +500,7 @@ describe("createHono", () => {
 
 	test("additionalHandlerParams supports async resolution", async () => {
 		const app = new Hono();
-		createHono(
+		initHono(
 			app,
 			routes,
 			{

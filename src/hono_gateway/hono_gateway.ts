@@ -169,8 +169,8 @@ export function generateHonoGatewayRoutesAndMiddleware<const T extends GatewayIn
 }
 
 /**
- * Creates a Hono gateway that proxies requests to backend services.
- * Supports middleware execution before proxying.
+ * Initializes a Hono gateway that proxies requests to backend services.
+ * Supports middlewares that execute before proxying.
  * @param app - Hono app instance
  * @param routes - Generated gateway routes
  * @param middleware - Middleware definition for the gateway
@@ -178,7 +178,7 @@ export function generateHonoGatewayRoutesAndMiddleware<const T extends GatewayIn
  * @param options - Gateway configuration including service URLs
  * @returns The configured Hono gateway app
  */
-export function createHonoGateway<
+export function initHonoGateway<
 	TRoutes,
 	TMiddleware extends MiddlewareDefinition<TRoutes> = MiddlewareDefinition<TRoutes>,
 	TContextParams extends HonoContextParams = [],

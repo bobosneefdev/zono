@@ -228,8 +228,7 @@ export function createHonoOptions<TContextParams extends HonoContextParams = []>
 }
 
 /**
- * Creates a type-safe Hono server from route and middleware definitions.
- * Registers all routes with their handlers and middleware.
+ * Initializes a Hono server from route and middleware definitions.
  * @param app - Hono app instance
  * @param routes - Route definition from createRoutes()
  * @param routeHandlers - Route handlers from createHonoRouteHandlers()
@@ -238,7 +237,7 @@ export function createHonoOptions<TContextParams extends HonoContextParams = []>
  * @param options - Optional server configuration
  * @returns The configured Hono app
  */
-export function createHono<
+export function initHono<
 	TRoutes,
 	TMiddleware extends MiddlewareDefinition<TRoutes> = MiddlewareDefinition<TRoutes>,
 	TContextParams extends HonoContextParams = [],
