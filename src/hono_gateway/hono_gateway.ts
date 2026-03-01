@@ -179,10 +179,10 @@ export function generateHonoGatewayRoutesAndMiddleware<const T extends GatewayIn
 	} as GeneratedGateway<T>;
 }
 
-export function initHonoGateway<
+export function createHonoGateway<
 	TRoutes,
 	TMiddleware extends MiddlewareDefinition<TRoutes> = MiddlewareDefinition<TRoutes>,
-	TContextParams extends HonoContextParams = []
+	TContextParams extends HonoContextParams = [],
 >(
 	app: Hono,
 	routes: TRoutes,
@@ -232,9 +232,9 @@ export function initHonoGateway<
 	return app;
 }
 
-export function createGatewayOptions<
-	TRoutes,
-	TContextParams extends HonoContextParams = [],
->(_routes: TRoutes, options: GatewayOptions<TRoutes, TContextParams>): GatewayOptions<TRoutes, TContextParams> {
+export function createGatewayOptions<TRoutes, TContextParams extends HonoContextParams = []>(
+	_routes: TRoutes,
+	options: GatewayOptions<TRoutes, TContextParams>,
+): GatewayOptions<TRoutes, TContextParams> {
 	return options;
 }

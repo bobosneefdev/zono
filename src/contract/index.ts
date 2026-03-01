@@ -29,6 +29,8 @@ export type {
 	ContractResponses,
 	ContractTextBody,
 	ContractTextResponse,
+	RouterShape,
+	ShapeNode,
 } from "~/contract/contract.types.js";
 export {
 	BytesContentType,
@@ -36,6 +38,5 @@ export {
 	JsonContentType,
 	TextContentType,
 } from "~/contract/contract.types.js";
+export type { RouteDefinition } from "~/contract/routes.js";
 export { createRoutes } from "~/contract/routes.js";
-export type { RouteDefinition } from "~/contract/routes.types.js";
-export type { RouterShape, ShapeNode } from "~/contract/shape.types.js";

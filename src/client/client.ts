@@ -1,14 +1,9 @@
 import type { ErrorMode } from "~/contract/contract.error.js";
 import type { Contract, ContractQuery, ContractResponses } from "~/contract/contract.types.js";
+import { parseResponseBody } from "~/internal/body.util.js";
 import { parseContractFields } from "~/internal/parse.js";
 import { parseSchemaForChannel } from "~/internal/schema_channels.js";
-import {
-	BYTES_CONTENT_TYPES,
-	CONTRACT_METHOD_ORDER,
-	isRecord,
-	JSON_CONTENT_TYPES,
-	TEXT_CONTENT_TYPES,
-} from "~/internal/util.js";
+import { CONTRACT_METHOD_ORDER, isRecord } from "~/internal/util.js";
 import type {
 	ClientOptions,
 	ClientOptionsDefaultHeaderValue,
@@ -163,31 +158,11 @@ async function parseIncomingResponse(
 		throw new Error(`Unexpected response status: ${response.status}`);
 	}
 
-	let body: unknown;
-	if (statusDefinition.contentType === null) {
-		// Contentless response
-	} else if (JSON_CONTENT_TYPES.has(statusDefinition.contentType)) {
-		const rawBody = await response.clone().json();
-		body = await parseSchemaForChannel(
-			statusDefinition.schema as unknown as import("zod").ZodType,
-			rawBody,
-			"transformed",
-		);
-	} else if (TEXT_CONTENT_TYPES.has(statusDefinition.contentType)) {
-		const rawBody = await response.clone().text();
-		body = await parseSchemaForChannel(
-			statusDefinition.schema as unknown as import("zod").ZodType,
-			rawBody,
-			"transformed",
-		);
-	} else if (BYTES_CONTENT_TYPES.has(statusDefinition.contentType)) {
-		const rawBody = await response.clone().bytes();
-		body = await parseSchemaForChannel(
-			statusDefinition.schema as unknown as import("zod").ZodType,
-			rawBody,
-			"transformed",
-		);
-	}
+	const body = await parseResponseBody(
+		statusDefinition.contentType,
+		response,
+		statusDefinition.schema as unknown as import("zod").ZodType,
+	);
 
 	let headers: unknown;
 	if (statusDefinition.headers) {

@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import z from "zod";
+import type { RouterShape } from "~/contract/contract.types.js";
 import { createRoutes } from "~/contract/routes.js";
-import type { RouterShape } from "~/contract/shape.types.js";
-import { initHono } from "~/hono/hono.js";
+import { createHono } from "~/hono/hono.js";
 import { createMiddleware } from "~/middleware/middleware.js";
 
 const shape = {
@@ -138,7 +138,7 @@ const middleware = createMiddleware(routes, {
 function createTestApp() {
 	const app = new Hono();
 
-	initHono(
+	createHono(
 		app,
 		routes,
 		{
@@ -221,7 +221,7 @@ function createTestApp() {
 	return app;
 }
 
-describe("initHono", () => {
+describe("createHono", () => {
 	test("registers GET routes", async () => {
 		const app = createTestApp();
 		const res = await app.request("/health");
@@ -290,7 +290,7 @@ describe("initHono", () => {
 
 	test("returns hard-coded 500 body when handler throws", async () => {
 		const app = new Hono();
-		initHono(
+		createHono(
 			app,
 			routes,
 			{
@@ -379,7 +379,7 @@ describe("initHono", () => {
 
 	test("middleware can short-circuit with typed response", async () => {
 		const app = new Hono();
-		initHono(
+		createHono(
 			app,
 			routes,
 			{
@@ -468,7 +468,7 @@ describe("initHono", () => {
 
 	test("additionalHandlerParams passes additional params to handlers", async () => {
 		const app = new Hono();
-		initHono(
+		createHono(
 			app,
 			routes,
 			{
@@ -539,7 +539,7 @@ describe("initHono", () => {
 
 	test("additionalHandlerParams supports async resolution", async () => {
 		const app = new Hono();
-		initHono(
+		createHono(
 			app,
 			routes,
 			{

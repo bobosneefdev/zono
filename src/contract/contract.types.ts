@@ -123,3 +123,12 @@ export type ContractResponseStatuses<TContract extends Contract> = Extract<
 	keyof TContract["responses"],
 	number
 >;
+
+export type ShapeNode = {
+	CONTRACT?: true;
+	ROUTER?: Record<string, ShapeNode>;
+};
+
+export type RouterShape = {
+	ROUTER: Record<string, ShapeNode>;
+};

@@ -2,9 +2,9 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import z from "zod";
 import { createClient } from "~/client/client.js";
+import type { RouterShape } from "~/contract/contract.types.js";
 import { createRoutes } from "~/contract/routes.js";
-import type { RouterShape } from "~/contract/shape.types.js";
-import { initHono } from "~/hono/hono.js";
+import { createHono } from "~/hono/hono.js";
 import { createMiddleware } from "~/middleware/middleware.js";
 
 const shape = {
@@ -121,7 +121,7 @@ const PORT = 19876;
 
 beforeAll(() => {
 	const app = new Hono();
-	initHono(
+	createHono(
 		app,
 		routes,
 		{

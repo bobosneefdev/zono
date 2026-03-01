@@ -1,12 +1,17 @@
 import { Hono } from "hono";
 import z from "zod";
 import { createClient } from "~/client/client.js";
+import type { RouterShape } from "~/contract/contract.types.js";
 import { createRoutes } from "~/contract/routes.js";
-import type { RouterShape } from "~/contract/shape.types.js";
-import { createHonoMiddlewareHandlers, createHonoOptions, createHonoRouteHandlers, initHono } from "~/hono/hono.js";
 import {
+	createHono,
+	createHonoMiddlewareHandlers,
+	createHonoOptions,
+	createHonoRouteHandlers,
+} from "~/hono/hono.js";
+import {
+	createHonoGateway,
 	generateHonoGatewayRoutesAndMiddleware,
-	initHonoGateway,
 } from "~/hono_gateway/hono_gateway.js";
 import { createMiddleware } from "~/middleware/middleware.js";
 
@@ -209,14 +214,7 @@ const honoMiddlewareHandlers = createHonoMiddlewareHandlers(middleware, honoOpti
 
 const app = new Hono();
 
-initHono(
-	app,
-	routes,
-	honoRouteHandlers,
-	middleware,
-	honoMiddlewareHandlers,
-	honoOptions,
-);
+createHono(app, routes, honoRouteHandlers, middleware, honoMiddlewareHandlers, honoOptions);
 
 Bun.serve({
 	fetch: app.fetch,
@@ -245,7 +243,7 @@ const gatewayMiddleware = createMiddleware(gateway.routes, {
 
 const gatewayApp = new Hono();
 
-initHonoGateway(
+createHonoGateway(
 	gatewayApp,
 	gateway.routes,
 	gatewayMiddleware,

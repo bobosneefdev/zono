@@ -1,8 +1,8 @@
 export {
+	createHono,
 	createHonoMiddlewareHandlers,
 	createHonoOptions,
 	createHonoRouteHandlers,
-	initHono,
 } from "~/hono/hono.js";
 export type {
 	AdditionalHandlerParamsFn,

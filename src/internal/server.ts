@@ -7,14 +7,10 @@ import type {
 	ValidationErrorBodyPublic,
 } from "~/contract/contract.error.js";
 import type { Contract } from "~/contract/contract.types.js";
+import { encodeResponseBody } from "~/internal/body.util.js";
 import type { ServerHandlerOutput } from "~/internal/handler.types.js";
 import { parseSchemaForChannel } from "~/internal/schema_channels.js";
-import {
-	BYTES_CONTENT_TYPES,
-	isRecord,
-	JSON_CONTENT_TYPES,
-	TEXT_CONTENT_TYPES,
-} from "~/internal/util.js";
+import { isRecord } from "~/internal/util.js";
 
 export function buildValidationErrorResponse(
 	issues: Array<z.core.$ZodIssue>,
@@ -56,32 +52,11 @@ export async function buildContractResponse<TContract extends Contract>(
 	}
 
 	const rawBody = "body" in result ? result.body : undefined;
-
-	let encodedBody: BodyInit | null = null;
-	if (statusDefinition.contentType === null) {
-		// No body for contentless responses
-	} else if (JSON_CONTENT_TYPES.has(statusDefinition.contentType)) {
-		const parsedBody = await parseSchemaForChannel(
-			statusDefinition.schema as unknown as z.ZodType,
-			rawBody,
-			"http-safe",
-		);
-		encodedBody = JSON.stringify(parsedBody);
-	} else if (TEXT_CONTENT_TYPES.has(statusDefinition.contentType)) {
-		const parsedBody = await parseSchemaForChannel(
-			statusDefinition.schema as unknown as z.ZodType,
-			rawBody,
-			"http-safe",
-		);
-		encodedBody = String(parsedBody);
-	} else if (BYTES_CONTENT_TYPES.has(statusDefinition.contentType)) {
-		const parsedBody = await parseSchemaForChannel(
-			statusDefinition.schema as unknown as z.ZodType,
-			rawBody,
-			"http-safe",
-		);
-		encodedBody = parsedBody as BodyInit;
-	}
+	const encodedBody = await encodeResponseBody(
+		statusDefinition.contentType,
+		rawBody,
+		statusDefinition.schema as unknown as z.ZodType,
+	);
 
 	let responseHeaders: HeadersInit | undefined;
 	if (statusDefinition.headers) {

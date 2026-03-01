@@ -1,6 +1,7 @@
 export {
+	createGatewayOptions,
+	createHonoGateway,
 	generateHonoGatewayRoutesAndMiddleware,
-	initHonoGateway,
 } from "~/hono_gateway/hono_gateway.js";
 export type {
 	GatewayInput,

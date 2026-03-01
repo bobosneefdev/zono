@@ -25,11 +25,8 @@ export type GeneratedGateway<T extends GatewayInput> = {
 	middleware: GeneratedGatewayMiddleware<T>;
 };
 
-export type GatewayOptions<
-	TRoutes,
-	TContextParams extends HonoContextParams = [],
-> = {
-	additionaHandlerParams?: AdditionalHandlerParamsFn<TContextParams>;
+export type GatewayOptions<TRoutes, TContextParams extends HonoContextParams = []> = {
+	additionalHandlerParams?: AdditionalHandlerParamsFn<TContextParams>;
 	services: TRoutes extends { ROUTER: infer R extends Record<string, unknown> }
 		? { [K in keyof R & string]: string }
 		: Record<string, string>;

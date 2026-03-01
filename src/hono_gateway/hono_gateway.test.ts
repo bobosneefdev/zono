@@ -2,13 +2,13 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import z from "zod";
 import { createClient } from "~/client/client.js";
+import type { RouterShape } from "~/contract/contract.types.js";
 import { createRoutes } from "~/contract/routes.js";
-import type { RouterShape } from "~/contract/shape.types.js";
-import { createHonoMiddlewareHandlers, initHono } from "~/hono/hono.js";
+import { createHono, createHonoMiddlewareHandlers } from "~/hono/hono.js";
 import {
 	createGatewayOptions,
+	createHonoGateway,
 	generateHonoGatewayRoutesAndMiddleware,
-	initHonoGateway,
 } from "~/hono_gateway/hono_gateway.js";
 import { createMiddleware } from "~/middleware/middleware.js";
 
@@ -80,7 +80,7 @@ let gatewayServer: ReturnType<typeof Bun.serve>;
 
 beforeAll(() => {
 	const serviceApp = new Hono();
-	initHono(
+	createHono(
 		serviceApp,
 		serviceRoutes,
 		{
@@ -146,17 +146,21 @@ beforeAll(() => {
 		errorMode: "public",
 	});
 
-	const gatewayMiddlewareHandlers = createHonoMiddlewareHandlers(gatewayMiddleware, gatewayOptions, {
-		MIDDLEWARE: {
-			logging: async (_ctx, next) => {
-				await next();
+	const gatewayMiddlewareHandlers = createHonoMiddlewareHandlers(
+		gatewayMiddleware,
+		gatewayOptions,
+		{
+			MIDDLEWARE: {
+				logging: async (_ctx, next) => {
+					await next();
+				},
 			},
-		}
-	});
+		},
+	);
 
 	const gatewayApp = new Hono();
 
-	initHonoGateway(
+	createHonoGateway(
 		gatewayApp,
 		gateway.routes,
 		gatewayMiddleware,
@@ -183,7 +187,7 @@ describe("Gateway", () => {
 		});
 	});
 
-	describe("initHonoGateway proxying", () => {
+	describe("createHonoGateway proxying", () => {
 		test("proxies GET request to service", async () => {
 			const res = await fetch(`http://localhost:${GATEWAY_PORT}/inventory/items`);
 			expect(res.status).toBe(200);

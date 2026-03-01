@@ -14,9 +14,9 @@ import {
 	normalizeBasePath,
 	registerHonoRoute,
 } from "~/hono/hono.util.js";
+import { resolveRequestBody } from "~/internal/body.util.js";
 import type { ServerHandlerOutput } from "~/internal/handler.types.js";
 import { parseContractFields } from "~/internal/parse.js";
-import { resolveRequestBody } from "~/internal/request_body.util.js";
 import {
 	buildContractResponse,
 	buildInternalErrorResponse,
@@ -234,7 +234,7 @@ export function createHonoOptions<TContextParams extends HonoContextParams = []>
 	return options;
 }
 
-export function initHono<
+export function createHono<
 	TRoutes,
 	TMiddleware extends MiddlewareDefinition<TRoutes> = MiddlewareDefinition<TRoutes>,
 	TContextParams extends HonoContextParams = [],
