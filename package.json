@@ -91,11 +91,9 @@
     "bugs": {
         "url": "https://github.com/bobosneefdev/zono/issues"
     },
-    "dependencies": {
-        "zod": "^4.3.5"
-    },
     "peerDependencies": {
-        "hono": "^4.11.3"
+        "hono": "^4.11.3",
+        "zod": "^4.3.5"
     },
     "peerDependenciesMeta": {
         "hono": {
@@ -109,7 +107,8 @@
         "hono": "^4.11.3",
         "ts-essentials": "^10.1.1",
         "tsup": "^8.5.1",
-        "typescript": "^5.9.3"
+        "typescript": "^5.9.3",
+        "zod": "^4.3.5"
     },
     "publishConfig": {
         "registry": "https://registry.npmjs.org"

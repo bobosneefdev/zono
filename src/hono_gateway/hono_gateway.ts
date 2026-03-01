@@ -138,9 +138,7 @@ function collectGatewayMiddleware(
 	let currentHandlers: Record<string, unknown> = mwHandlers;
 	for (const segment of pathSegments) {
 		const defRouter = isRouterNode(currentDef) ? currentDef.ROUTER : undefined;
-		const handlerRouter = isRouterNode(currentHandlers)
-			? currentHandlers.ROUTER
-			: undefined;
+		const handlerRouter = isRouterNode(currentHandlers) ? currentHandlers.ROUTER : undefined;
 		if (!defRouter || !handlerRouter) break;
 
 		const nextDef = defRouter[segment];
