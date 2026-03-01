@@ -198,7 +198,7 @@ const honoRouteHandlers = createHonoRouteHandlers(routes, honoOptions, {
 		},
 		health: {
 			HANDLER: {
-				get: async (_input, ctx) => ctx.json({ status: "ok" as const }, 200),
+				get: async (_input, ctx) => ctx.json({ status: "ok" }, 200),
 			},
 		},
 		transforms: {

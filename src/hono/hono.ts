@@ -16,6 +16,7 @@ import {
 } from "~/hono/hono.util.js";
 import { resolveRequestBody } from "~/internal/body.util.js";
 import { parseContractFields } from "~/internal/parse.js";
+import { createSafeContext } from "~/internal/safe_context.js";
 import {
 	buildInternalErrorResponse,
 	buildNotFoundErrorResponse,
@@ -166,9 +167,11 @@ function collectRoutes(
 							ctx: Context,
 							...params: ReadonlyArray<unknown>
 						) => Promise<Response>;
+						// Wrap context with safe methods for response validation
+						const safeContext = createSafeContext(context, contract);
 						const result = await handlerFn(
 							parseResult.data,
-							context,
+							safeContext,
 							...additionalParams,
 						);
 						return result;
