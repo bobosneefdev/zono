@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import z from "zod";
 import type { RouterShape } from "~/contract/contract.types.js";
 import { createRoutes } from "~/contract/routes.js";
-import { initHono, createHonoMiddlewareHandlers, createHonoOptions } from "~/hono/hono.js";
+import { createHonoMiddlewareHandlers, createHonoOptions, initHono } from "~/hono/hono.js";
 import { createMiddleware } from "~/middleware/middleware.js";
 
 const shape = {

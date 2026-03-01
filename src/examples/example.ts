@@ -4,15 +4,15 @@ import { createClient } from "~/client/client.js";
 import type { RouterShape } from "~/contract/contract.types.js";
 import { createRoutes } from "~/contract/routes.js";
 import {
-	initHono,
 	createHonoMiddlewareHandlers,
 	createHonoOptions,
 	createHonoRouteHandlers,
+	initHono,
 } from "~/hono/hono.js";
 import {
 	createGatewayOptions,
-	initHonoGateway,
 	generateHonoGatewayRoutesAndMiddleware,
+	initHonoGateway,
 } from "~/hono_gateway/hono_gateway.js";
 import { createMiddleware } from "~/middleware/middleware.js";
 
