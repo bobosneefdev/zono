@@ -164,6 +164,12 @@ function collectGatewayMiddleware(
 	return entries;
 }
 
+/**
+ * Generates gateway route and middleware structures from service definitions.
+ * Combines multiple services into a single routable structure.
+ * @param services - Map of service names to their route/middleware definitions
+ * @returns Generated gateway structure with routes and middleware
+ */
 export function generateHonoGatewayRoutesAndMiddleware<const T extends GatewayInput>(
 	services: T,
 ): GeneratedGateway<T> {
@@ -181,6 +187,16 @@ export function generateHonoGatewayRoutesAndMiddleware<const T extends GatewayIn
 	} as GeneratedGateway<T>;
 }
 
+/**
+ * Creates a Hono gateway that proxies requests to backend services.
+ * Supports middleware execution before proxying.
+ * @param app - Hono app instance
+ * @param routes - Generated gateway routes
+ * @param middleware - Middleware definition for the gateway
+ * @param middlewareHandlers - Middleware handler implementations
+ * @param options - Gateway configuration including service URLs
+ * @returns The configured Hono gateway app
+ */
 export function createHonoGateway<
 	TRoutes,
 	TMiddleware extends MiddlewareDefinition<TRoutes> = MiddlewareDefinition<TRoutes>,
@@ -234,6 +250,12 @@ export function createHonoGateway<
 	return app;
 }
 
+/**
+ * Creates gateway options with proper type inference for routes and context parameters.
+ * @param _routes - Gateway routes (used for type inference only)
+ * @param options - Gateway configuration options
+ * @returns The options with type validation
+ */
 export function createGatewayOptions<TRoutes, TContextParams extends HonoContextParams = []>(
 	_routes: TRoutes,
 	options: GatewayOptions<TRoutes, TContextParams>,

@@ -102,6 +102,10 @@ type WithGlobalErrorResponses<
 					: never)
 	: TOutput;
 
+/**
+ * Client response for validation errors (400 status).
+ * @template TMode - Error mode determining level of detail in the error body
+ */
 export type ClientValidationErrorResponse<TMode extends ErrorMode> = {
 	status: 400;
 	body: ValidationErrorBody<TMode>;
@@ -109,6 +113,7 @@ export type ClientValidationErrorResponse<TMode extends ErrorMode> = {
 	response: Response;
 };
 
+/** Client response for not found errors (404 status) */
 export type ClientNotFoundErrorResponse = {
 	status: 404;
 	body: NotFoundErrorBody;
@@ -116,6 +121,7 @@ export type ClientNotFoundErrorResponse = {
 	response: Response;
 };
 
+/** Client response for internal server errors (500 status) */
 export type ClientInternalErrorResponse = {
 	status: 500;
 	body: InternalErrorBody;
@@ -123,6 +129,12 @@ export type ClientInternalErrorResponse = {
 	response: Response;
 };
 
+/**
+ * Output type for a contract on the client side, including global error responses.
+ * @template TContract - The contract to extract output type from
+ * @template TMiddlewareResponses - Responses from middleware that may be returned
+ * @template TErrorMode - Error mode for validation error detail level
+ */
 export type ClientOutputForContract<
 	TContract extends Contract,
 	TMiddlewareResponses extends ContractResponses,
@@ -165,6 +177,12 @@ type ClientNode<
 		? { [K in keyof R & string]: ClientNode<R[K], TMiddlewares, [...TPath, K], TErrorMode> }
 		: unknown);
 
+/**
+ * Type-safe client proxy that provides autocomplete for routes and methods.
+ * @template TRoutes - Route definition type
+ * @template TMiddlewares - Array of middleware definitions
+ * @template TErrorMode - Error mode for validation error detail level
+ */
 export type ClientProxy<
 	TRoutes,
 	TMiddlewares extends ReadonlyArray<unknown>,
@@ -175,8 +193,14 @@ export type ClientProxy<
 		}
 	: never;
 
+/** Value for a default header - either a string or a function returning a string */
 export type ClientOptionsDefaultHeaderValue = string | (() => PossiblePromise<string>);
 
+/**
+ * Configuration options for creating a type-safe HTTP client.
+ * @template TMiddlewares - Array of middleware definitions for type inference
+ * @template TErrorMode - Error mode for validation error detail level
+ */
 export type ClientOptions<
 	TMiddlewares extends ReadonlyArray<unknown> = [],
 	TErrorMode extends ErrorMode | undefined = undefined,

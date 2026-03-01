@@ -20,6 +20,11 @@ type RouteDefinitionNode<TNode extends ShapeNode, TPath extends string> = (TNode
 			}
 		: unknown);
 
+/**
+ * Type-safe route definition matching a router shape.
+ * Provides autocomplete for paths and methods based on the shape structure.
+ * @template TShape - The router shape to define routes for
+ */
 export type RouteDefinition<TShape extends RouterShape> = {
 	ROUTER: {
 		[K in keyof TShape["ROUTER"] & string]: RouteDefinitionNode<TShape["ROUTER"][K], K>;
@@ -59,6 +64,13 @@ function validateRouteContractsNode(node: unknown): void {
 	}
 }
 
+/**
+ * Creates a type-safe route definition matching the given router shape.
+ * Validates that all schemas in the definition are properly configured.
+ * @param _shape - The router shape (used for type inference only)
+ * @param definition - The route definition with contracts
+ * @returns The validated route definition
+ */
 export function createRoutes<
 	const TShape extends RouterShape,
 	const TDef extends RouteDefinition<TShape>,

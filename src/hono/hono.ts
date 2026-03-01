@@ -197,6 +197,14 @@ function collectRoutes(
 	return registrations;
 }
 
+/**
+ * Creates type-safe route handlers for use with createHono.
+ * Validates that handlers match the route definition structure.
+ * @param _routes - Route definition (used for type inference only)
+ * @param _options - Hono options (used for type inference only)
+ * @param handlers - The route handler implementations
+ * @returns The handlers with type validation
+ */
 export function createHonoRouteHandlers<TRoutes, TContextParams extends HonoContextParams = []>(
 	_routes: TRoutes,
 	_options: HonoOptions<TContextParams>,
@@ -205,6 +213,14 @@ export function createHonoRouteHandlers<TRoutes, TContextParams extends HonoCont
 	return handlers;
 }
 
+/**
+ * Creates type-safe middleware handlers for use with createHono.
+ * Validates that handlers match the middleware definition structure.
+ * @param _middleware - Middleware definition (used for type inference only)
+ * @param _options - Hono options (used for type inference only)
+ * @param handlers - The middleware handler implementations
+ * @returns The handlers with type validation
+ */
 export function createHonoMiddlewareHandlers<
 	TMiddleware,
 	TContextParams extends HonoContextParams = [],
@@ -216,12 +232,28 @@ export function createHonoMiddlewareHandlers<
 	return handlers;
 }
 
+/**
+ * Creates Hono options with proper type inference for context parameters.
+ * @param options - Configuration options for the Hono server
+ * @returns The options with type validation
+ */
 export function createHonoOptions<TContextParams extends HonoContextParams = []>(
 	options: HonoOptions<TContextParams>,
 ): HonoOptions<TContextParams> {
 	return options;
 }
 
+/**
+ * Creates a type-safe Hono server from route and middleware definitions.
+ * Registers all routes with their handlers and middleware.
+ * @param app - Hono app instance
+ * @param routes - Route definition from createRoutes()
+ * @param routeHandlers - Route handlers from createHonoRouteHandlers()
+ * @param middleware - Optional middleware definition
+ * @param middlewareHandlers - Optional middleware handlers
+ * @param options - Optional server configuration
+ * @returns The configured Hono app
+ */
 export function createHono<
 	TRoutes,
 	TMiddleware extends MiddlewareDefinition<TRoutes> = MiddlewareDefinition<TRoutes>,

@@ -12,6 +12,12 @@ import type { ServerHandlerOutput } from "~/internal/handler.types.js";
 import { parseSchemaForChannel } from "~/internal/schema_channels.js";
 import { isRecord } from "~/internal/util.js";
 
+/**
+ * Builds a 400 Bad Request response for validation errors.
+ * @param issues - Array of Zod validation issues
+ * @param errorMode - Whether to include full issues or just the count
+ * @returns Response with validation error body
+ */
 export function buildValidationErrorResponse(
 	issues: Array<z.core.$ZodIssue>,
 	errorMode: ErrorMode,
@@ -26,6 +32,7 @@ export function buildValidationErrorResponse(
 	});
 }
 
+/** Builds a 404 Not Found response */
 export function buildNotFoundErrorResponse(): Response {
 	const body: NotFoundErrorBody = { type: "notFound" };
 	return new Response(JSON.stringify(body), {
@@ -34,6 +41,7 @@ export function buildNotFoundErrorResponse(): Response {
 	});
 }
 
+/** Builds a 500 Internal Server Error response */
 export function buildInternalErrorResponse(): Response {
 	const body: InternalErrorBody = { type: "internalError" };
 	return new Response(JSON.stringify(body), {
@@ -42,6 +50,13 @@ export function buildInternalErrorResponse(): Response {
 	});
 }
 
+/**
+ * Builds a Response from a contract and handler result.
+ * Encodes the body according to the response's content type.
+ * @param contract - The contract defining the response format
+ * @param result - The handler output to build the response from
+ * @returns Promise resolving to the encoded Response
+ */
 export async function buildContractResponse<TContract extends Contract>(
 	contract: TContract,
 	result: ServerHandlerOutput<TContract>,

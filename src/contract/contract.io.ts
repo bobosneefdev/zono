@@ -34,11 +34,19 @@ type IncludeHeaders<
 	? { headers: SchemaForDir<TContract["headers"], TDir> }
 	: object;
 
+/**
+ * Input type for a contract - the shape of data expected by the server.
+ * @template TContract - The contract to extract input type from
+ */
 export type ContractInput<TContract extends Contract> = IncludePathParams<TContract, "input"> &
 	IncludeBody<TContract, "input"> &
 	IncludeQuery<TContract, "input"> &
 	IncludeHeaders<TContract, "input">;
 
+/**
+ * Output type for a contract - the shape of data returned by the server (after transformation).
+ * @template TContract - The contract to extract output type from
+ */
 export type ContractOutput<TContract extends Contract> = IncludePathParams<TContract, "output"> &
 	IncludeBody<TContract, "output"> &
 	IncludeQuery<TContract, "output"> &

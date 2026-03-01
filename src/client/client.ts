@@ -174,6 +174,13 @@ async function parseIncomingResponse(
 	return { status: response.status, body, headers, response };
 }
 
+/**
+ * Creates a type-safe HTTP client from route definitions.
+ * Provides autocomplete for routes, methods, and validates request/response types.
+ * @param routes - Route definition from createRoutes()
+ * @param options - Client configuration options
+ * @returns Type-safe client proxy for making HTTP requests
+ */
 export function createClient<
 	const TRoutes,
 	const TMiddlewares extends ReadonlyArray<unknown> = [],
