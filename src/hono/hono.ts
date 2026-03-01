@@ -211,6 +211,7 @@ function collectRoutes(
 
 export function createHonoRouteHandlers<TRoutes, TContextParams extends HonoContextParams = []>(
 	_routes: TRoutes,
+	_options: HonoOptions<TContextParams>,
 	handlers: HonoRouteHandlerTree<TRoutes, TContextParams>,
 ): HonoRouteHandlerTree<TRoutes, TContextParams> {
 	return handlers;
@@ -221,9 +222,16 @@ export function createHonoMiddlewareHandlers<
 	TContextParams extends HonoContextParams = [],
 >(
 	_middleware: TMiddleware,
+	_options: HonoOptions<TContextParams>,
 	handlers: HonoMiddlewareHandlerTree<TMiddleware, TContextParams>,
 ): HonoMiddlewareHandlerTree<TMiddleware, TContextParams> {
 	return handlers;
+}
+
+export function createHonoOptions<TContextParams extends HonoContextParams = []>(
+	options: HonoOptions<TContextParams>,
+): HonoOptions<TContextParams> {
+	return options;
 }
 
 export function initHono<

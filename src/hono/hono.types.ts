@@ -13,13 +13,14 @@ import type { MiddlewareContractMap } from "~/middleware/middleware.types.js";
 
 export type HonoContextParams = ReadonlyArray<unknown>;
 
+type MutableContextParams<TContextParams extends HonoContextParams> = [...TContextParams];
+
 export type AdditionalHandlerParamsFn<TContextParams extends HonoContextParams = []> = (
 	ctx: Context,
 ) => PossiblePromise<TContextParams>;
 
-export type InferAdditionalHandlerParams<T extends AdditionalHandlerParamsFn> = Awaited<
-	ReturnType<T>
->;
+export type InferAdditionalHandlerParams<T extends AdditionalHandlerParamsFn<HonoContextParams>> =
+	Awaited<ReturnType<T>>;
 
 export type HonoHandler<
 	TContract extends Contract,
@@ -27,7 +28,7 @@ export type HonoHandler<
 > = (
 	input: ContractOutput<TContract>,
 	ctx: Context,
-	...contextParams: TContextParams
+	...contextParams: MutableContextParams<TContextParams>
 ) => PossiblePromise<ServerHandlerOutput<TContract>>;
 
 export type HonoHandlerMethodMap<
@@ -66,7 +67,7 @@ export type HonoMiddlewareHandler<
 	| ((
 			ctx: Context,
 			next: () => Promise<void>,
-			...contextParams: TContextParams
+			...contextParams: MutableContextParams<TContextParams>
 	  ) => PossiblePromise<void | HonoMiddlewareReturn<TResponses>>);
 
 export type HonoMiddlewareReturn<TResponses extends ContractResponses> = {
@@ -112,6 +113,12 @@ type HonoOptionsBase = {
 
 export type HonoOptions<TContextParams extends HonoContextParams = []> = HonoOptionsBase & {
 	additionalHandlerParams?: AdditionalHandlerParamsFn<TContextParams>;
+};
+
+export type HonoOptionsWithAdditionalHandlerParams<
+	TAdditionalHandlerParams extends AdditionalHandlerParamsFn<HonoContextParams>,
+> = HonoOptions<InferAdditionalHandlerParams<TAdditionalHandlerParams>> & {
+	additionalHandlerParams: TAdditionalHandlerParams;
 };
 
 /** Infers TContextParams from additionalHandlerParams when present, otherwise [] */

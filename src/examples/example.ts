@@ -1,9 +1,9 @@
-import { type Context, Hono } from "hono";
+import { Hono } from "hono";
 import z from "zod";
 import { createClient } from "~/client/client.js";
 import { createRoutes } from "~/contract/routes.js";
 import type { RouterShape } from "~/contract/shape.types.js";
-import { initHono } from "~/hono/hono.js";
+import { createHonoMiddlewareHandlers, createHonoOptions, createHonoRouteHandlers, initHono } from "~/hono/hono.js";
 import {
 	generateHonoGatewayRoutesAndMiddleware,
 	initHonoGateway,
@@ -127,89 +127,95 @@ const middleware = createMiddleware(routes, {
 	},
 });
 
+const honoOptions = createHonoOptions({
+	errorMode: "public",
+	additionalHandlerParams: async (ctx) => {
+		return [ctx.req.header("Authorization") ?? "no-auth"] as const;
+	},
+});
+
+const honoRouteHandlers = createHonoRouteHandlers(routes, honoOptions, {
+	ROUTER: {
+		users: {
+			ROUTER: {
+				register: {
+					HANDLER: {
+						post: async (input, _ctx, _auth) => {
+							return {
+								status: 201 as const,
+								contentType: "application/json" as const,
+								body: {
+									id: crypto.randomUUID(),
+									name: input.body.name,
+									email: input.body.email,
+								},
+							};
+						},
+					},
+				},
+				$userId: {
+					HANDLER: {
+						get: async (input) => {
+							if (input.pathParams.userId.endsWith("0")) {
+								return {
+									status: 404 as const,
+									contentType: "application/json" as const,
+									body: { message: "User not found" },
+								};
+							}
+
+							return {
+								status: 200 as const,
+								contentType: "application/json" as const,
+								body: {
+									id: input.pathParams.userId,
+									name: "Example User",
+									email: "user@example.com",
+								},
+							};
+						},
+					},
+				},
+			},
+		},
+		health: {
+			HANDLER: {
+				get: async () => ({
+					status: 200 as const,
+					contentType: "application/json" as const,
+					body: { status: "ok" as const },
+				}),
+			},
+		},
+		transforms: {
+			HANDLER: {
+				post: async (input) => ({
+					status: 200 as const,
+					contentType: "application/json" as const,
+					body: { message: input.body.normalized },
+				}),
+			},
+		},
+	},
+});
+
+const honoMiddlewareHandlers = createHonoMiddlewareHandlers(middleware, honoOptions, {
+	MIDDLEWARE: {
+		rateLimit: async (_ctx, next, _auth) => {
+			await next();
+		},
+	},
+});
+
 const app = new Hono();
 
 initHono(
 	app,
 	routes,
-	{
-		ROUTER: {
-			users: {
-				ROUTER: {
-					register: {
-						HANDLER: {
-							post: async (input, _ctx, _auth) => {
-								return {
-									status: 201 as const,
-									contentType: "application/json" as const,
-									body: {
-										id: crypto.randomUUID(),
-										name: input.body.name,
-										email: input.body.email,
-									},
-								};
-							},
-						},
-					},
-					$userId: {
-						HANDLER: {
-							get: async (input) => {
-								if (input.pathParams.userId.endsWith("0")) {
-									return {
-										status: 404 as const,
-										contentType: "application/json" as const,
-										body: { message: "User not found" },
-									};
-								}
-
-								return {
-									status: 200 as const,
-									contentType: "application/json" as const,
-									body: {
-										id: input.pathParams.userId,
-										name: "Example User",
-										email: "user@example.com",
-									},
-								};
-							},
-						},
-					},
-				},
-			},
-			health: {
-				HANDLER: {
-					get: async () => ({
-						status: 200 as const,
-						contentType: "application/json" as const,
-						body: { status: "ok" as const },
-					}),
-				},
-			},
-			transforms: {
-				HANDLER: {
-					post: async (input) => ({
-						status: 200 as const,
-						contentType: "application/json" as const,
-						body: { message: input.body.normalized },
-					}),
-				},
-			},
-		},
-	},
+	honoRouteHandlers,
 	middleware,
-	{
-		MIDDLEWARE: {
-			rateLimit: async (_ctx, next, _auth) => {
-				await next();
-			},
-		},
-	},
-	{
-		errorMode: "public",
-		additionalHandlerParams: async (ctx: Context) => {
-			return [ctx.req.header("Authorization") ?? "no-auth"] as const;
-		},
-	},
+	honoMiddlewareHandlers,
+	honoOptions,
 );
 
 Bun.serve({
@@ -232,7 +238,7 @@ const gateway = generateHonoGatewayRoutesAndMiddleware({
 
 const gatewayMiddleware = createMiddleware(gateway.routes, {
 	MIDDLEWARE: {
-		// This would be if your middleware should have no responses possible
+		// Example of what it looks like if your middleware never returns a response
 		requestLogging: {},
 	},
 });

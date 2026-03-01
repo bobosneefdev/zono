@@ -20,6 +20,7 @@ import {
 	isRecord,
 	isRouterNode,
 } from "~/internal/util.js";
+import { MiddlewareDefinition } from "~/middleware/index.js";
 
 type GatewayRouteRegistration = {
 	namespace: string;
@@ -177,7 +178,10 @@ export function generateHonoGatewayRoutesAndMiddleware<const T extends GatewayIn
 	} as GeneratedGateway<T>;
 }
 
-export function initHonoGateway<TRoutes, TMiddleware = unknown>(
+export function initHonoGateway<
+	TRoutes,
+	TMiddleware extends MiddlewareDefinition<TRoutes> = MiddlewareDefinition<TRoutes>,
+>(
 	app: Hono,
 	routes: TRoutes,
 	options: GatewayOptions<TRoutes, TMiddleware>,
