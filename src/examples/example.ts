@@ -34,6 +34,9 @@ const shape = {
 		transforms: {
 			CONTRACT: true,
 		},
+		imageUpload: {
+			CONTRACT: true,
+		},
 	},
 } as const satisfies RouterShape;
 
@@ -119,6 +122,22 @@ const routes = createRoutes(shape, {
 				},
 			},
 		},
+		imageUpload: {
+			CONTRACT: {
+				post: {
+					body: {
+						contentType: "application/octet-stream",
+						schema: z.instanceof(Uint8Array),
+					},
+					responses: {
+						201: {
+							contentType: "application/octet-stream",
+							schema: z.instanceof(Uint8Array),
+						},
+					},
+				},
+			},
+		},
 	},
 });
 
@@ -146,39 +165,32 @@ const honoRouteHandlers = createHonoRouteHandlers(routes, honoOptions, {
 			ROUTER: {
 				register: {
 					HANDLER: {
-						post: async (input, _ctx, _auth) => {
-							return {
-								status: 201 as const,
-								contentType: "application/json" as const,
-								body: {
+						post: async (input, ctx, _auth) =>
+							ctx.json(
+								{
 									id: crypto.randomUUID(),
 									name: input.body.name,
 									email: input.body.email,
 								},
-							};
-						},
+								201,
+							),
 					},
 				},
 				$userId: {
 					HANDLER: {
-						get: async (input) => {
+						get: async (input, ctx) => {
 							if (input.pathParams.userId.endsWith("0")) {
-								return {
-									status: 404 as const,
-									contentType: "application/json" as const,
-									body: { message: "User not found" },
-								};
+								return ctx.json({ message: "User not found" }, 404);
 							}
 
-							return {
-								status: 200 as const,
-								contentType: "application/json" as const,
-								body: {
+							return ctx.json(
+								{
 									id: input.pathParams.userId,
 									name: "Example User",
 									email: "user@example.com",
 								},
-							};
+								200,
+							);
 						},
 					},
 				},
@@ -186,20 +198,17 @@ const honoRouteHandlers = createHonoRouteHandlers(routes, honoOptions, {
 		},
 		health: {
 			HANDLER: {
-				get: async () => ({
-					status: 200 as const,
-					contentType: "application/json" as const,
-					body: { status: "ok" as const },
-				}),
+				get: async (_input, ctx) => ctx.json({ status: "ok" as const }, 200),
 			},
 		},
 		transforms: {
 			HANDLER: {
-				post: async (input) => ({
-					status: 200 as const,
-					contentType: "application/json" as const,
-					body: { message: input.body.normalized },
-				}),
+				post: async (input, ctx) => ctx.json({ message: input.body.normalized }, 200),
+			},
+		},
+		imageUpload: {
+			HANDLER: {
+				post: async (input, ctx) => ctx.body(input.body, 201),
 			},
 		},
 	},
@@ -228,12 +237,13 @@ const client = createClient(routes, {
 	serverErrorMode: "public",
 });
 
-const { routes: gatewayRoutes, middleware: gatewayMiddleware } = generateHonoGatewayRoutesAndMiddleware({
-	usersService: {
-		routes,
-		middleware,
-	},
-});
+const { routes: gatewayRoutes, middleware: gatewayMiddleware } =
+	generateHonoGatewayRoutesAndMiddleware({
+		usersService: {
+			routes,
+			middleware,
+		},
+	});
 
 const gatewayOptions = createGatewayOptions(gatewayRoutes, {
 	services: {
@@ -248,14 +258,18 @@ const gatewayCustomMiddleware = createMiddleware(gatewayRoutes, {
 	},
 });
 
-const gatewayCustomMiddlewareHandlers = createHonoMiddlewareHandlers(gatewayCustomMiddleware, gatewayOptions, {
-	MIDDLEWARE: {
-		requestLogging: async (_ctx, next) => {
-			console.log("Gateway request logging middleware");
-			await next();
+const gatewayCustomMiddlewareHandlers = createHonoMiddlewareHandlers(
+	gatewayCustomMiddleware,
+	gatewayOptions,
+	{
+		MIDDLEWARE: {
+			requestLogging: async (_ctx, next) => {
+				console.log("Gateway request logging middleware");
+				await next();
+			},
 		},
 	},
-});
+);
 
 const gatewayApp = new Hono();
 

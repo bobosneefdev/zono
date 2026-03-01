@@ -87,25 +87,14 @@ beforeAll(() => {
 			ROUTER: {
 				items: {
 					HANDLER: {
-						get: () => ({
-							status: 200 as const,
-							contentType: "application/json" as const,
-							body: [{ id: "1", name: "Item 1" }],
-						}),
-						post: (input) => ({
-							status: 201 as const,
-							contentType: "application/json" as const,
-							body: { id: "new", name: input.body.name },
-						}),
+						get: (_input, ctx) => ctx.json([{ id: "1", name: "Item 1" }], 200),
+						post: (input, ctx) => ctx.json({ id: "new", name: input.body.name }, 201),
 					},
 					ROUTER: {
 						$itemId: {
 							HANDLER: {
-								get: (input) => ({
-									status: 200 as const,
-									contentType: "application/json" as const,
-									body: { id: input.pathParams.itemId, name: "Found" },
-								}),
+								get: (input, ctx) =>
+									ctx.json({ id: input.pathParams.itemId, name: "Found" }, 200),
 							},
 						},
 					},

@@ -147,47 +147,39 @@ function createTestApp() {
 					ROUTER: {
 						register: {
 							HANDLER: {
-								post: (input) => ({
-									status: 201 as const,
-									contentType: "application/json" as const,
-									body: {
-										id: "test-id",
-										...input.body,
-									},
-								}),
+								post: (input, ctx) =>
+									ctx.json(
+										{
+											id: "test-id",
+											...input.body,
+										},
+										201,
+									),
 							},
 						},
 						$userId: {
 							HANDLER: {
-								get: (input) => ({
-									status: 200 as const,
-									contentType: "application/json" as const,
-									body: {
-										id: input.pathParams.userId,
-										name: "Test User",
-										email: "test@example.com",
-									},
-								}),
+								get: (input, ctx) =>
+									ctx.json(
+										{
+											id: input.pathParams.userId,
+											name: "Test User",
+											email: "test@example.com",
+										},
+										200,
+									),
 							},
 						},
 					},
 				},
 				health: {
 					HANDLER: {
-						get: () => ({
-							status: 200 as const,
-							contentType: "application/json" as const,
-							body: { status: "ok" },
-						}),
+						get: (_input, ctx) => ctx.json({ status: "ok" }, 200),
 					},
 				},
 				transforms: {
 					HANDLER: {
-						post: (input) => ({
-							status: 200 as const,
-							contentType: "application/json" as const,
-							body: { message: input.body.normalized },
-						}),
+						post: (input, ctx) => ctx.json({ message: input.body.normalized }, 200),
 					},
 				},
 			},
@@ -299,11 +291,8 @@ describe("createHono", () => {
 						ROUTER: {
 							register: {
 								HANDLER: {
-									post: () => ({
-										status: 201 as const,
-										contentType: "application/json" as const,
-										body: { id: "x", name: "n", email: "e@e.com" },
-									}),
+									post: (_input, ctx) =>
+										ctx.json({ id: "x", name: "n", email: "e@e.com" }, 201),
 								},
 							},
 							$userId: {
@@ -317,20 +306,12 @@ describe("createHono", () => {
 					},
 					health: {
 						HANDLER: {
-							get: () => ({
-								status: 200 as const,
-								contentType: "application/json" as const,
-								body: { status: "ok" },
-							}),
+							get: (_input, ctx) => ctx.json({ status: "ok" }, 200),
 						},
 					},
 					transforms: {
 						HANDLER: {
-							post: () => ({
-								status: 200 as const,
-								contentType: "application/json" as const,
-								body: { message: "x" },
-							}),
+							post: (_input, ctx) => ctx.json({ message: "x" }, 200),
 						},
 					},
 				},
@@ -388,44 +369,32 @@ describe("createHono", () => {
 						ROUTER: {
 							register: {
 								HANDLER: {
-									post: (input) => ({
-										status: 201 as const,
-										contentType: "application/json" as const,
-										body: { id: "x", ...input.body },
-									}),
+									post: (input, ctx) => ctx.json({ id: "x", ...input.body }, 201),
 								},
 							},
 							$userId: {
 								HANDLER: {
-									get: (input) => ({
-										status: 200 as const,
-										contentType: "application/json" as const,
-										body: {
-											id: input.pathParams.userId,
-											name: "User",
-											email: "u@e.com",
-										},
-									}),
+									get: (input, ctx) =>
+										ctx.json(
+											{
+												id: input.pathParams.userId,
+												name: "User",
+												email: "u@e.com",
+											},
+											200,
+										),
 								},
 							},
 						},
 					},
 					health: {
 						HANDLER: {
-							get: () => ({
-								status: 200 as const,
-								contentType: "application/json" as const,
-								body: { status: "ok" },
-							}),
+							get: (_input, ctx) => ctx.json({ status: "ok" }, 200),
 						},
 					},
 					transforms: {
 						HANDLER: {
-							post: () => ({
-								status: 200 as const,
-								contentType: "application/json" as const,
-								body: { message: "x" },
-							}),
+							post: (_input, ctx) => ctx.json({ message: "x" }, 200),
 						},
 					},
 				},
@@ -433,13 +402,7 @@ describe("createHono", () => {
 			middleware,
 			{
 				MIDDLEWARE: {
-					rateLimit: async () => {
-						return {
-							status: 429 as const,
-							contentType: "application/json" as const,
-							body: { retryAfter: 60 },
-						};
-					},
+					rateLimit: async (ctx) => ctx.json({ retryAfter: 60 }, 429),
 				},
 				ROUTER: {
 					users: {
@@ -477,40 +440,27 @@ describe("createHono", () => {
 						ROUTER: {
 							register: {
 								HANDLER: {
-									post: () => ({
-										status: 201 as const,
-										contentType: "application/json" as const,
-										body: { id: "x", name: "n", email: "e@e.com" },
-									}),
+									post: (_input, ctx) =>
+										ctx.json({ id: "x", name: "n", email: "e@e.com" }, 201),
 								},
 							},
 							$userId: {
 								HANDLER: {
-									get: () => ({
-										status: 200 as const,
-										contentType: "application/json" as const,
-										body: { id: "x", name: "n", email: "e@e.com" },
-									}),
+									get: (_input, ctx) =>
+										ctx.json({ id: "x", name: "n", email: "e@e.com" }, 200),
 								},
 							},
 						},
 					},
 					health: {
 						HANDLER: {
-							get: (_input, _ctx: Context, authValue) => ({
-								status: 200 as const,
-								contentType: "application/json" as const,
-								body: { status: authValue ?? "no-auth" },
-							}),
+							get: (_input, ctx: Context, authValue) =>
+								ctx.json({ status: authValue ?? "no-auth" }, 200),
 						},
 					},
 					transforms: {
 						HANDLER: {
-							post: () => ({
-								status: 200 as const,
-								contentType: "application/json" as const,
-								body: { message: "x" },
-							}),
+							post: (_input, ctx) => ctx.json({ message: "x" }, 200),
 						},
 					},
 				},
@@ -548,40 +498,27 @@ describe("createHono", () => {
 						ROUTER: {
 							register: {
 								HANDLER: {
-									post: () => ({
-										status: 201 as const,
-										contentType: "application/json" as const,
-										body: { id: "x", name: "n", email: "e@e.com" },
-									}),
+									post: (_input, ctx) =>
+										ctx.json({ id: "x", name: "n", email: "e@e.com" }, 201),
 								},
 							},
 							$userId: {
 								HANDLER: {
-									get: () => ({
-										status: 200 as const,
-										contentType: "application/json" as const,
-										body: { id: "x", name: "n", email: "e@e.com" },
-									}),
+									get: (_input, ctx) =>
+										ctx.json({ id: "x", name: "n", email: "e@e.com" }, 200),
 								},
 							},
 						},
 					},
 					health: {
 						HANDLER: {
-							get: (_input, _ctx: Context, resolved) => ({
-								status: 200 as const,
-								contentType: "application/json" as const,
-								body: { status: resolved },
-							}),
+							get: (_input, ctx: Context, resolved) =>
+								ctx.json({ status: resolved }, 200),
 						},
 					},
 					transforms: {
 						HANDLER: {
-							post: () => ({
-								status: 200 as const,
-								contentType: "application/json" as const,
-								body: { message: "x" },
-							}),
+							post: (_input, ctx) => ctx.json({ message: "x" }, 200),
 						},
 					},
 				},

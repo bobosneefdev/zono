@@ -130,29 +130,25 @@ beforeAll(() => {
 					ROUTER: {
 						register: {
 							HANDLER: {
-								post: (input) => ({
-									status: 201 as const,
-									contentType: "application/json" as const,
-									body: { id: "new-id", ...input.body },
-								}),
+								post: (input, ctx) =>
+									ctx.json({ id: "new-id", ...input.body }, 201),
 							},
 						},
 						$userId: {
 							HANDLER: {
-								get: (input) => {
+								get: (input, ctx) => {
 									if (input.pathParams.userId === "explode") {
 										throw new Error("forced failure");
 									}
 
-									return {
-										status: 200 as const,
-										contentType: "application/json" as const,
-										body: {
+									return ctx.json(
+										{
 											id: input.pathParams.userId,
 											name: "User",
 											email: "user@test.com",
 										},
-									};
+										200,
+									);
 								},
 							},
 						},
@@ -160,20 +156,12 @@ beforeAll(() => {
 				},
 				health: {
 					HANDLER: {
-						get: () => ({
-							status: 200 as const,
-							contentType: "application/json" as const,
-							body: { status: "ok" },
-						}),
+						get: (_input, ctx) => ctx.json({ status: "ok" }, 200),
 					},
 				},
 				transforms: {
 					HANDLER: {
-						post: (input) => ({
-							status: 200 as const,
-							contentType: "application/json" as const,
-							body: { message: input.body.normalized },
-						}),
+						post: (input, ctx) => ctx.json({ message: input.body.normalized }, 200),
 					},
 				},
 			},

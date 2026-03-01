@@ -15,10 +15,8 @@ import {
 	registerHonoRoute,
 } from "~/hono/hono.util.js";
 import { resolveRequestBody } from "~/internal/body.util.js";
-import type { ServerHandlerOutput } from "~/internal/handler.types.js";
 import { parseContractFields } from "~/internal/parse.js";
 import {
-	buildContractResponse,
 	buildInternalErrorResponse,
 	buildNotFoundErrorResponse,
 	buildValidationErrorResponse,
@@ -174,16 +172,13 @@ function collectRoutes(
 							input: unknown,
 							ctx: Context,
 							...params: ReadonlyArray<unknown>
-						) => Promise<unknown>;
+						) => Promise<Response>;
 						const result = await handlerFn(
 							parseResult.data,
 							context,
 							...additionalParams,
 						);
-						return buildContractResponse(
-							contract as Contract,
-							result as ServerHandlerOutput<Contract>,
-						);
+						return result;
 					},
 				});
 			}

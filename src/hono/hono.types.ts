@@ -1,14 +1,15 @@
-import type { Context } from "hono";
+import type { Context, TypedResponse } from "hono";
+import type { StatusCode } from "hono/utils/http-status";
 import type { ErrorMode } from "~/contract/contract.error.js";
 import type { ContractOutput } from "~/contract/contract.io.js";
 import type {
 	Contract,
 	ContractMethod,
 	ContractMethodMap,
+	ContractResponseStatuses,
 	ContractResponses,
 } from "~/contract/contract.types.js";
-import type { ServerHandlerOutput } from "~/internal/handler.types.js";
-import type { PossiblePromise } from "~/internal/util.types.js";
+import type { PossiblePromise, ResponseBodyForStatus } from "~/internal/util.types.js";
 import type { MiddlewareContractMap } from "~/middleware/middleware.types.js";
 
 export type HonoContextParams = ReadonlyArray<unknown>;
@@ -22,6 +23,17 @@ export type AdditionalHandlerParamsFn<TContextParams extends HonoContextParams =
 export type InferAdditionalHandlerParams<T extends AdditionalHandlerParamsFn<HonoContextParams>> =
 	Awaited<ReturnType<T>>;
 
+export type HonoContractTypedResponse<TContract extends Contract> = {
+	[TStatus in ContractResponseStatuses<TContract>]: TypedResponse<
+		ResponseBodyForStatus<TContract, TStatus>,
+		TStatus & StatusCode
+	>;
+}[ContractResponseStatuses<TContract>];
+
+export type HonoMiddlewareTypedResponse<TResponses extends ContractResponses> = {
+	[S in Extract<keyof TResponses, number>]: TypedResponse<unknown, S & StatusCode>;
+}[Extract<keyof TResponses, number>];
+
 export type HonoHandler<
 	TContract extends Contract,
 	TContextParams extends HonoContextParams = [],
@@ -29,7 +41,7 @@ export type HonoHandler<
 	input: ContractOutput<TContract>,
 	ctx: Context,
 	...contextParams: MutableContextParams<TContextParams>
-) => PossiblePromise<ServerHandlerOutput<TContract>>;
+) => PossiblePromise<HonoContractTypedResponse<TContract>>;
 
 export type HonoHandlerMethodMap<
 	TContractMap extends ContractMethodMap,
@@ -68,15 +80,7 @@ export type HonoMiddlewareHandler<
 			ctx: Context,
 			next: () => Promise<void>,
 			...contextParams: MutableContextParams<TContextParams>
-	  ) => PossiblePromise<void | HonoMiddlewareReturn<TResponses>>);
-
-export type HonoMiddlewareReturn<TResponses extends ContractResponses> = {
-	[S in Extract<keyof TResponses, number>]: {
-		status: S;
-	} & (TResponses[S] extends { contentType: infer CT; schema: infer _TSchema }
-		? { contentType: CT; body: unknown }
-		: { contentType?: undefined; body?: undefined });
-}[Extract<keyof TResponses, number>];
+	  ) => PossiblePromise<void | HonoMiddlewareTypedResponse<TResponses>>);
 
 type HonoMiddlewareHandlersMap<
 	TMap extends MiddlewareContractMap,

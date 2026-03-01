@@ -39,13 +39,23 @@ Adapter peer dependencies as needed:
 
 ## Quick Start (latest usage pattern)
 
-This quick start reflects the style used in `src/examples/example.ts`:
+This quick start reflects the style used in `src/examples/example.ts`.
+
+Route and middleware handlers return native Hono responses via context helpers like `ctx.json`.
 
 ```ts
+import { Hono } from "hono";
 import z from "zod";
 import type { RouterShape } from "@bobosneefdev/zono/contract";
 import { createRoutes } from "@bobosneefdev/zono/contract";
 import { createClient } from "@bobosneefdev/zono/client";
+import {
+  createHono,
+  createHonoMiddlewareHandlers,
+  createHonoOptions,
+  createHonoRouteHandlers,
+} from "@bobosneefdev/zono/hono";
+import { createMiddleware } from "@bobosneefdev/zono/middleware";
 
 const shape = {
   ROUTER: {
@@ -122,8 +132,88 @@ const routes = createRoutes(shape, {
   },
 });
 
+const middleware = createMiddleware(routes, {
+  MIDDLEWARE: {
+    rateLimit: {
+      429: {
+        contentType: "application/json",
+        schema: z.object({ retryAfterSeconds: z.number().int().positive() }),
+      },
+    },
+  },
+});
+
+const honoOptions = createHonoOptions({
+  errorMode: "public",
+  additionalHandlerParams: async (ctx) => {
+    return [ctx.req.header("Authorization") ?? "no-auth"] as const;
+  },
+});
+
+const honoRouteHandlers = createHonoRouteHandlers(routes, honoOptions, {
+  ROUTER: {
+    users: {
+      ROUTER: {
+        register: {
+          HANDLER: {
+            post: async (input, ctx, _auth) =>
+              ctx.json(
+                {
+                  id: crypto.randomUUID(),
+                  name: input.body.name,
+                  email: input.body.email,
+                },
+                201,
+              ),
+          },
+        },
+        $userId: {
+          HANDLER: {
+            get: async (input, ctx) => {
+              if (input.pathParams.userId.endsWith("0")) {
+                return ctx.json({ message: "User not found" }, 404);
+              }
+
+              return ctx.json(
+                {
+                  id: input.pathParams.userId,
+                  name: "Example User",
+                  email: "user@example.com",
+                },
+                200,
+              );
+            },
+          },
+        },
+      },
+    },
+    health: {
+      HANDLER: {
+        get: async (_input, ctx) => ctx.json({ status: "ok" as const }, 200),
+      },
+    },
+  },
+});
+
+const honoMiddlewareHandlers = createHonoMiddlewareHandlers(middleware, honoOptions, {
+  MIDDLEWARE: {
+    rateLimit: async (_ctx, next, _auth) => {
+      await next();
+    },
+  },
+});
+
+const app = new Hono();
+createHono(app, routes, honoRouteHandlers, middleware, honoMiddlewareHandlers, honoOptions);
+
+Bun.serve({
+  fetch: app.fetch,
+  port: 3000,
+});
+
 const client = createClient(routes, {
   baseUrl: "http://localhost:3000",
+  middleware: [middleware],
   serverErrorMode: "public",
 });
 
