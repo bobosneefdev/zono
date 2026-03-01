@@ -17,3 +17,12 @@ export type {
 	HonoRouteHandlerTree,
 	InferAdditionalHandlerParams,
 } from "~/hono/hono.types.js";
+export type {
+	MiddlewareReturn,
+	ServerHandler,
+	ServerHandlerGivenMethod,
+	ServerHandlerMethodMap,
+	ServerHandlerOutput,
+	TypedMiddlewareHandler,
+	TypedMiddlewareHandlers,
+} from "~/internal/handler.types.js";

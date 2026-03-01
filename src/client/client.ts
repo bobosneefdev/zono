@@ -3,8 +3,13 @@ import type { Contract, ContractQuery, ContractResponses } from "~/contract/cont
 import { parseResponseBody } from "~/internal/body.util.js";
 import { parseContractFields } from "~/internal/parse.js";
 import { parseSchemaForChannel } from "~/internal/schema_channels.js";
-import { CONTRACT_METHOD_ORDER, isRecord } from "~/internal/util.js";
-import type { SchemaTransformedOutput } from "~/internal/util.types.js";
+import {
+	BYTES_CONTENT_TYPES,
+	CONTRACT_METHOD_ORDER,
+	isRecord,
+	JSON_CONTENT_TYPES,
+	TEXT_CONTENT_TYPES,
+} from "~/internal/util.js";
 import type {
 	ClientOptions,
 	ClientOptionsDefaultHeaderValue,
@@ -141,8 +146,8 @@ async function parseIncomingResponse(
 	additionalResponses: ContractResponses | undefined,
 ): Promise<{
 	status: number;
-	body: undefined | SchemaTransformedOutput<import("zod").ZodType>;
-	headers: undefined | SchemaTransformedOutput<import("zod").ZodType>;
+	body: unknown;
+	headers: unknown;
 	response: Response;
 }> {
 	if (
@@ -165,7 +170,7 @@ async function parseIncomingResponse(
 		statusDefinition.schema,
 	);
 
-	let headers: undefined | SchemaTransformedOutput<import("zod").ZodType>;
+	let headers: unknown;
 	if (statusDefinition.headers) {
 		const rawHeaders = Object.fromEntries(response.headers.entries());
 		headers = await parseSchemaForChannel(statusDefinition.headers, rawHeaders, "transformed");
@@ -221,12 +226,9 @@ export function createClient<
 				}
 			}
 		}
-		if (
-			parsed.body !== undefined &&
-			!isFormDataBody(parsed.body) &&
-			!resolvedHeaders.has("content-type")
-		) {
-			resolvedHeaders.set("content-type", "application/json");
+		const bodyContentType = contract.body?.contentType ?? null;
+		if (parsed.body !== undefined && !resolvedHeaders.has("content-type") && bodyContentType) {
+			resolvedHeaders.set("content-type", bodyContentType);
 		}
 
 		const fullPath = buildPathWithParams(
@@ -243,7 +245,15 @@ export function createClient<
 			headers: resolvedHeaders,
 		};
 		if (parsed.body !== undefined) {
-			init.body = isFormDataBody(parsed.body) ? parsed.body : JSON.stringify(parsed.body);
+			if (isFormDataBody(parsed.body)) {
+				init.body = parsed.body;
+			} else if (bodyContentType && TEXT_CONTENT_TYPES.has(bodyContentType)) {
+				init.body = String(parsed.body);
+			} else if (bodyContentType && BYTES_CONTENT_TYPES.has(bodyContentType)) {
+				init.body = parsed.body as BodyInit;
+			} else if (bodyContentType && JSON_CONTENT_TYPES.has(bodyContentType)) {
+				init.body = JSON.stringify(parsed.body);
+			}
 		}
 
 		const response = await fetch(`${normalizedBaseUrl}${fullPath}${queryString}`, init);

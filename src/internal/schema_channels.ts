@@ -40,6 +40,8 @@ function collectChildSchemas(value: unknown, out: Set<z.ZodType>): void {
 }
 
 function getChildSchemas(schema: z.ZodType): Array<z.ZodType> {
+	// _def is a documented Zod internal property; this cast is intentional and will
+	// need revisiting if Zod changes its internal _def structure in a future major version.
 	const def = schema._def as unknown as Record<string, unknown>;
 	const out = new Set<z.ZodType>();
 
@@ -137,9 +139,5 @@ export async function parseSchemaForChannel<TSchema extends z.ZodType>(
 	value: unknown,
 	channel: SchemaChannel,
 ): Promise<unknown> {
-	if (channel === "http-safe") {
-		return await resolveSchemaForChannel(schema, "http-safe").parseAsync(value);
-	}
-
-	return await resolveSchemaForChannel(schema, "transformed").parseAsync(value);
+	return resolveSchemaForChannel(schema, channel as "transformed").parseAsync(value);
 }

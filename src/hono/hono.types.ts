@@ -10,11 +10,7 @@ import type {
 	ContractResponseStatuses,
 	ContractResponses,
 } from "~/contract/contract.types.js";
-import type {
-	PossiblePromise,
-	ResponseBodyForStatus,
-	SchemaHttpSafeInput,
-} from "~/internal/util.types.js";
+import type { PossiblePromise, ResponseBodyForStatus, SchemaInput } from "~/internal/util.types.js";
 import type { MiddlewareContractMap } from "~/middleware/middleware.types.js";
 
 /** Type for additional parameters passed to Hono handlers (e.g., from context) */
@@ -56,7 +52,7 @@ export type HonoContractTypedResponse<TContract extends Contract> = {
 export type HonoMiddlewareTypedResponse<TResponses extends ContractResponses> = {
 	[S in Extract<keyof TResponses, number>]: TypedResponse<
 		TResponses[S] extends { schema: infer TSchema extends z.ZodType }
-			? SchemaHttpSafeInput<TSchema>
+			? SchemaInput<TSchema>
 			: undefined,
 		S & StatusCode
 	>;
@@ -177,20 +173,3 @@ type HonoOptionsBase = {
 export type HonoOptions<TContextParams extends HonoContextParams = []> = HonoOptionsBase & {
 	additionalHandlerParams?: AdditionalHandlerParamsFn<TContextParams>;
 };
-
-/**
- * Hono options with required additional handler params function.
- * @template TAdditionalHandlerParams - The AdditionalHandlerParamsFn type
- */
-export type HonoOptionsWithAdditionalHandlerParams<
-	TAdditionalHandlerParams extends AdditionalHandlerParamsFn<HonoContextParams>,
-> = HonoOptions<InferAdditionalHandlerParams<TAdditionalHandlerParams>> & {
-	additionalHandlerParams: TAdditionalHandlerParams;
-};
-
-/** Infers TContextParams from additionalHandlerParams when present, otherwise [] */
-export type InferredHandlerParams<O> = O extends {
-	additionalHandlerParams: AdditionalHandlerParamsFn<infer R>;
-}
-	? R
-	: [];

@@ -5,6 +5,8 @@ import type {
 	RouterShape,
 	ShapeNode,
 } from "~/contract/contract.types.js";
+import { validateRouteContractSchema } from "~/internal/schema_channels.js";
+import { getContractMethods, isContractNode, isRecord, isRouterNode } from "~/internal/util.js";
 import type { JoinPath } from "~/internal/util.types.js";
 
 type RouteDefinitionNode<TNode extends ShapeNode, TPath extends string> = (TNode extends {
@@ -30,9 +32,6 @@ export type RouteDefinition<TShape extends RouterShape> = {
 		[K in keyof TShape["ROUTER"] & string]: RouteDefinitionNode<TShape["ROUTER"][K], K>;
 	};
 };
-
-import { validateRouteContractSchema } from "~/internal/schema_channels.js";
-import { getContractMethods, isContractNode, isRecord, isRouterNode } from "~/internal/util.js";
 
 function validateRouteContractsNode(node: unknown): void {
 	if (!isRecord(node)) {

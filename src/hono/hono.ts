@@ -9,6 +9,7 @@ import type {
 	HonoRouteHandlerTree,
 } from "~/hono/hono.types.js";
 import {
+	collectMiddlewareEntriesFromNode,
 	executeMiddlewareChain,
 	type MiddlewareEntry,
 	normalizeBasePath,
@@ -26,7 +27,6 @@ import {
 	dotPathToParamPath,
 	getContractMethods,
 	isContractNode,
-	isMiddlewareNode,
 	isRecord,
 	isRouterNode,
 } from "~/internal/util.js";
@@ -37,6 +37,8 @@ async function parseRequestBody(context: Context): Promise<unknown> {
 	return resolveRequestBody(
 		contentType,
 		() => context.req.json(),
+		() => context.req.text(),
+		() => context.req.arrayBuffer().then((buf) => new Uint8Array(buf)),
 		() => context.req.formData(),
 	);
 }
@@ -59,27 +61,6 @@ type RouteRegistration = {
 	) => Promise<Response>;
 };
 
-function collectMiddlewareEntries(
-	mwDefNode: unknown,
-	mwHandlerNode: unknown,
-): Array<MiddlewareEntry<ReadonlyArray<unknown>>> {
-	const entries: Array<MiddlewareEntry<ReadonlyArray<unknown>>> = [];
-	if (!isMiddlewareNode(mwDefNode) || !isMiddlewareNode(mwHandlerNode)) {
-		return entries;
-	}
-
-	for (const name of Object.keys(mwDefNode.MIDDLEWARE)) {
-		const handler = mwHandlerNode.MIDDLEWARE[name];
-		if (handler === null || handler === undefined) continue;
-		if (typeof handler !== "function") continue;
-		entries.push({
-			handler: handler as MiddlewareEntry<ReadonlyArray<unknown>>["handler"],
-		});
-	}
-
-	return entries;
-}
-
 function collectRoutes(
 	routes: Record<string, unknown>,
 	handlers: Record<string, unknown>,
@@ -94,7 +75,7 @@ function collectRoutes(
 	if (mwDef && mwHandlers) {
 		effectiveMiddleware = [
 			...effectiveMiddleware,
-			...collectMiddlewareEntries(mwDef, mwHandlers),
+			...collectMiddlewareEntriesFromNode(mwDef, mwHandlers),
 		];
 	}
 
@@ -117,7 +98,7 @@ function collectRoutes(
 		if (childMwDef && childMwHandlers) {
 			nodeMiddleware = [
 				...effectiveMiddleware,
-				...collectMiddlewareEntries(childMwDef, childMwHandlers),
+				...collectMiddlewareEntriesFromNode(childMwDef, childMwHandlers),
 			];
 		}
 

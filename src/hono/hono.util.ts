@@ -1,5 +1,6 @@
 import type { Context, Hono } from "hono";
 import type { ContractMethod } from "~/contract/contract.types.js";
+import { isMiddlewareNode } from "~/internal/util.js";
 import type { PossiblePromise } from "~/internal/util.types.js";
 
 export type MiddlewareHandlerFn<TContextParams extends ReadonlyArray<unknown> = [Context]> = (
@@ -11,6 +12,24 @@ export type MiddlewareHandlerFn<TContextParams extends ReadonlyArray<unknown> = 
 export type MiddlewareEntry<TContextParams extends ReadonlyArray<unknown> = [Context]> = {
 	handler: MiddlewareHandlerFn<TContextParams>;
 };
+
+/**
+ * Collects MiddlewareEntry objects from a single MIDDLEWARE node pair (def + handlers).
+ * Shared by hono.ts and hono_gateway.ts to avoid duplication.
+ */
+export function collectMiddlewareEntriesFromNode(
+	mwDefNode: unknown,
+	mwHandlerNode: unknown,
+): Array<MiddlewareEntry<ReadonlyArray<unknown>>> {
+	const entries: Array<MiddlewareEntry<ReadonlyArray<unknown>>> = [];
+	if (!isMiddlewareNode(mwDefNode) || !isMiddlewareNode(mwHandlerNode)) return entries;
+	for (const name of Object.keys(mwDefNode.MIDDLEWARE)) {
+		const handler = mwHandlerNode.MIDDLEWARE[name];
+		if (handler == null || typeof handler !== "function") continue;
+		entries.push({ handler: handler as MiddlewareEntry<ReadonlyArray<unknown>>["handler"] });
+	}
+	return entries;
+}
 
 export function normalizeBasePath(basePath: string | undefined): string {
 	if (basePath == null || basePath === "") return "";

@@ -1,12 +1,12 @@
 import type z from "zod";
 import type { Contract } from "~/contract/contract.types.js";
-import type { SchemaHttpSafeInput, SchemaTransformedOutput } from "~/internal/util.types.js";
+import type { SchemaInput, SchemaOutput } from "~/internal/util.types.js";
 
 type SchemaDir = "input" | "output";
 
 type SchemaForDir<TSchema, TDir extends SchemaDir> = TDir extends "input"
-	? SchemaHttpSafeInput<TSchema>
-	: SchemaTransformedOutput<TSchema>;
+	? SchemaInput<TSchema>
+	: SchemaOutput<TSchema>;
 
 type IncludePathParams<
 	TContract extends Contract,

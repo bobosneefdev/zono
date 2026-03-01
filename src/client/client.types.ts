@@ -1,5 +1,3 @@
-import { Prettify } from "ts-essentials";
-import z from "zod";
 import type {
 	ErrorMode,
 	InternalErrorBody,
@@ -9,7 +7,12 @@ import type {
 import type { ContractInput } from "~/contract/contract.io.js";
 import type { MergeContractResponses } from "~/contract/contract.responses.js";
 import type { Contract, ContractMethod, ContractResponses } from "~/contract/contract.types.js";
-import type { PossiblePromise, SchemaTransformedOutput } from "~/internal/util.types.js";
+import type {
+	PossiblePromise,
+	Prettify,
+	ResponseBodyForStatusInResponses,
+	ResponseHeadersForStatusInResponses,
+} from "~/internal/util.types.js";
 import type { MiddlewareContractMap } from "~/middleware/middleware.types.js";
 
 type UnionToIntersection<U> = (U extends unknown ? (k: U) => void : never) extends (
@@ -56,18 +59,6 @@ type CollectAllMiddlewareResponses<
 		: Record<never, never>
 >;
 
-type ResponseBodyForStatus<TResponses, TStatus extends number> = TStatus extends keyof TResponses
-	? TResponses[TStatus] extends { schema: infer TSchema extends z.ZodType }
-		? SchemaTransformedOutput<TSchema>
-		: undefined
-	: undefined;
-
-type ResponseHeadersForStatus<TResponses, TStatus extends number> = TStatus extends keyof TResponses
-	? TResponses[TStatus] extends { headers: infer THeaders extends z.ZodType }
-		? SchemaTransformedOutput<THeaders>
-		: undefined
-	: undefined;
-
 type MergedResponses<
 	TContract extends Contract,
 	TMiddlewareResponses extends ContractResponses,
@@ -79,8 +70,11 @@ type ClientOutputBase<
 > = {
 	[S in Extract<keyof MergedResponses<TContract, TMiddlewareResponses>, number>]: {
 		status: S;
-		body: ResponseBodyForStatus<MergedResponses<TContract, TMiddlewareResponses>, S>;
-		headers: ResponseHeadersForStatus<MergedResponses<TContract, TMiddlewareResponses>, S>;
+		body: ResponseBodyForStatusInResponses<MergedResponses<TContract, TMiddlewareResponses>, S>;
+		headers: ResponseHeadersForStatusInResponses<
+			MergedResponses<TContract, TMiddlewareResponses>,
+			S
+		>;
 		response: Response;
 	};
 }[Extract<keyof MergedResponses<TContract, TMiddlewareResponses>, number>];

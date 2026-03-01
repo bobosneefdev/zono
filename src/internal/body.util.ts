@@ -5,10 +5,19 @@ import { BYTES_CONTENT_TYPES, JSON_CONTENT_TYPES, TEXT_CONTENT_TYPES } from "~/i
 export async function resolveRequestBody(
 	contentType: string,
 	jsonParser: () => Promise<unknown>,
+	textParser: () => Promise<unknown>,
+	bytesParser: () => Promise<unknown>,
 	formDataParser: () => Promise<unknown>,
 ): Promise<unknown> {
-	if (contentType.toLowerCase().includes("application/json")) {
-		return jsonParser();
+	const normalized = contentType.toLowerCase();
+	for (const ct of JSON_CONTENT_TYPES) {
+		if (normalized.includes(ct)) return jsonParser();
+	}
+	for (const ct of TEXT_CONTENT_TYPES) {
+		if (normalized.includes(ct)) return textParser();
+	}
+	for (const ct of BYTES_CONTENT_TYPES) {
+		if (normalized.includes(ct)) return bytesParser();
 	}
 	return formDataParser();
 }

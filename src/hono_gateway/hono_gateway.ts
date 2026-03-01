@@ -1,7 +1,8 @@
 import type { Context, Hono } from "hono";
 import type { ContractMethod, ContractMethodMap } from "~/contract/contract.types.js";
-import { HonoContextParams, HonoMiddlewareHandlerTree } from "~/hono/hono.types.js";
+import type { HonoContextParams, HonoMiddlewareHandlerTree } from "~/hono/hono.types.js";
 import {
+	collectMiddlewareEntriesFromNode,
 	executeMiddlewareChain,
 	type MiddlewareEntry,
 	normalizeBasePath,
@@ -18,7 +19,6 @@ import {
 	dotPathToSlashPath,
 	getContractMethods,
 	isContractNode,
-	isMiddlewareNode,
 	isRecord,
 	isRouterNode,
 } from "~/internal/util.js";
@@ -120,19 +120,11 @@ function collectGatewayMiddleware(
 	mwHandlers: unknown,
 	pathSegments: Array<string>,
 ): Array<MiddlewareEntry> {
-	const entries: Array<MiddlewareEntry> = [];
-	if (!isRecord(mwDef) || !isRecord(mwHandlers)) return entries;
+	if (!isRecord(mwDef) || !isRecord(mwHandlers)) return [];
 
-	if (isMiddlewareNode(mwDef) && isMiddlewareNode(mwHandlers)) {
-		for (const name of Object.keys(mwDef.MIDDLEWARE)) {
-			const handler = mwHandlers.MIDDLEWARE[name];
-			if (handler === null || handler === undefined || typeof handler !== "function")
-				continue;
-			entries.push({
-				handler: handler as MiddlewareEntry<ReadonlyArray<unknown>>["handler"],
-			});
-		}
-	}
+	const entries: Array<MiddlewareEntry> = [
+		...collectMiddlewareEntriesFromNode(mwDef, mwHandlers),
+	];
 
 	let currentDef: Record<string, unknown> = mwDef;
 	let currentHandlers: Record<string, unknown> = mwHandlers;
@@ -143,22 +135,11 @@ function collectGatewayMiddleware(
 
 		const nextDef = defRouter[segment];
 		const nextHandler = handlerRouter[segment];
-		if (!nextDef || !nextHandler) break;
-		if (!isRecord(nextDef) || !isRecord(nextHandler)) break;
+		if (!nextDef || !nextHandler || !isRecord(nextDef) || !isRecord(nextHandler)) break;
 
 		currentDef = nextDef;
 		currentHandlers = nextHandler;
-
-		if (isMiddlewareNode(currentDef) && isMiddlewareNode(currentHandlers)) {
-			for (const name of Object.keys(currentDef.MIDDLEWARE)) {
-				const handler = currentHandlers.MIDDLEWARE[name];
-				if (handler === null || handler === undefined || typeof handler !== "function")
-					continue;
-				entries.push({
-					handler: handler as MiddlewareEntry<ReadonlyArray<unknown>>["handler"],
-				});
-			}
-		}
+		entries.push(...collectMiddlewareEntriesFromNode(currentDef, currentHandlers));
 	}
 
 	return entries;
