@@ -167,54 +167,28 @@ describe("createContracts", () => {
 		expect(invalidResult.success).toBe(false);
 	});
 
-	test("supports schemas with transforms at any depth", () => {
-		const transformShape = {
+	test("supports non-JSON body and response definitions", () => {
+		const multiTypeShape = {
 			ROUTER: {
-				users: {
-					ROUTER: {
-						register: {
-							CONTRACT: true,
-						},
-					},
+				files: {
+					CONTRACT: true,
 				},
 			},
 		} as const satisfies RouterShape;
 
-		const transformedContracts = createContracts(transformShape, {
+		const multiTypeContracts = createContracts(multiTypeShape, {
 			ROUTER: {
-				users: {
-					ROUTER: {
-						register: {
-							CONTRACT: {
-								post: {
-									body: {
-										type: "JSON",
-										schema: z
-											.object({ name: z.string(), email: z.string().email() })
-											.transform((input) => ({
-												...input,
-												name: input.name.trim(),
-											}))
-											.transform((input) => ({
-												...input,
-												name: input.name.toUpperCase(),
-											})),
-									},
-									responses: {
-										201: {
-											type: "JSON",
-											schema: z
-												.object({
-													id: z.string(),
-													name: z.string(),
-													email: z.string(),
-												})
-												.transform((user) => ({
-													...user,
-													name: user.name.toLowerCase(),
-												})),
-										},
-									},
+				files: {
+					CONTRACT: {
+						post: {
+							body: {
+								type: "FormData",
+								schema: z.instanceof(FormData),
+							},
+							responses: {
+								201: {
+									type: "Blob",
+									schema: z.instanceof(Blob),
 								},
 							},
 						},
@@ -223,7 +197,8 @@ describe("createContracts", () => {
 			},
 		});
 
-		expect(transformedContracts.ROUTER.users.ROUTER.register.CONTRACT.post).toBeDefined();
+		expect(multiTypeContracts.ROUTER.files.CONTRACT.post?.body?.type).toBe("FormData");
+		expect(multiTypeContracts.ROUTER.files.CONTRACT.post?.responses[201].type).toBe("Blob");
 	});
 });
 

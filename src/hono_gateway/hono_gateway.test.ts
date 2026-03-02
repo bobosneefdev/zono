@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
+import superjson from "superjson";
 import z from "zod";
 import { createClient } from "~/client/client.js";
 import type { RouterShape } from "~/contract/contract.types.js";
@@ -21,6 +22,21 @@ const shape = {
 					CONTRACT: true,
 				},
 			},
+		},
+		superjsonHeaders: {
+			CONTRACT: true,
+		},
+		text: {
+			CONTRACT: true,
+		},
+		blob: {
+			CONTRACT: true,
+		},
+		arrayBuffer: {
+			CONTRACT: true,
+		},
+		voidResponse: {
+			CONTRACT: true,
 		},
 	},
 } as const satisfies RouterShape;
@@ -55,6 +71,60 @@ const serviceContracts = createContracts(shape, {
 								200: { type: "JSON", schema: zItem },
 							},
 						},
+					},
+				},
+			},
+		},
+		superjsonHeaders: {
+			CONTRACT: {
+				get: {
+					responses: {
+						200: {
+							type: "JSON",
+							schema: z.object({ ok: z.literal(true) }),
+							headers: {
+								type: "SuperJSON",
+								schema: z.object({
+									meta: z.object({ source: z.string(), attempt: z.number() }),
+								}),
+							},
+						},
+					},
+				},
+			},
+		},
+		text: {
+			CONTRACT: {
+				get: {
+					responses: {
+						200: { type: "Text", schema: z.string() },
+					},
+				},
+			},
+		},
+		blob: {
+			CONTRACT: {
+				get: {
+					responses: {
+						200: { type: "Blob", schema: z.instanceof(Blob) },
+					},
+				},
+			},
+		},
+		arrayBuffer: {
+			CONTRACT: {
+				get: {
+					responses: {
+						200: { type: "ArrayBuffer", schema: z.instanceof(ArrayBuffer) },
+					},
+				},
+			},
+		},
+		voidResponse: {
+			CONTRACT: {
+				get: {
+					responses: {
+						204: { type: "Void" },
 					},
 				},
 			},
@@ -110,6 +180,51 @@ beforeAll(() => {
 						},
 					},
 				},
+				superjsonHeaders: {
+					HANDLER: {
+						get: () => ({
+							type: "JSON" as const,
+							status: 200 as const,
+							data: { ok: true as const },
+							headers: { meta: { source: "service", attempt: 2 } },
+						}),
+					},
+				},
+				text: {
+					HANDLER: {
+						get: () => ({
+							type: "Text" as const,
+							status: 200 as const,
+							data: "gateway-text",
+						}),
+					},
+				},
+				blob: {
+					HANDLER: {
+						get: () => ({
+							type: "Blob" as const,
+							status: 200 as const,
+							data: new Blob(["gateway-blob"], { type: "text/plain" }),
+						}),
+					},
+				},
+				arrayBuffer: {
+					HANDLER: {
+						get: () => ({
+							type: "ArrayBuffer" as const,
+							status: 200 as const,
+							data: new TextEncoder().encode("gateway-buffer").buffer,
+						}),
+					},
+				},
+				voidResponse: {
+					HANDLER: {
+						get: () => ({
+							type: "Void" as const,
+							status: 204 as const,
+						}),
+					},
+				},
 			},
 		},
 		serviceMiddleware,
@@ -159,7 +274,6 @@ beforeAll(() => {
 	);
 
 	const gatewayApp = new Hono();
-
 	initHonoGateway(
 		gatewayApp,
 		gateway.routes,
@@ -212,6 +326,49 @@ describe("Gateway", () => {
 			const body = await res.json();
 			expect(body.id).toBe("item-42");
 		});
+
+		test("forwards superjson response headers", async () => {
+			const res = await fetch(`http://localhost:${GATEWAY_PORT}/inventory/superjsonHeaders`);
+			expect(res.status).toBe(200);
+			const encoded = res.headers.get("x-zono-superjson-headers");
+			expect(encoded).toBeTruthy();
+			if (encoded) {
+				const parsedResult = z
+					.object({
+						meta: z.object({ source: z.string(), attempt: z.number() }),
+					})
+					.safeParse(superjson.parse(encoded));
+				expect(parsedResult.success).toBe(true);
+				if (parsedResult.success) {
+					expect(parsedResult.data.meta.source).toBe("service");
+					expect(parsedResult.data.meta.attempt).toBe(2);
+				}
+			}
+		});
+
+		test("proxies text, blob, arrayBuffer, and void responses", async () => {
+			const text = await fetch(`http://localhost:${GATEWAY_PORT}/inventory/text`);
+			expect(text.status).toBe(200);
+			expect(await text.text()).toBe("gateway-text");
+
+			const blob = await fetch(`http://localhost:${GATEWAY_PORT}/inventory/blob`);
+			expect(blob.status).toBe(200);
+			expect(await (await blob.blob()).text()).toBe("gateway-blob");
+
+			const arrayBuffer = await fetch(
+				`http://localhost:${GATEWAY_PORT}/inventory/arrayBuffer`,
+			);
+			expect(arrayBuffer.status).toBe(200);
+			expect(new TextDecoder().decode(await arrayBuffer.arrayBuffer())).toBe(
+				"gateway-buffer",
+			);
+
+			const voidResponse = await fetch(
+				`http://localhost:${GATEWAY_PORT}/inventory/voidResponse`,
+			);
+			expect(voidResponse.status).toBe(204);
+			expect(await voidResponse.text()).toBe("");
+		});
 	});
 
 	describe("gateway client", () => {
@@ -244,6 +401,22 @@ describe("Gateway", () => {
 			expect(res.status).toBe(200);
 			if (res.status === 200) {
 				expect(res.body.id).toBe("item-99");
+			}
+		});
+
+		test("proxy-chain client receives superjson headers via gateway", async () => {
+			const gateway = generateHonoGatewayRoutesAndMiddleware({
+				inventory: { routes: serviceContracts, middleware: serviceMiddleware },
+			});
+			const client = createClient(gateway.routes, {
+				baseUrl: `http://localhost:${GATEWAY_PORT}`,
+				middleware: [gateway.middleware],
+			});
+
+			const res = await client.inventory.superjsonHeaders.get();
+			expect(res.status).toBe(200);
+			if (res.status === 200) {
+				expect(res.headers).toEqual({ meta: { source: "service", attempt: 2 } });
 			}
 		});
 	});

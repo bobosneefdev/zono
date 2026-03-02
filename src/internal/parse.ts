@@ -41,12 +41,20 @@ function parseRawQuery(contract: Contract, rawQuery: unknown): unknown {
  * Extracts the raw headers value appropriate for the contract headers type.
  * For SuperJSON headers the full object arrives in x-zono-superjson-headers.
  */
-function parseRawHeaders(contract: Contract, rawHeaders: unknown): unknown {
+function parseRawHeaders(
+	contract: Contract,
+	rawHeaders: unknown,
+	mode: "server" | "client",
+): unknown {
 	if (!contract.headers) {
 		return rawHeaders;
 	}
 
 	if (contract.headers.type === "SuperJSON") {
+		if (mode === "client") {
+			return rawHeaders;
+		}
+
 		const encoded = isRecord(rawHeaders)
 			? (rawHeaders["x-zono-superjson-headers"] as string | undefined)
 			: undefined;
@@ -94,7 +102,7 @@ export async function parseContractFields(
 	}
 
 	if (contract.headers) {
-		const rawHeaders = parseRawHeaders(contract, rawInput.headers);
+		const rawHeaders = parseRawHeaders(contract, rawInput.headers, mode);
 		const result = await contract.headers.schema.safeParseAsync(rawHeaders);
 		if (result.success) {
 			parsed.headers = mode === "server" ? result.data : rawHeaders;
