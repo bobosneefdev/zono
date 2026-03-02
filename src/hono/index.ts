@@ -7,12 +7,10 @@ export {
 export type {
 	AdditionalHandlerParamsFn,
 	HonoContextParams,
-	HonoContractTypedResponse,
 	HonoHandler,
 	HonoHandlerMethodMap,
 	HonoMiddlewareHandler,
 	HonoMiddlewareHandlerTree,
-	HonoMiddlewareTypedResponse,
 	HonoOptions,
 	HonoRouteHandlerTree,
 	InferAdditionalHandlerParams,

@@ -125,6 +125,8 @@ export type ClientInternalErrorResponse = {
 
 /**
  * Output type for a contract on the client side, including global error responses.
+ * Body uses z.output<responseSchema> (after transforms, what the client sees).
+ * Headers uses z.output<headersSchema>.
  * @template TContract - The contract to extract output type from
  * @template TMiddlewareResponses - Responses from middleware that may be returned
  * @template TErrorMode - Error mode for validation error detail level
@@ -173,15 +175,15 @@ type ClientNode<
 
 /**
  * Type-safe client proxy that provides autocomplete for routes and methods.
- * @template TRoutes - Route definition type
+ * @template TContracts - Contract definition type
  * @template TMiddlewares - Array of middleware definitions
  * @template TErrorMode - Error mode for validation error detail level
  */
 export type ClientProxy<
-	TRoutes,
+	TContracts,
 	TMiddlewares extends ReadonlyArray<unknown>,
 	TErrorMode extends ErrorMode | undefined,
-> = TRoutes extends { ROUTER: infer R extends Record<string, unknown> }
+> = TContracts extends { ROUTER: infer R extends Record<string, unknown> }
 	? {
 			[K in keyof R & string]: ClientNode<R[K], TMiddlewares, [K], TErrorMode>;
 		}

@@ -3,9 +3,9 @@ import { Hono } from "hono";
 import z from "zod";
 import { createClient } from "~/client/client.js";
 import type { RouterShape } from "~/contract/contract.types.js";
-import { createRoutes } from "~/contract/routes.js";
+import { createContracts } from "~/contract/contracts.js";
 import { initHono } from "~/hono/hono.js";
-import { createMiddleware } from "~/middleware/middleware.js";
+import { createMiddlewares } from "~/middleware/middleware.js";
 
 const shape = {
 	ROUTER: {
@@ -34,7 +34,7 @@ const zUser = z.object({
 	email: z.string(),
 });
 
-const routes = createRoutes(shape, {
+const contracts = createContracts(shape, {
 	ROUTER: {
 		users: {
 			ROUTER: {
@@ -42,12 +42,12 @@ const routes = createRoutes(shape, {
 					CONTRACT: {
 						post: {
 							body: {
-								contentType: "application/json",
+								type: "JSON",
 								schema: z.object({ name: z.string(), email: z.string() }),
 							},
 							responses: {
 								201: {
-									contentType: "application/json",
+									type: "JSON",
 									schema: zUser,
 								},
 							},
@@ -60,7 +60,7 @@ const routes = createRoutes(shape, {
 							pathParams: z.object({ userId: z.string() }),
 							responses: {
 								200: {
-									contentType: "application/json",
+									type: "JSON",
 									schema: zUser,
 								},
 							},
@@ -74,7 +74,7 @@ const routes = createRoutes(shape, {
 				get: {
 					responses: {
 						200: {
-							contentType: "application/json",
+							type: "JSON",
 							schema: z.object({ status: z.string() }),
 						},
 					},
@@ -85,7 +85,7 @@ const routes = createRoutes(shape, {
 			CONTRACT: {
 				post: {
 					body: {
-						contentType: "application/json",
+						type: "JSON",
 						schema: z
 							.object({ name: z.string() })
 							.transform(async (input) => ({ name: input.name.trim() }))
@@ -93,7 +93,7 @@ const routes = createRoutes(shape, {
 					},
 					responses: {
 						200: {
-							contentType: "application/json",
+							type: "JSON",
 							schema: z
 								.object({ message: z.string() })
 								.transform(async (body) => ({ message: `${body.message}!` })),
@@ -105,11 +105,11 @@ const routes = createRoutes(shape, {
 	},
 });
 
-const middleware = createMiddleware(routes, {
+const middleware = createMiddlewares(contracts, {
 	MIDDLEWARE: {
 		rateLimit: {
 			429: {
-				contentType: "application/json",
+				type: "JSON",
 				schema: z.object({ retryAfter: z.number() }),
 			},
 		},
@@ -123,32 +123,35 @@ beforeAll(() => {
 	const app = new Hono();
 	initHono(
 		app,
-		routes,
+		contracts,
 		{
 			ROUTER: {
 				users: {
 					ROUTER: {
 						register: {
 							HANDLER: {
-								post: (input, ctx) =>
-									ctx.json({ id: "new-id", ...input.body }, 201),
+								post: (input) => ({
+									type: "JSON" as const,
+									status: 201 as const,
+									data: { id: "new-id", ...input.body },
+								}),
 							},
 						},
 						$userId: {
 							HANDLER: {
-								get: (input, ctx) => {
+								get: (input) => {
 									if (input.pathParams.userId === "explode") {
 										throw new Error("forced failure");
 									}
-
-									return ctx.json(
-										{
+									return {
+										type: "JSON" as const,
+										status: 200 as const,
+										data: {
 											id: input.pathParams.userId,
 											name: "User",
 											email: "user@test.com",
 										},
-										200,
-									);
+									};
 								},
 							},
 						},
@@ -156,12 +159,20 @@ beforeAll(() => {
 				},
 				health: {
 					HANDLER: {
-						get: (_input, ctx) => ctx.json({ status: "ok" }, 200),
+						get: () => ({
+							type: "JSON" as const,
+							status: 200 as const,
+							data: { status: "ok" },
+						}),
 					},
 				},
 				transforms: {
 					HANDLER: {
-						post: (input, ctx) => ctx.json({ message: input.body.normalized }, 200),
+						post: (input) => ({
+							type: "JSON" as const,
+							status: 200 as const,
+							data: { message: input.body.normalized },
+						}),
 					},
 				},
 			},
@@ -180,7 +191,7 @@ afterAll(() => {
 });
 
 describe("createClient (proxy chain)", () => {
-	const client = createClient(routes, {
+	const client = createClient(contracts, {
 		baseUrl: `http://localhost:${PORT}`,
 		middleware: [middleware],
 		serverErrorMode: "public",
@@ -216,7 +227,7 @@ describe("createClient (proxy chain)", () => {
 	});
 
 	test("returns hard-coded 404 body when route is not found", async () => {
-		const missingClient = createClient(routes, {
+		const missingClient = createClient(contracts, {
 			baseUrl: `http://localhost:${PORT}/missing-base`,
 			middleware: [middleware],
 			serverErrorMode: "public",
@@ -240,7 +251,7 @@ describe("createClient (proxy chain)", () => {
 	});
 
 	test("invalid client input fails fast before request", async () => {
-		const rawClient = createClient(routes, {
+		const rawClient = createClient(contracts, {
 			baseUrl: `http://localhost:${PORT}`,
 			middleware: [middleware],
 			serverErrorMode: "public",

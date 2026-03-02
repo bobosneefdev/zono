@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import z from "zod";
 import type { RouterShape } from "~/contract/contract.types.js";
-import { createRoutes } from "~/contract/routes.js";
-import { createMiddleware } from "~/middleware/middleware.js";
+import { createContracts } from "~/contract/contracts.js";
+import { createMiddlewares } from "~/middleware/middleware.js";
 
 const shape = {
 	ROUTER: {
@@ -46,7 +46,7 @@ const zPost = z.object({
 	text: z.string(),
 });
 
-const routes = createRoutes(shape, {
+const contracts = createContracts(shape, {
 	ROUTER: {
 		users: {
 			ROUTER: {
@@ -54,7 +54,7 @@ const routes = createRoutes(shape, {
 					CONTRACT: {
 						post: {
 							body: {
-								contentType: "application/json",
+								type: "JSON",
 								schema: z.object({
 									name: z.string(),
 									email: z.string().email(),
@@ -62,7 +62,7 @@ const routes = createRoutes(shape, {
 							},
 							responses: {
 								201: {
-									contentType: "application/json",
+									type: "JSON",
 									schema: zUser,
 								},
 							},
@@ -75,7 +75,7 @@ const routes = createRoutes(shape, {
 							pathParams: z.object({ userId: z.string() }),
 							responses: {
 								200: {
-									contentType: "application/json",
+									type: "JSON",
 									schema: zUser,
 								},
 							},
@@ -88,7 +88,7 @@ const routes = createRoutes(shape, {
 									pathParams: z.object({ userId: z.string() }),
 									responses: {
 										200: {
-											contentType: "application/json",
+											type: "JSON",
 											schema: z.array(zPost),
 										},
 									},
@@ -104,7 +104,7 @@ const routes = createRoutes(shape, {
 											}),
 											responses: {
 												200: {
-													contentType: "application/json",
+													type: "JSON",
 													schema: zPost,
 												},
 											},
@@ -122,7 +122,7 @@ const routes = createRoutes(shape, {
 				get: {
 					responses: {
 						200: {
-							contentType: "application/json",
+							type: "JSON",
 							schema: z.object({ status: z.string() }),
 						},
 					},
@@ -132,23 +132,23 @@ const routes = createRoutes(shape, {
 	},
 });
 
-describe("createRoutes", () => {
+describe("createContracts", () => {
 	test("returns the definition as-is (identity)", () => {
-		expect(routes.ROUTER).toBeDefined();
-		expect(routes.ROUTER.users).toBeDefined();
-		expect(routes.ROUTER.users.ROUTER.register.CONTRACT.post).toBeDefined();
-		expect(routes.ROUTER.health.CONTRACT.get).toBeDefined();
+		expect(contracts.ROUTER).toBeDefined();
+		expect(contracts.ROUTER.users).toBeDefined();
+		expect(contracts.ROUTER.users.ROUTER.register.CONTRACT.post).toBeDefined();
+		expect(contracts.ROUTER.health.CONTRACT.get).toBeDefined();
 	});
 
 	test("preserves contract schemas", () => {
-		const postContract = routes.ROUTER.users.ROUTER.register.CONTRACT.post!;
+		const postContract = contracts.ROUTER.users.ROUTER.register.CONTRACT.post!;
 		expect(postContract.body).toBeDefined();
 		expect(postContract.responses[201]).toBeDefined();
-		expect(postContract.responses[201].contentType).toBe("application/json");
+		expect(postContract.responses[201].type).toBe("JSON");
 	});
 
 	test("preserves nested route structure", () => {
-		const userId = routes.ROUTER.users.ROUTER.$userId;
+		const userId = contracts.ROUTER.users.ROUTER.$userId;
 		expect(userId.CONTRACT.get).toBeDefined();
 		expect(userId.ROUTER).toBeDefined();
 		expect(userId.ROUTER.posts.CONTRACT.get).toBeDefined();
@@ -156,7 +156,7 @@ describe("createRoutes", () => {
 	});
 
 	test("validates contract body schemas at runtime", async () => {
-		const bodySchema = routes.ROUTER.users.ROUTER.register.CONTRACT.post!.body!.schema;
+		const bodySchema = contracts.ROUTER.users.ROUTER.register.CONTRACT.post!.body!.schema;
 		const validResult = bodySchema.safeParse({
 			name: "John",
 			email: "john@example.com",
@@ -167,7 +167,7 @@ describe("createRoutes", () => {
 		expect(invalidResult.success).toBe(false);
 	});
 
-	test("supports top-level transform chains and validates nested transform rejection", async () => {
+	test("supports schemas with transforms at any depth", () => {
 		const transformShape = {
 			ROUTER: {
 				users: {
@@ -180,7 +180,7 @@ describe("createRoutes", () => {
 			},
 		} as const satisfies RouterShape;
 
-		const transformedRoutes = createRoutes(transformShape, {
+		const transformedContracts = createContracts(transformShape, {
 			ROUTER: {
 				users: {
 					ROUTER: {
@@ -188,7 +188,7 @@ describe("createRoutes", () => {
 							CONTRACT: {
 								post: {
 									body: {
-										contentType: "application/json",
+										type: "JSON",
 										schema: z
 											.object({ name: z.string(), email: z.string().email() })
 											.transform((input) => ({
@@ -202,7 +202,7 @@ describe("createRoutes", () => {
 									},
 									responses: {
 										201: {
-											contentType: "application/json",
+											type: "JSON",
 											schema: z
 												.object({
 													id: z.string(),
@@ -223,46 +223,16 @@ describe("createRoutes", () => {
 			},
 		});
 
-		expect(transformedRoutes.ROUTER.users.ROUTER.register.CONTRACT.post).toBeDefined();
-
-		expect(() =>
-			createRoutes(transformShape, {
-				ROUTER: {
-					users: {
-						ROUTER: {
-							register: {
-								CONTRACT: {
-									post: {
-										body: {
-											contentType: "application/json",
-											schema: z.object({
-												name: z.string().transform((value) => value.trim()),
-												email: z.string().email(),
-											}),
-										},
-										responses: {
-											201: {
-												contentType: "application/json",
-												schema: zUser,
-											},
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			}),
-		).toThrow("Nested .transform(...) is not supported in route contract schemas");
+		expect(transformedContracts.ROUTER.users.ROUTER.register.CONTRACT.post).toBeDefined();
 	});
 });
 
-describe("createMiddleware", () => {
-	const middleware = createMiddleware(routes, {
+describe("createMiddlewares", () => {
+	const middleware = createMiddlewares(contracts, {
 		MIDDLEWARE: {
 			rateLimit: {
 				429: {
-					contentType: "application/json",
+					type: "JSON",
 					schema: z.object({ retryAfter: z.number() }),
 				},
 			},
@@ -274,7 +244,7 @@ describe("createMiddleware", () => {
 						MIDDLEWARE: {
 							antiBot: {
 								403: {
-									contentType: "application/json",
+									type: "JSON",
 									schema: z.object({ error: z.string() }),
 								},
 							},
@@ -302,7 +272,7 @@ describe("createMiddleware", () => {
 	});
 
 	test("supports empty middleware (side-effect only)", () => {
-		const sideEffectMiddleware = createMiddleware(routes, {
+		const sideEffectMiddleware = createMiddlewares(contracts, {
 			ROUTER: {
 				health: {
 					MIDDLEWARE: {

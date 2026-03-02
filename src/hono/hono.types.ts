@@ -1,16 +1,14 @@
-import type { Context, TypedResponse } from "hono";
-import type { StatusCode } from "hono/utils/http-status";
-import type z from "zod";
+import type { Context } from "hono";
 import type { ErrorMode } from "~/contract/contract.error.js";
 import type { ContractOutput } from "~/contract/contract.io.js";
 import type {
 	Contract,
 	ContractMethod,
 	ContractMethodMap,
-	ContractResponseStatuses,
 	ContractResponses,
 } from "~/contract/contract.types.js";
-import type { PossiblePromise, ResponseBodyForStatus, SchemaInput } from "~/internal/util.types.js";
+import type { MiddlewareReturn, ServerHandlerOutput } from "~/internal/handler.types.js";
+import type { PossiblePromise } from "~/internal/util.types.js";
 import type { MiddlewareContractMap } from "~/middleware/middleware.types.js";
 
 /** Type for additional parameters passed to Hono handlers (e.g., from context) */
@@ -34,32 +32,8 @@ export type InferAdditionalHandlerParams<T extends AdditionalHandlerParamsFn<Hon
 	Awaited<ReturnType<T>>;
 
 /**
- * Hono TypedResponse type for contract responses.
- * Ensures type safety between the contract and Hono's response type.
- * @template TContract - The contract defining valid responses
- */
-export type HonoContractTypedResponse<TContract extends Contract> = {
-	[TStatus in ContractResponseStatuses<TContract>]: TypedResponse<
-		ResponseBodyForStatus<TContract, TStatus>,
-		TStatus & StatusCode
-	>;
-}[ContractResponseStatuses<TContract>];
-
-/**
- * Hono TypedResponse type for middleware responses.
- * @template TResponses - Contract responses that middleware can return
- */
-export type HonoMiddlewareTypedResponse<TResponses extends ContractResponses> = {
-	[S in Extract<keyof TResponses, number>]: TypedResponse<
-		TResponses[S] extends { schema: infer TSchema extends z.ZodType }
-			? SchemaInput<TSchema>
-			: undefined,
-		S & StatusCode
-	>;
-}[Extract<keyof TResponses, number>];
-
-/**
  * Handler type for Hono route handlers with contract type-safety.
+ * Returns a plain ServerHandlerOutput object rather than a Hono TypedResponse.
  * @template TContract - The contract defining request/response types
  * @template TContextParams - Additional parameters extracted from context
  */
@@ -70,7 +44,7 @@ export type HonoHandler<
 	input: ContractOutput<TContract>,
 	ctx: Context,
 	...contextParams: MutableContextParams<TContextParams>
-) => PossiblePromise<HonoContractTypedResponse<TContract>>;
+) => PossiblePromise<ServerHandlerOutput<TContract>>;
 
 /**
  * Maps HTTP methods to their Hono handler types for a contract map.
@@ -97,15 +71,14 @@ type HonoRouteHandlerNode<TNode, TContextParams extends HonoContextParams = []> 
 		: unknown);
 
 /**
- * Tree structure for Hono route handlers matching a route definition.
- * Provides type-safe handler structure for routes.
- * @template TRoutes - The route definition type
+ * Tree structure for Hono route handlers matching a contract definition.
+ * @template TContracts - The contract definition type
  * @template TContextParams - Additional parameters extracted from context
  */
 export type HonoRouteHandlerTree<
-	TRoutes,
+	TContracts,
 	TContextParams extends HonoContextParams = [],
-> = TRoutes extends {
+> = TContracts extends {
 	ROUTER: infer R extends Record<string, unknown>;
 }
 	? { ROUTER: { [K in keyof R]: HonoRouteHandlerNode<R[K], TContextParams> } }
@@ -113,7 +86,7 @@ export type HonoRouteHandlerTree<
 
 /**
  * Handler type for Hono middleware with contract type-safety.
- * Returns void to continue, or a response to short-circuit the request.
+ * Returns void to continue, a Response to passthrough, or MiddlewareReturn to short-circuit.
  * @template TResponses - Contract responses that middleware can return
  * @template TContextParams - Additional parameters extracted from context
  */
@@ -126,7 +99,7 @@ export type HonoMiddlewareHandler<
 			ctx: Context,
 			next: () => Promise<void>,
 			...contextParams: MutableContextParams<TContextParams>
-	  ) => PossiblePromise<void | HonoMiddlewareTypedResponse<TResponses>>);
+	  ) => PossiblePromise<void | Response | MiddlewareReturn<TResponses>>);
 
 type HonoMiddlewareHandlersMap<
 	TMap extends MiddlewareContractMap,
@@ -145,8 +118,8 @@ type HonoMiddlewareHandlerNode<TNode, TContextParams extends HonoContextParams> 
 		: unknown);
 
 /**
- * Tree structure for Hono middleware handlers matching a middleware definition.
- * @template TMiddleware - The middleware definition type
+ * Tree structure for Hono middleware handlers matching a middlewares definition.
+ * @template TMiddleware - The middlewares definition type
  * @template TContextParams - Additional parameters extracted from context
  */
 export type HonoMiddlewareHandlerTree<

@@ -3,14 +3,14 @@ import { Hono } from "hono";
 import z from "zod";
 import { createClient } from "~/client/client.js";
 import type { RouterShape } from "~/contract/contract.types.js";
-import { createRoutes } from "~/contract/routes.js";
+import { createContracts } from "~/contract/contracts.js";
 import { createHonoMiddlewareHandlers, initHono } from "~/hono/hono.js";
 import {
 	createGatewayOptions,
 	generateHonoGatewayRoutesAndMiddleware,
 	initHonoGateway,
 } from "~/hono_gateway/hono_gateway.js";
-import { createMiddleware } from "~/middleware/middleware.js";
+import { createMiddlewares } from "~/middleware/middleware.js";
 
 const shape = {
 	ROUTER: {
@@ -27,22 +27,22 @@ const shape = {
 
 const zItem = z.object({ id: z.string(), name: z.string() });
 
-const serviceRoutes = createRoutes(shape, {
+const serviceContracts = createContracts(shape, {
 	ROUTER: {
 		items: {
 			CONTRACT: {
 				get: {
 					responses: {
-						200: { contentType: "application/json", schema: z.array(zItem) },
+						200: { type: "JSON", schema: z.array(zItem) },
 					},
 				},
 				post: {
 					body: {
-						contentType: "application/json",
+						type: "JSON",
 						schema: z.object({ name: z.string() }),
 					},
 					responses: {
-						201: { contentType: "application/json", schema: zItem },
+						201: { type: "JSON", schema: zItem },
 					},
 				},
 			},
@@ -52,7 +52,7 @@ const serviceRoutes = createRoutes(shape, {
 						get: {
 							pathParams: z.object({ itemId: z.string() }),
 							responses: {
-								200: { contentType: "application/json", schema: zItem },
+								200: { type: "JSON", schema: zItem },
 							},
 						},
 					},
@@ -62,11 +62,11 @@ const serviceRoutes = createRoutes(shape, {
 	},
 });
 
-const serviceMiddleware = createMiddleware(serviceRoutes, {
+const serviceMiddleware = createMiddlewares(serviceContracts, {
 	MIDDLEWARE: {
 		auth: {
 			401: {
-				contentType: "application/json",
+				type: "JSON",
 				schema: z.object({ error: z.string() }),
 			},
 		},
@@ -82,19 +82,30 @@ beforeAll(() => {
 	const serviceApp = new Hono();
 	initHono(
 		serviceApp,
-		serviceRoutes,
+		serviceContracts,
 		{
 			ROUTER: {
 				items: {
 					HANDLER: {
-						get: (_input, ctx) => ctx.json([{ id: "1", name: "Item 1" }], 200),
-						post: (input, ctx) => ctx.json({ id: "new", name: input.body.name }, 201),
+						get: () => ({
+							type: "JSON" as const,
+							status: 200 as const,
+							data: [{ id: "1", name: "Item 1" }],
+						}),
+						post: (input) => ({
+							type: "JSON" as const,
+							status: 201 as const,
+							data: { id: "new", name: input.body.name },
+						}),
 					},
 					ROUTER: {
 						$itemId: {
 							HANDLER: {
-								get: (input, ctx) =>
-									ctx.json({ id: input.pathParams.itemId, name: "Found" }, 200),
+								get: (input) => ({
+									type: "JSON" as const,
+									status: 200 as const,
+									data: { id: input.pathParams.itemId, name: "Found" },
+								}),
 							},
 						},
 					},
@@ -117,12 +128,12 @@ beforeAll(() => {
 
 	const gateway = generateHonoGatewayRoutesAndMiddleware({
 		inventory: {
-			routes: serviceRoutes,
+			routes: serviceContracts,
 			middleware: serviceMiddleware,
 		},
 	});
 
-	const gatewayMiddleware = createMiddleware(gateway.routes, {
+	const gatewayMiddleware = createMiddlewares(gateway.routes, {
 		MIDDLEWARE: {
 			logging: {},
 		},
@@ -169,9 +180,9 @@ describe("Gateway", () => {
 	describe("generateHonoGatewayRoutesAndMiddleware", () => {
 		test("generates routes with service name prefix", () => {
 			const gateway = generateHonoGatewayRoutesAndMiddleware({
-				svc: { routes: serviceRoutes, middleware: serviceMiddleware },
+				svc: { routes: serviceContracts, middleware: serviceMiddleware },
 			});
-			expect(gateway.routes.ROUTER.svc).toBe(serviceRoutes);
+			expect(gateway.routes.ROUTER.svc).toBe(serviceContracts);
 			expect(gateway.middleware.ROUTER.svc).toBe(serviceMiddleware);
 		});
 	});
@@ -206,7 +217,7 @@ describe("Gateway", () => {
 	describe("gateway client", () => {
 		test("proxy-chain client works through gateway", async () => {
 			const gateway = generateHonoGatewayRoutesAndMiddleware({
-				inventory: { routes: serviceRoutes, middleware: serviceMiddleware },
+				inventory: { routes: serviceContracts, middleware: serviceMiddleware },
 			});
 			const client = createClient(gateway.routes, {
 				baseUrl: `http://localhost:${GATEWAY_PORT}`,
@@ -220,7 +231,7 @@ describe("Gateway", () => {
 
 		test("proxy-chain client with path params through gateway", async () => {
 			const gateway = generateHonoGatewayRoutesAndMiddleware({
-				inventory: { routes: serviceRoutes, middleware: serviceMiddleware },
+				inventory: { routes: serviceContracts, middleware: serviceMiddleware },
 			});
 			const client = createClient(gateway.routes, {
 				baseUrl: `http://localhost:${GATEWAY_PORT}`,

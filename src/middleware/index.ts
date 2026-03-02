@@ -1,2 +1,5 @@
-export { createMiddleware } from "~/middleware/middleware.js";
-export type { MiddlewareContractMap, MiddlewareDefinition } from "~/middleware/middleware.types.js";
+export { createMiddlewares } from "~/middleware/middleware.js";
+export type {
+	MiddlewareContractMap,
+	MiddlewaresDefinition,
+} from "~/middleware/middleware.types.js";

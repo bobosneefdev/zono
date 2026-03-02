@@ -30,12 +30,12 @@ type IncludeQuery<TContract extends Contract, TDir extends SchemaDir> = TContrac
 type IncludeHeaders<
 	TContract extends Contract,
 	TDir extends SchemaDir,
-> = TContract["headers"] extends z.ZodType
-	? { headers: SchemaForDir<TContract["headers"], TDir> }
+> = TContract["headers"] extends { schema: infer TSchema extends z.ZodType }
+	? { headers: SchemaForDir<TSchema, TDir> }
 	: object;
 
 /**
- * Input type for a contract - the shape of data expected by the server.
+ * Input type for a contract — the shape of data the client provides (z.input of each schema).
  * @template TContract - The contract to extract input type from
  */
 export type ContractInput<TContract extends Contract> = IncludePathParams<TContract, "input"> &
@@ -44,7 +44,8 @@ export type ContractInput<TContract extends Contract> = IncludePathParams<TContr
 	IncludeHeaders<TContract, "input">;
 
 /**
- * Output type for a contract - the shape of data returned by the server (after transformation).
+ * Output type for a contract — the shape the server handler receives after parsing/transforms
+ * (z.output of each schema).
  * @template TContract - The contract to extract output type from
  */
 export type ContractOutput<TContract extends Contract> = IncludePathParams<TContract, "output"> &

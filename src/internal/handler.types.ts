@@ -8,31 +8,28 @@ import type {
 	ContractResponseStatuses,
 	ContractResponses,
 } from "~/contract/contract.types.js";
-import type {
-	PossiblePromise,
-	ResponseBodyForStatus,
-	ResponseHeadersForStatus,
-	SchemaInput,
-} from "~/internal/util.types.js";
+import type { PossiblePromise, ResponseHeadersForStatus } from "~/internal/util.types.js";
 import type { MiddlewareContractMap } from "~/middleware/middleware.types.js";
 
 /**
- * Return type for typed middleware - always { status, contentType, body }.
- * Represents a middleware response that short-circuits the request.
+ * Return type for a typed middleware handler — either a short-circuit response object or void.
+ * Middleware may also return a plain Response to bypass type checking (for 3rd-party middleware).
  * @template TResponses - Contract responses that this middleware can return
  */
 export type MiddlewareReturn<TResponses extends ContractResponses> = {
 	[S in Extract<keyof TResponses, number>]: {
 		status: S;
-	} & (TResponses[S] extends { contentType: infer CT }
-		? TResponses[S] extends { schema: infer TSchema extends z.ZodType }
-			? { contentType: CT; body: SchemaInput<TSchema> }
-			: { contentType: CT; body?: undefined }
-		: { contentType?: undefined; body?: undefined });
+		type: TResponses[S]["type"];
+	} & (TResponses[S] extends { schema: infer TSchema extends z.ZodType }
+		? { data: z.input<TSchema> }
+		: { data?: undefined });
 }[Extract<keyof TResponses, number>];
 
 /**
- * Typed middleware handler - returns void to continue, or response to short-circuit.
+ * Typed middleware handler. Returns:
+ * - void to continue to next middleware / route handler
+ * - Response to short-circuit with a raw Response (no schema validation)
+ * - MiddlewareReturn to short-circuit with a type-safe response object
  * @template TResponses - Contract responses that this middleware can return
  * @template TContext - Context type passed to the handler
  */
@@ -41,7 +38,7 @@ export type TypedMiddlewareHandler<TResponses extends ContractResponses, TContex
 	| ((
 			ctx: TContext,
 			next: () => Promise<void>,
-	  ) => PossiblePromise<void | MiddlewareReturn<TResponses>>);
+	  ) => PossiblePromise<void | Response | MiddlewareReturn<TResponses>>);
 
 /**
  * Maps middleware names to typed handlers (or null for external middleware).
@@ -52,40 +49,21 @@ export type TypedMiddlewareHandlers<TMiddlewareMap extends MiddlewareContractMap
 	[K in keyof TMiddlewareMap]: TypedMiddlewareHandler<TMiddlewareMap[K], TContext> | null;
 };
 
-type ResponseContentTypeForStatus<
-	TContract extends Contract,
-	TStatus extends ContractResponseStatuses<TContract>,
-> = TContract["responses"][TStatus]["contentType"];
-
-type IncludeOutputBody<
-	TContract extends Contract,
-	TStatus extends ContractResponseStatuses<TContract>,
-> = ResponseContentTypeForStatus<TContract, TStatus> extends null
-	? { body?: undefined }
-	: { body: ResponseBodyForStatus<TContract, TStatus> };
-
-type IncludeOutputContentType<
-	TContract extends Contract,
-	TStatus extends ContractResponseStatuses<TContract>,
-> = { contentType: ResponseContentTypeForStatus<TContract, TStatus> };
-
-type IncludeOutputHeaders<
-	TContract extends Contract,
-	TStatus extends ContractResponseStatuses<TContract>,
-> = ResponseHeadersForStatus<TContract, TStatus> extends undefined
-	? { headers?: undefined }
-	: { headers: ResponseHeadersForStatus<TContract, TStatus> };
-
 /**
- * Output type for a server handler - the shape of data returned by handlers.
+ * Output type for a server handler — the shape of the plain object returned by handlers.
+ * Uses z.input<responseSchema> for data (wire-safe value the server sends).
  * @template TContract - The contract defining valid responses
  */
 export type ServerHandlerOutput<TContract extends Contract> = {
 	[TStatus in ContractResponseStatuses<TContract>]: {
 		status: TStatus;
-	} & IncludeOutputContentType<TContract, TStatus> &
-		IncludeOutputBody<TContract, TStatus> &
-		IncludeOutputHeaders<TContract, TStatus>;
+		type: TContract["responses"][TStatus]["type"];
+	} & (TContract["responses"][TStatus] extends { schema: infer TSchema extends z.ZodType }
+		? { data: z.input<TSchema> }
+		: { data?: undefined }) &
+		(ResponseHeadersForStatus<TContract, TStatus> extends undefined
+			? { headers?: undefined }
+			: { headers: ResponseHeadersForStatus<TContract, TStatus> });
 }[ContractResponseStatuses<TContract>];
 
 /**
@@ -100,9 +78,6 @@ export type ServerHandler<TContract extends Contract, TParams extends Array<unkn
 
 /**
  * Handler type for a specific HTTP method in a contract map.
- * @template TContract - The contract method map
- * @template TParams - Additional parameters passed to the handler
- * @template TMethod - The specific HTTP method
  */
 export type ServerHandlerGivenMethod<
 	TContract extends ContractMethodMap,
@@ -112,8 +87,6 @@ export type ServerHandlerGivenMethod<
 
 /**
  * Maps HTTP methods to their handler types for a contract map.
- * @template TContractMap - The contract method map
- * @template TParams - Additional parameters passed to handlers
  */
 export type ServerHandlerMethodMap<
 	TContractMap extends ContractMethodMap,

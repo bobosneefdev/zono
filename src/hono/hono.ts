@@ -1,4 +1,5 @@
 import type { Context, Hono } from "hono";
+import superjson from "superjson";
 import type { ErrorMode } from "~/contract/contract.error.js";
 import type { Contract, ContractMethod, ContractMethodMap } from "~/contract/contract.types.js";
 import type {
@@ -17,7 +18,6 @@ import {
 } from "~/hono/hono.util.js";
 import { resolveRequestBody } from "~/internal/body.util.js";
 import { parseContractFields } from "~/internal/parse.js";
-import { createSafeContext } from "~/internal/safe_context.js";
 import {
 	buildInternalErrorResponse,
 	buildNotFoundErrorResponse,
@@ -30,17 +30,75 @@ import {
 	isRecord,
 	isRouterNode,
 } from "~/internal/util.js";
-import { MiddlewareDefinition } from "~/middleware/index.js";
+import type { MiddlewaresDefinition } from "~/middleware/index.js";
 
-async function parseRequestBody(context: Context): Promise<unknown> {
-	const contentType = context.req.header("content-type") ?? "";
-	return resolveRequestBody(
-		contentType,
-		() => context.req.json(),
-		() => context.req.text(),
-		() => context.req.arrayBuffer().then((buf) => new Uint8Array(buf)),
-		() => context.req.formData(),
-	);
+/**
+ * Builds an HTTP Response from a handler output object { type, status, data?, headers? }.
+ * Response headers from the contract definition are applied when present.
+ */
+function buildResponseFromOutput(
+	output: { type: string; status: number; data?: unknown; headers?: unknown },
+	contract: Contract,
+): Response {
+	const responseHeaders: Record<string, string> = {};
+
+	if (output.headers) {
+		const responseDef = contract.responses[output.status];
+		if (responseDef?.headers) {
+			if (responseDef.headers.type === "SuperJSON") {
+				responseHeaders["x-zono-superjson-headers"] = superjson.stringify(output.headers);
+			} else {
+				for (const [k, v] of Object.entries(output.headers as Record<string, string>)) {
+					if (typeof v === "string") responseHeaders[k] = v;
+				}
+			}
+		}
+	}
+
+	switch (output.type) {
+		case "JSON":
+			return new Response(JSON.stringify(output.data), {
+				status: output.status,
+				headers: { "content-type": "application/json", ...responseHeaders },
+			});
+		case "SuperJSON":
+			return new Response(JSON.stringify(superjson.serialize(output.data)), {
+				status: output.status,
+				headers: { "content-type": "application/json", ...responseHeaders },
+			});
+		case "Text":
+			return new Response(String(output.data), {
+				status: output.status,
+				headers: { "content-type": "text/plain", ...responseHeaders },
+			});
+		case "Blob":
+			return new Response(output.data as Blob, {
+				status: output.status,
+				headers: responseHeaders,
+			});
+		case "ArrayBuffer":
+			return new Response(output.data as ArrayBuffer, {
+				status: output.status,
+				headers: responseHeaders,
+			});
+		case "FormData":
+			return new Response(output.data as FormData, {
+				status: output.status,
+				headers: responseHeaders,
+			});
+		case "ReadableStream":
+			return new Response(output.data as ReadableStream, {
+				status: output.status,
+				headers: responseHeaders,
+			});
+		case "Void":
+			return new Response(null, {
+				status: output.status,
+				headers: responseHeaders,
+			});
+		default:
+			throw new Error(`Unknown response type: ${output.type}`);
+	}
 }
 
 type ResolvedHonoOptions = {
@@ -126,17 +184,17 @@ function collectRoutes(
 						additionalParams: ReadonlyArray<unknown>,
 						options: ResolvedHonoOptions,
 					) => {
+						const rawBody = contract.body
+							? await resolveRequestBody(contract.body, context.req.raw)
+							: undefined;
+
 						const rawInput = {
 							pathParams: context.req.param(),
 							query: context.req.query(),
 							headers: Object.fromEntries(context.req.raw.headers.entries()),
-							body: contract.body ? await parseRequestBody(context) : undefined,
+							body: rawBody,
 						};
-						const parseResult = await parseContractFields(
-							contract,
-							rawInput,
-							"transformed",
-						);
+						const parseResult = await parseContractFields(contract, rawInput, "server");
 						if (!parseResult.success) {
 							return buildValidationErrorResponse(
 								parseResult.issues,
@@ -147,15 +205,18 @@ function collectRoutes(
 							input: unknown,
 							ctx: Context,
 							...params: ReadonlyArray<unknown>
-						) => Promise<Response>;
-						// Wrap context with safe methods for response validation
-						const safeContext = createSafeContext(context, contract);
+						) => Promise<{
+							type: string;
+							status: number;
+							data?: unknown;
+							headers?: unknown;
+						}>;
 						const result = await handlerFn(
 							parseResult.data,
-							safeContext,
+							context,
 							...additionalParams,
 						);
-						return result;
+						return buildResponseFromOutput(result, contract);
 					},
 				});
 			}
@@ -183,27 +244,17 @@ function collectRoutes(
 
 /**
  * Creates type-safe route handlers for use with createHono.
- * Validates that handlers match the route definition structure.
- * @param _routes - Route definition (used for type inference only)
- * @param _options - Hono options (used for type inference only)
- * @param handlers - The route handler implementations
- * @returns The handlers with type validation
  */
-export function createHonoRouteHandlers<TRoutes, TContextParams extends HonoContextParams = []>(
-	_routes: TRoutes,
+export function createHonoRouteHandlers<TContracts, TContextParams extends HonoContextParams = []>(
+	_contracts: TContracts,
 	_options: HonoOptions<TContextParams>,
-	handlers: HonoRouteHandlerTree<TRoutes, TContextParams>,
-): HonoRouteHandlerTree<TRoutes, TContextParams> {
+	handlers: HonoRouteHandlerTree<TContracts, TContextParams>,
+): HonoRouteHandlerTree<TContracts, TContextParams> {
 	return handlers;
 }
 
 /**
  * Creates type-safe middleware handlers for use with createHono.
- * Validates that handlers match the middleware definition structure.
- * @param _middleware - Middleware definition (used for type inference only)
- * @param _options - Hono options (used for type inference only)
- * @param handlers - The middleware handler implementations
- * @returns The handlers with type validation
  */
 export function createHonoMiddlewareHandlers<
 	TMiddleware,
@@ -218,8 +269,6 @@ export function createHonoMiddlewareHandlers<
 
 /**
  * Creates Hono options with proper type inference for context parameters.
- * @param options - Configuration options for the Hono server
- * @returns The options with type validation
  */
 export function createHonoOptions<TContextParams extends HonoContextParams = []>(
 	options: HonoOptions<TContextParams>,
@@ -228,23 +277,23 @@ export function createHonoOptions<TContextParams extends HonoContextParams = []>
 }
 
 /**
- * Initializes a Hono server from route and middleware definitions.
+ * Initializes a Hono server from contract and middlewares definitions.
  * @param app - Hono app instance
- * @param routes - Route definition from createRoutes()
+ * @param contracts - Contract definition from createContracts()
  * @param routeHandlers - Route handlers from createHonoRouteHandlers()
- * @param middleware - Optional middleware definition
+ * @param middleware - Optional middlewares definition
  * @param middlewareHandlers - Optional middleware handlers
  * @param options - Optional server configuration
  * @returns The configured Hono app
  */
 export function initHono<
-	TRoutes,
-	TMiddleware extends MiddlewareDefinition<TRoutes> = MiddlewareDefinition<TRoutes>,
+	TContracts,
+	TMiddleware extends MiddlewaresDefinition<TContracts> = MiddlewaresDefinition<TContracts>,
 	TContextParams extends HonoContextParams = [],
 >(
 	app: Hono,
-	routes: TRoutes,
-	routeHandlers: HonoRouteHandlerTree<TRoutes, TContextParams>,
+	contracts: TContracts,
+	routeHandlers: HonoRouteHandlerTree<TContracts, TContextParams>,
 	middleware?: TMiddleware,
 	middlewareHandlers?: HonoMiddlewareHandlerTree<TMiddleware, TContextParams>,
 	options?: HonoOptions<TContextParams>,
@@ -259,7 +308,7 @@ export function initHono<
 	app.onError(() => buildInternalErrorResponse());
 
 	const registrations = collectRoutes(
-		routes as Record<string, unknown>,
+		contracts as Record<string, unknown>,
 		routeHandlers as Record<string, unknown>,
 		middleware as Record<string, unknown> | undefined,
 		middlewareHandlers as Record<string, unknown> | undefined,

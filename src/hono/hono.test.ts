@@ -3,9 +3,9 @@ import type { Context } from "hono";
 import { Hono } from "hono";
 import z from "zod";
 import type { RouterShape } from "~/contract/contract.types.js";
-import { createRoutes } from "~/contract/routes.js";
+import { createContracts } from "~/contract/contracts.js";
 import { createHonoMiddlewareHandlers, createHonoOptions, initHono } from "~/hono/hono.js";
-import { createMiddleware } from "~/middleware/middleware.js";
+import { createMiddlewares } from "~/middleware/middleware.js";
 
 const shape = {
 	ROUTER: {
@@ -34,7 +34,7 @@ const zUser = z.object({
 	email: z.string(),
 });
 
-const routes = createRoutes(shape, {
+const contracts = createContracts(shape, {
 	ROUTER: {
 		users: {
 			ROUTER: {
@@ -42,7 +42,7 @@ const routes = createRoutes(shape, {
 					CONTRACT: {
 						post: {
 							body: {
-								contentType: "application/json",
+								type: "JSON",
 								schema: z.object({
 									name: z.string(),
 									email: z.string(),
@@ -50,7 +50,7 @@ const routes = createRoutes(shape, {
 							},
 							responses: {
 								201: {
-									contentType: "application/json",
+									type: "JSON",
 									schema: zUser,
 								},
 							},
@@ -63,7 +63,7 @@ const routes = createRoutes(shape, {
 							pathParams: z.object({ userId: z.string() }),
 							responses: {
 								200: {
-									contentType: "application/json",
+									type: "JSON",
 									schema: zUser,
 								},
 							},
@@ -77,7 +77,7 @@ const routes = createRoutes(shape, {
 				get: {
 					responses: {
 						200: {
-							contentType: "application/json",
+							type: "JSON",
 							schema: z.object({ status: z.string() }),
 						},
 					},
@@ -88,7 +88,7 @@ const routes = createRoutes(shape, {
 			CONTRACT: {
 				post: {
 					body: {
-						contentType: "application/json",
+						type: "JSON",
 						schema: z
 							.object({ name: z.string() })
 							.transform(async (input) => ({ name: input.name.trim() }))
@@ -96,7 +96,7 @@ const routes = createRoutes(shape, {
 					},
 					responses: {
 						200: {
-							contentType: "application/json",
+							type: "JSON",
 							schema: z
 								.object({ message: z.string() })
 								.transform(async (body) => ({ message: `${body.message}!` })),
@@ -108,11 +108,11 @@ const routes = createRoutes(shape, {
 	},
 });
 
-const middleware = createMiddleware(routes, {
+const middleware = createMiddlewares(contracts, {
 	MIDDLEWARE: {
 		rateLimit: {
 			429: {
-				contentType: "application/json",
+				type: "JSON",
 				schema: z.object({ retryAfter: z.number() }),
 			},
 		},
@@ -124,7 +124,7 @@ const middleware = createMiddleware(routes, {
 					MIDDLEWARE: {
 						antiBot: {
 							403: {
-								contentType: "application/json",
+								type: "JSON",
 								schema: z.object({ error: z.string() }),
 							},
 						},
@@ -139,10 +139,12 @@ const middlewareOptions = createHonoOptions({ errorMode: "public" });
 
 createHonoMiddlewareHandlers(middleware, middlewareOptions, {
 	MIDDLEWARE: {
-		// @ts-expect-error rateLimit 429 must match declared JSON schema
-		rateLimit: async (ctx, _next) => {
-			return ctx.text("blocked", 429);
-		},
+		// @ts-expect-error rateLimit 429 data must match declared schema ({ retryAfter: number })
+		rateLimit: async () => ({
+			type: "JSON" as const,
+			status: 429 as const,
+			data: "wrong type",
+		}),
 	},
 });
 
@@ -151,46 +153,51 @@ function createTestApp() {
 
 	initHono(
 		app,
-		routes,
+		contracts,
 		{
 			ROUTER: {
 				users: {
 					ROUTER: {
 						register: {
 							HANDLER: {
-								post: (input, ctx) =>
-									ctx.json(
-										{
-											id: "test-id",
-											...input.body,
-										},
-										201,
-									),
+								post: (input) => ({
+									type: "JSON" as const,
+									status: 201 as const,
+									data: { id: "test-id", ...input.body },
+								}),
 							},
 						},
 						$userId: {
 							HANDLER: {
-								get: (input, ctx) =>
-									ctx.json(
-										{
-											id: input.pathParams.userId,
-											name: "Test User",
-											email: "test@example.com",
-										},
-										200,
-									),
+								get: (input) => ({
+									type: "JSON" as const,
+									status: 200 as const,
+									data: {
+										id: input.pathParams.userId,
+										name: "Test User",
+										email: "test@example.com",
+									},
+								}),
 							},
 						},
 					},
 				},
 				health: {
 					HANDLER: {
-						get: (_input, ctx) => ctx.json({ status: "ok" }, 200),
+						get: () => ({
+							type: "JSON" as const,
+							status: 200 as const,
+							data: { status: "ok" },
+						}),
 					},
 				},
 				transforms: {
 					HANDLER: {
-						post: (input, ctx) => ctx.json({ message: input.body.normalized }, 200),
+						post: (input) => ({
+							type: "JSON" as const,
+							status: 200 as const,
+							data: { message: input.body.normalized },
+						}),
 					},
 				},
 			},
@@ -233,7 +240,7 @@ describe("createHono", () => {
 		expect(body).toEqual({ status: "ok" });
 	});
 
-	test("applies transformed handler input while keeping server response validation HTTP-safe", async () => {
+	test("applies server-side transforms to handler input, sends untransformed response", async () => {
 		const app = createTestApp();
 		const res = await app.request("/transforms", {
 			method: "POST",
@@ -295,15 +302,18 @@ describe("createHono", () => {
 		const app = new Hono();
 		initHono(
 			app,
-			routes,
+			contracts,
 			{
 				ROUTER: {
 					users: {
 						ROUTER: {
 							register: {
 								HANDLER: {
-									post: (_input, ctx) =>
-										ctx.json({ id: "x", name: "n", email: "e@e.com" }, 201),
+									post: () => ({
+										type: "JSON" as const,
+										status: 201 as const,
+										data: { id: "x", name: "n", email: "e@e.com" },
+									}),
 								},
 							},
 							$userId: {
@@ -317,12 +327,20 @@ describe("createHono", () => {
 					},
 					health: {
 						HANDLER: {
-							get: (_input, ctx) => ctx.json({ status: "ok" }, 200),
+							get: () => ({
+								type: "JSON" as const,
+								status: 200 as const,
+								data: { status: "ok" },
+							}),
 						},
 					},
 					transforms: {
 						HANDLER: {
-							post: (_input, ctx) => ctx.json({ message: "x" }, 200),
+							post: () => ({
+								type: "JSON" as const,
+								status: 200 as const,
+								data: { message: "x" },
+							}),
 						},
 					},
 				},
@@ -373,39 +391,51 @@ describe("createHono", () => {
 		const app = new Hono();
 		initHono(
 			app,
-			routes,
+			contracts,
 			{
 				ROUTER: {
 					users: {
 						ROUTER: {
 							register: {
 								HANDLER: {
-									post: (input, ctx) => ctx.json({ id: "x", ...input.body }, 201),
+									post: (input) => ({
+										type: "JSON" as const,
+										status: 201 as const,
+										data: { id: "x", ...input.body },
+									}),
 								},
 							},
 							$userId: {
 								HANDLER: {
-									get: (input, ctx) =>
-										ctx.json(
-											{
-												id: input.pathParams.userId,
-												name: "User",
-												email: "u@e.com",
-											},
-											200,
-										),
+									get: (input) => ({
+										type: "JSON" as const,
+										status: 200 as const,
+										data: {
+											id: input.pathParams.userId,
+											name: "User",
+											email: "u@e.com",
+										},
+									}),
 								},
 							},
 						},
 					},
 					health: {
 						HANDLER: {
-							get: (_input, ctx) => ctx.json({ status: "ok" }, 200),
+							get: () => ({
+								type: "JSON" as const,
+								status: 200 as const,
+								data: { status: "ok" },
+							}),
 						},
 					},
 					transforms: {
 						HANDLER: {
-							post: (_input, ctx) => ctx.json({ message: "x" }, 200),
+							post: () => ({
+								type: "JSON" as const,
+								status: 200 as const,
+								data: { message: "x" },
+							}),
 						},
 					},
 				},
@@ -413,7 +443,11 @@ describe("createHono", () => {
 			middleware,
 			{
 				MIDDLEWARE: {
-					rateLimit: async (ctx) => ctx.json({ retryAfter: 60 }, 429),
+					rateLimit: async () => ({
+						type: "JSON" as const,
+						status: 429 as const,
+						data: { retryAfter: 60 },
+					}),
 				},
 				ROUTER: {
 					users: {
@@ -444,34 +478,47 @@ describe("createHono", () => {
 		const app = new Hono();
 		initHono(
 			app,
-			routes,
+			contracts,
 			{
 				ROUTER: {
 					users: {
 						ROUTER: {
 							register: {
 								HANDLER: {
-									post: (_input, ctx) =>
-										ctx.json({ id: "x", name: "n", email: "e@e.com" }, 201),
+									post: () => ({
+										type: "JSON" as const,
+										status: 201 as const,
+										data: { id: "x", name: "n", email: "e@e.com" },
+									}),
 								},
 							},
 							$userId: {
 								HANDLER: {
-									get: (_input, ctx) =>
-										ctx.json({ id: "x", name: "n", email: "e@e.com" }, 200),
+									get: () => ({
+										type: "JSON" as const,
+										status: 200 as const,
+										data: { id: "x", name: "n", email: "e@e.com" },
+									}),
 								},
 							},
 						},
 					},
 					health: {
 						HANDLER: {
-							get: (_input, ctx: Context, authValue) =>
-								ctx.json({ status: authValue ?? "no-auth" }, 200),
+							get: (_input, _ctx: Context, authValue) => ({
+								type: "JSON" as const,
+								status: 200 as const,
+								data: { status: authValue ?? "no-auth" },
+							}),
 						},
 					},
 					transforms: {
 						HANDLER: {
-							post: (_input, ctx) => ctx.json({ message: "x" }, 200),
+							post: () => ({
+								type: "JSON" as const,
+								status: 200 as const,
+								data: { message: "x" },
+							}),
 						},
 					},
 				},
@@ -502,34 +549,47 @@ describe("createHono", () => {
 		const app = new Hono();
 		initHono(
 			app,
-			routes,
+			contracts,
 			{
 				ROUTER: {
 					users: {
 						ROUTER: {
 							register: {
 								HANDLER: {
-									post: (_input, ctx) =>
-										ctx.json({ id: "x", name: "n", email: "e@e.com" }, 201),
+									post: () => ({
+										type: "JSON" as const,
+										status: 201 as const,
+										data: { id: "x", name: "n", email: "e@e.com" },
+									}),
 								},
 							},
 							$userId: {
 								HANDLER: {
-									get: (_input, ctx) =>
-										ctx.json({ id: "x", name: "n", email: "e@e.com" }, 200),
+									get: () => ({
+										type: "JSON" as const,
+										status: 200 as const,
+										data: { id: "x", name: "n", email: "e@e.com" },
+									}),
 								},
 							},
 						},
 					},
 					health: {
 						HANDLER: {
-							get: (_input, ctx: Context, resolved) =>
-								ctx.json({ status: resolved }, 200),
+							get: (_input, _ctx: Context, resolved) => ({
+								type: "JSON" as const,
+								status: 200 as const,
+								data: { status: resolved },
+							}),
 						},
 					},
 					transforms: {
 						HANDLER: {
-							post: (_input, ctx) => ctx.json({ message: "x" }, 200),
+							post: () => ({
+								type: "JSON" as const,
+								status: 200 as const,
+								data: { message: "x" },
+							}),
 						},
 					},
 				},

@@ -1,63 +1,73 @@
-import type z from "zod";
-import { parseSchemaForChannel } from "~/internal/schema_channels.js";
-import { BYTES_CONTENT_TYPES, JSON_CONTENT_TYPES, TEXT_CONTENT_TYPES } from "~/internal/util.js";
+import type { SuperJSONResult } from "superjson";
+import superjson from "superjson";
+import type { ContractBody, ContractResponse } from "~/contract/contract.types.js";
 
+/**
+ * Parses the raw HTTP request body based on the contract body type.
+ * For SuperJSON, deserializes the superjson envelope to recover the original value.
+ */
 export async function resolveRequestBody(
-	contentType: string,
-	jsonParser: () => Promise<unknown>,
-	textParser: () => Promise<unknown>,
-	bytesParser: () => Promise<unknown>,
-	formDataParser: () => Promise<unknown>,
+	contractBody: ContractBody,
+	req: Request,
 ): Promise<unknown> {
-	const normalized = contentType.toLowerCase();
-	for (const ct of JSON_CONTENT_TYPES) {
-		if (normalized.includes(ct)) return jsonParser();
+	switch (contractBody.type) {
+		case "JSON":
+			return req.json();
+		case "SuperJSON": {
+			const raw = (await req.json()) as SuperJSONResult;
+			return superjson.deserialize(raw);
+		}
+		case "String":
+			return req.text();
+		case "URLSearchParams":
+			return new URLSearchParams(await req.text());
+		case "FormData":
+			return req.formData();
+		case "Blob":
+			return req.blob();
+		case "Uint8Array":
+			return req.arrayBuffer().then((buf) => new Uint8Array(buf));
 	}
-	for (const ct of TEXT_CONTENT_TYPES) {
-		if (normalized.includes(ct)) return textParser();
-	}
-	for (const ct of BYTES_CONTENT_TYPES) {
-		if (normalized.includes(ct)) return bytesParser();
-	}
-	return formDataParser();
 }
 
-export async function encodeResponseBody(
-	contentType: string | null,
-	body: unknown,
-	schema?: z.ZodType,
-): Promise<BodyInit | null> {
-	if (contentType === null) return null;
-	if (!schema) return null;
-	const parsedBody = await parseSchemaForChannel(schema, body, "http-safe");
-	if (JSON_CONTENT_TYPES.has(contentType)) {
-		return JSON.stringify(parsedBody);
-	}
-	if (TEXT_CONTENT_TYPES.has(contentType)) {
-		return String(parsedBody);
-	}
-	if (BYTES_CONTENT_TYPES.has(contentType)) {
-		return parsedBody as BodyInit;
-	}
-	return null;
-}
-
+/**
+ * Parses the HTTP response body on the client side.
+ * For SuperJSON, deserializes then runs the schema (for transforms).
+ * For all other types, runs the schema directly on the parsed raw value.
+ */
 export async function parseResponseBody(
-	contentType: string | null,
+	contractResponse: ContractResponse,
 	response: Response,
-	schema?: z.ZodType,
 ): Promise<unknown> {
-	if (contentType === null) return undefined;
-	if (!schema) return undefined;
-	let rawBody: unknown;
-	if (JSON_CONTENT_TYPES.has(contentType)) {
-		rawBody = await response.clone().json();
-	} else if (TEXT_CONTENT_TYPES.has(contentType)) {
-		rawBody = await response.clone().text();
-	} else if (BYTES_CONTENT_TYPES.has(contentType)) {
-		rawBody = await response.clone().bytes();
-	} else {
-		return undefined;
+	switch (contractResponse.type) {
+		case "JSON": {
+			const rawBody = await response.clone().json();
+			return contractResponse.schema.parseAsync(rawBody);
+		}
+		case "SuperJSON": {
+			const serialized = (await response.clone().json()) as SuperJSONResult;
+			const rawBody = superjson.deserialize(serialized);
+			return contractResponse.schema.parseAsync(rawBody);
+		}
+		case "Text": {
+			const rawBody = await response.clone().text();
+			return contractResponse.schema.parseAsync(rawBody);
+		}
+		case "Blob": {
+			const rawBody = await response.clone().blob();
+			return contractResponse.schema.parseAsync(rawBody);
+		}
+		case "ArrayBuffer": {
+			const rawBody = await response.clone().arrayBuffer();
+			return contractResponse.schema.parseAsync(rawBody);
+		}
+		case "FormData": {
+			const rawBody = await response.clone().formData();
+			return contractResponse.schema.parseAsync(rawBody);
+		}
+		case "ReadableStream":
+			return contractResponse.schema.parseAsync(response.body);
+		case "Void":
+			return undefined;
 	}
-	return parseSchemaForChannel(schema, rawBody, "transformed");
 }

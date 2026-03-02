@@ -1,15 +1,14 @@
-import type { MiddlewareDefinition } from "~/middleware/middleware.types.js";
+import type { MiddlewaresDefinition } from "~/middleware/middleware.types.js";
 
 /**
- * Creates a type-safe middleware definition matching a route definition.
- * Validates that middleware structure matches the route structure.
- * @param _routes - Route definition (used for type inference only)
- * @param definition - Middleware definition with response contracts
- * @returns The middleware definition with type validation
+ * Creates a type-safe middlewares definition matching a contract definition.
+ * @param _contracts - Contract definition (used for type inference only)
+ * @param definition - Middlewares definition with response contracts
+ * @returns The middlewares definition with type validation
  */
-export function createMiddleware<const TRoutes, const TDef extends MiddlewareDefinition<TRoutes>>(
-	_routes: TRoutes,
-	definition: TDef,
-): TDef {
+export function createMiddlewares<
+	const TContracts,
+	const TDef extends MiddlewaresDefinition<TContracts>,
+>(_contracts: TContracts, definition: TDef): TDef {
 	return definition;
 }

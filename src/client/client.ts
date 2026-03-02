@@ -1,15 +1,9 @@
+import superjson from "superjson";
 import type { ErrorMode } from "~/contract/contract.error.js";
 import type { Contract, ContractQuery, ContractResponses } from "~/contract/contract.types.js";
 import { parseResponseBody } from "~/internal/body.util.js";
 import { parseContractFields } from "~/internal/parse.js";
-import { parseSchemaForChannel } from "~/internal/schema_channels.js";
-import {
-	BYTES_CONTENT_TYPES,
-	CONTRACT_METHOD_ORDER,
-	isRecord,
-	JSON_CONTENT_TYPES,
-	TEXT_CONTENT_TYPES,
-} from "~/internal/util.js";
+import { CONTRACT_METHOD_ORDER, isRecord } from "~/internal/util.js";
 import type {
 	ClientOptions,
 	ClientOptionsDefaultHeaderValue,
@@ -114,14 +108,10 @@ function buildQueryStringStandard(
 
 function buildQueryString(queryContract: ContractQuery | undefined, query: unknown): string {
 	if (!queryContract || query === undefined) return "";
-	if (queryContract.type === "json") {
-		return `?${new URLSearchParams({ json: JSON.stringify(query) }).toString()}`;
+	if (queryContract.type === "SuperJSON") {
+		return `?${new URLSearchParams({ superjson: superjson.stringify(query) }).toString()}`;
 	}
 	return buildQueryStringStandard(query as Record<string, string | Array<string> | undefined>);
-}
-
-function isFormDataBody(value: unknown): value is FormData {
-	return typeof FormData !== "undefined" && value instanceof FormData;
 }
 
 async function resolveHeaderValue(value: ClientOptionsDefaultHeaderValue): Promise<string> {
@@ -164,36 +154,37 @@ async function parseIncomingResponse(
 		throw new Error(`Unexpected response status: ${response.status}`);
 	}
 
-	const body = await parseResponseBody(
-		statusDefinition.contentType,
-		response,
-		statusDefinition.schema,
-	);
+	const body = await parseResponseBody(statusDefinition, response);
 
 	let headers: unknown;
 	if (statusDefinition.headers) {
-		const rawHeaders = Object.fromEntries(response.headers.entries());
-		headers = await parseSchemaForChannel(statusDefinition.headers, rawHeaders, "transformed");
+		if (statusDefinition.headers.type === "SuperJSON") {
+			const encoded = response.headers.get("x-zono-superjson-headers");
+			headers = encoded ? superjson.parse(encoded) : undefined;
+		} else {
+			const rawHeaders = Object.fromEntries(response.headers.entries());
+			headers = await statusDefinition.headers.schema.parseAsync(rawHeaders);
+		}
 	}
 
 	return { status: response.status, body, headers, response };
 }
 
 /**
- * Creates a type-safe HTTP client from route definitions.
+ * Creates a type-safe HTTP client from contract definitions.
  * Provides autocomplete for routes, methods, and validates request/response types.
- * @param routes - Route definition from createRoutes()
+ * @param contracts - Contract definition from createContracts()
  * @param options - Client configuration options
  * @returns Type-safe client proxy for making HTTP requests
  */
 export function createClient<
-	const TRoutes,
+	const TContracts,
 	const TMiddlewares extends ReadonlyArray<unknown> = [],
 	TErrorMode extends ErrorMode | undefined = undefined,
 >(
-	routes: TRoutes,
+	contracts: TContracts,
 	options: ClientOptions<TMiddlewares, TErrorMode>,
-): ClientProxy<TRoutes, TMiddlewares, TErrorMode> {
+): ClientProxy<TContracts, TMiddlewares, TErrorMode> {
 	const middlewares = (options.middleware ?? []) as ReadonlyArray<unknown>;
 
 	async function executeRequest(
@@ -201,7 +192,7 @@ export function createClient<
 		method: string,
 		input: Record<string, unknown>,
 	): Promise<unknown> {
-		const contract = resolveContract(routes, pathSegments, method);
+		const contract = resolveContract(contracts, pathSegments, method);
 
 		const rawInput = {
 			pathParams: input.pathParams,
@@ -209,7 +200,7 @@ export function createClient<
 			query: input.query,
 			headers: input.headers,
 		};
-		const parseResult = await parseContractFields(contract, rawInput, "http-safe");
+		const parseResult = await parseContractFields(contract, rawInput, "client");
 		if (!parseResult.success) {
 			const message = parseResult.issues.map((i) => i.message).join("; ");
 			throw new Error(`Contract validation failed: ${message}`);
@@ -217,18 +208,23 @@ export function createClient<
 		const parsed = parseResult.data as unknown as Record<string, unknown>;
 
 		const resolvedHeaders = await resolveDefaultHeaders(options.defaultHeaders);
+
+		// Apply typed headers to request headers
 		if (parsed.headers && typeof parsed.headers === "object") {
-			for (const [headerKey, headerValue] of Object.entries(
-				parsed.headers as Record<string, unknown>,
-			)) {
-				if (typeof headerValue === "string") {
-					resolvedHeaders.set(headerKey, headerValue);
+			if (contract.headers?.type === "SuperJSON") {
+				resolvedHeaders.set(
+					"x-zono-superjson-headers",
+					superjson.stringify(parsed.headers),
+				);
+			} else {
+				for (const [headerKey, headerValue] of Object.entries(
+					parsed.headers as Record<string, unknown>,
+				)) {
+					if (typeof headerValue === "string") {
+						resolvedHeaders.set(headerKey, headerValue);
+					}
 				}
 			}
-		}
-		const bodyContentType = contract.body?.contentType ?? null;
-		if (parsed.body !== undefined && !resolvedHeaders.has("content-type") && bodyContentType) {
-			resolvedHeaders.set("content-type", bodyContentType);
 		}
 
 		const fullPath = buildPathWithParams(
@@ -244,15 +240,40 @@ export function createClient<
 			method: method.toUpperCase(),
 			headers: resolvedHeaders,
 		};
-		if (parsed.body !== undefined) {
-			if (isFormDataBody(parsed.body)) {
-				init.body = parsed.body;
-			} else if (bodyContentType && TEXT_CONTENT_TYPES.has(bodyContentType)) {
-				init.body = String(parsed.body);
-			} else if (bodyContentType && BYTES_CONTENT_TYPES.has(bodyContentType)) {
-				init.body = parsed.body as BodyInit;
-			} else if (bodyContentType && JSON_CONTENT_TYPES.has(bodyContentType)) {
-				init.body = JSON.stringify(parsed.body);
+
+		// Encode request body based on contract body type
+		if (contract.body && parsed.body !== undefined) {
+			switch (contract.body.type) {
+				case "JSON":
+					init.body = JSON.stringify(parsed.body);
+					if (!resolvedHeaders.has("content-type")) {
+						resolvedHeaders.set("content-type", "application/json");
+					}
+					break;
+				case "SuperJSON":
+					init.body = JSON.stringify(superjson.serialize(parsed.body));
+					if (!resolvedHeaders.has("content-type")) {
+						resolvedHeaders.set("content-type", "application/json");
+					}
+					break;
+				case "String":
+					init.body = String(parsed.body);
+					if (!resolvedHeaders.has("content-type")) {
+						resolvedHeaders.set("content-type", "text/plain");
+					}
+					break;
+				case "URLSearchParams":
+					init.body = parsed.body as URLSearchParams;
+					break;
+				case "FormData":
+					init.body = parsed.body as FormData;
+					break;
+				case "Blob":
+					init.body = parsed.body as Blob;
+					break;
+				case "Uint8Array":
+					init.body = (parsed.body as Uint8Array).buffer as ArrayBuffer;
+					break;
 			}
 		}
 
@@ -281,5 +302,5 @@ export function createClient<
 		});
 	}
 
-	return createProxy([]) as ClientProxy<TRoutes, TMiddlewares, TErrorMode>;
+	return createProxy([]) as ClientProxy<TContracts, TMiddlewares, TErrorMode>;
 }

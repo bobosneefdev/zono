@@ -1,4 +1,5 @@
 import type { Context, Hono } from "hono";
+import superjson from "superjson";
 import type { ContractMethod } from "~/contract/contract.types.js";
 import { isMiddlewareNode } from "~/internal/util.js";
 import type { PossiblePromise } from "~/internal/util.types.js";
@@ -7,11 +8,50 @@ export type MiddlewareHandlerFn<TContextParams extends ReadonlyArray<unknown> = 
 	ctx: Context,
 	next: () => Promise<void>,
 	...contextParams: TContextParams
-) => PossiblePromise<void | Response>;
+) => PossiblePromise<void | Response | { type: string; status: number; data?: unknown }>;
 
 export type MiddlewareEntry<TContextParams extends ReadonlyArray<unknown> = [Context]> = {
 	handler: MiddlewareHandlerFn<TContextParams>;
 };
+
+/**
+ * Builds an HTTP Response from a middleware return object { type, status, data? }.
+ */
+function buildResponseFromMiddlewareReturn(result: {
+	type: string;
+	status: number;
+	data?: unknown;
+}): Response {
+	switch (result.type) {
+		case "JSON":
+			return new Response(JSON.stringify(result.data), {
+				status: result.status,
+				headers: { "content-type": "application/json" },
+			});
+		case "SuperJSON":
+			return new Response(JSON.stringify(superjson.serialize(result.data)), {
+				status: result.status,
+				headers: { "content-type": "application/json" },
+			});
+		case "Text":
+			return new Response(String(result.data), {
+				status: result.status,
+				headers: { "content-type": "text/plain" },
+			});
+		case "Blob":
+			return new Response(result.data as Blob, { status: result.status });
+		case "ArrayBuffer":
+			return new Response(result.data as ArrayBuffer, { status: result.status });
+		case "FormData":
+			return new Response(result.data as FormData, { status: result.status });
+		case "ReadableStream":
+			return new Response(result.data as ReadableStream, { status: result.status });
+		case "Void":
+			return new Response(null, { status: result.status });
+		default:
+			throw new Error(`Unknown middleware response type: ${result.type}`);
+	}
+}
 
 /**
  * Collects MiddlewareEntry objects from a single MIDDLEWARE node pair (def + handlers).
@@ -69,6 +109,11 @@ export async function executeMiddlewareChain<TContextParams extends ReadonlyArra
 
 		if (typedResult instanceof Response) {
 			context.res = typedResult;
+		} else if (typedResult != null && typeof typedResult === "object") {
+			// MiddlewareReturn — build a Response from the typed return object
+			context.res = buildResponseFromMiddlewareReturn(
+				typedResult as { type: string; status: number; data?: unknown },
+			);
 		}
 	};
 

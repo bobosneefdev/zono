@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import z from "zod";
 import { createClient } from "~/client/client.js";
 import type { RouterShape } from "~/contract/contract.types.js";
-import { createRoutes } from "~/contract/routes.js";
+import { createContracts } from "~/contract/contracts.js";
 import {
 	createHonoMiddlewareHandlers,
 	createHonoOptions,
@@ -14,7 +14,7 @@ import {
 	generateHonoGatewayRoutesAndMiddleware,
 	initHonoGateway,
 } from "~/hono_gateway/hono_gateway.js";
-import { createMiddleware } from "~/middleware/middleware.js";
+import { createMiddlewares } from "~/middleware/middleware.js";
 
 const shape = {
 	ROUTER: {
@@ -34,9 +34,6 @@ const shape = {
 		transforms: {
 			CONTRACT: true,
 		},
-		imageUpload: {
-			CONTRACT: true,
-		},
 	},
 } as const satisfies RouterShape;
 
@@ -46,7 +43,7 @@ const userSchema = z.object({
 	email: z.email(),
 });
 
-const routes = createRoutes(shape, {
+const contracts = createContracts(shape, {
 	ROUTER: {
 		users: {
 			ROUTER: {
@@ -54,7 +51,7 @@ const routes = createRoutes(shape, {
 					CONTRACT: {
 						post: {
 							body: {
-								contentType: "application/json",
+								type: "JSON",
 								schema: z.object({
 									name: z.string(),
 									email: z.email(),
@@ -62,7 +59,7 @@ const routes = createRoutes(shape, {
 							},
 							responses: {
 								201: {
-									contentType: "application/json",
+									type: "JSON",
 									schema: userSchema,
 								},
 							},
@@ -75,11 +72,11 @@ const routes = createRoutes(shape, {
 							pathParams: z.object({ userId: z.string().uuid() }),
 							responses: {
 								200: {
-									contentType: "application/json",
+									type: "JSON",
 									schema: userSchema,
 								},
 								404: {
-									contentType: "application/json",
+									type: "JSON",
 									schema: z.object({ message: z.string() }),
 								},
 							},
@@ -93,7 +90,7 @@ const routes = createRoutes(shape, {
 				get: {
 					responses: {
 						200: {
-							contentType: "application/json",
+							type: "JSON",
 							schema: z.object({ status: z.literal("ok") }),
 						},
 					},
@@ -104,7 +101,7 @@ const routes = createRoutes(shape, {
 			CONTRACT: {
 				post: {
 					body: {
-						contentType: "application/json",
+						type: "JSON",
 						schema: z
 							.object({ name: z.string() })
 							.transform(async (input) => ({ name: input.name.trim() }))
@@ -112,7 +109,7 @@ const routes = createRoutes(shape, {
 					},
 					responses: {
 						200: {
-							contentType: "application/json",
+							type: "JSON",
 							schema: z.object({ message: z.string() }).transform(async (body) => ({
 								message: `${body.message}!`,
 								id: crypto.randomUUID(),
@@ -122,30 +119,14 @@ const routes = createRoutes(shape, {
 				},
 			},
 		},
-		imageUpload: {
-			CONTRACT: {
-				post: {
-					body: {
-						contentType: "application/octet-stream",
-						schema: z.instanceof(Uint8Array),
-					},
-					responses: {
-						201: {
-							contentType: "application/octet-stream",
-							schema: z.instanceof(Uint8Array),
-						},
-					},
-				},
-			},
-		},
 	},
 });
 
-const middleware = createMiddleware(routes, {
+const middleware = createMiddlewares(contracts, {
 	MIDDLEWARE: {
 		rateLimit: {
 			429: {
-				contentType: "application/json",
+				type: "JSON",
 				schema: z.object({ retryAfterSeconds: z.number().int().positive() }),
 			},
 		},
@@ -159,38 +140,42 @@ const honoOptions = createHonoOptions({
 	},
 });
 
-const honoRouteHandlers = createHonoRouteHandlers(routes, honoOptions, {
+const honoRouteHandlers = createHonoRouteHandlers(contracts, honoOptions, {
 	ROUTER: {
 		users: {
 			ROUTER: {
 				register: {
 					HANDLER: {
-						post: async (input, ctx, _auth) =>
-							ctx.json(
-								{
-									id: crypto.randomUUID(),
-									name: input.body.name,
-									email: input.body.email,
-								},
-								201,
-							),
+						post: async (input, _ctx, _auth) => ({
+							type: "JSON" as const,
+							status: 201 as const,
+							data: {
+								id: crypto.randomUUID(),
+								name: input.body.name,
+								email: input.body.email,
+							},
+						}),
 					},
 				},
 				$userId: {
 					HANDLER: {
-						get: async (input, ctx) => {
+						get: async (input) => {
 							if (input.pathParams.userId.endsWith("0")) {
-								return ctx.json({ message: "User not found" }, 404);
+								return {
+									type: "JSON" as const,
+									status: 404 as const,
+									data: { message: "User not found" },
+								};
 							}
-
-							return ctx.json(
-								{
+							return {
+								type: "JSON" as const,
+								status: 200 as const,
+								data: {
 									id: input.pathParams.userId,
 									name: "Example User",
 									email: "user@example.com",
 								},
-								200,
-							);
+							};
 						},
 					},
 				},
@@ -198,17 +183,20 @@ const honoRouteHandlers = createHonoRouteHandlers(routes, honoOptions, {
 		},
 		health: {
 			HANDLER: {
-				get: async (_input, ctx) => ctx.json({ status: "ok" }, 200),
+				get: async () => ({
+					type: "JSON" as const,
+					status: 200 as const,
+					data: { status: "ok" as const },
+				}),
 			},
 		},
 		transforms: {
 			HANDLER: {
-				post: async (input, ctx) => ctx.json({ message: input.body.normalized }, 200),
-			},
-		},
-		imageUpload: {
-			HANDLER: {
-				post: async (input, ctx) => ctx.body(input.body, 201),
+				post: async (input) => ({
+					type: "JSON" as const,
+					status: 200 as const,
+					data: { message: input.body.normalized },
+				}),
 			},
 		},
 	},
@@ -216,22 +204,24 @@ const honoRouteHandlers = createHonoRouteHandlers(routes, honoOptions, {
 
 const honoMiddlewareHandlers = createHonoMiddlewareHandlers(middleware, honoOptions, {
 	MIDDLEWARE: {
-		rateLimit: async (ctx, _next, _auth) => {
-			return ctx.json({ retryAfterSeconds: 60 }, 429);
-		},
+		rateLimit: async () => ({
+			type: "JSON" as const,
+			status: 429 as const,
+			data: { retryAfterSeconds: 60 },
+		}),
 	},
 });
 
 const app = new Hono();
 
-initHono(app, routes, honoRouteHandlers, middleware, honoMiddlewareHandlers, honoOptions);
+initHono(app, contracts, honoRouteHandlers, middleware, honoMiddlewareHandlers, honoOptions);
 
 Bun.serve({
 	fetch: app.fetch,
 	port: 3000,
 });
 
-const client = createClient(routes, {
+const client = createClient(contracts, {
 	baseUrl: "http://localhost:3000",
 	middleware: [middleware],
 	serverErrorMode: "public",
@@ -240,7 +230,7 @@ const client = createClient(routes, {
 const { routes: gatewayRoutes, middleware: gatewayMiddleware } =
 	generateHonoGatewayRoutesAndMiddleware({
 		usersService: {
-			routes,
+			routes: contracts,
 			middleware,
 		},
 	});
@@ -251,9 +241,8 @@ const gatewayOptions = createGatewayOptions(gatewayRoutes, {
 	},
 });
 
-const gatewayCustomMiddleware = createMiddleware(gatewayRoutes, {
+const gatewayCustomMiddleware = createMiddlewares(gatewayRoutes, {
 	MIDDLEWARE: {
-		// Example of what it looks like if your middleware never returns a response
 		requestLogging: {},
 	},
 });
