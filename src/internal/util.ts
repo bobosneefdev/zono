@@ -47,8 +47,3 @@ export function dotPathToSlashPath(dotPath: string): string {
 	if (!dotPath) return "/";
 	return `/${dotPath.split(".").filter(Boolean).join("/")}`;
 }
-
-export function routeToSegments(route: string): Array<string> {
-	const withoutLeadingSlash = route.startsWith("/") ? route.slice(1) : route;
-	return withoutLeadingSlash.split("/").filter(Boolean);
-}

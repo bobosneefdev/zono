@@ -22,20 +22,6 @@ export type SchemaInput<TSchema> = TSchema extends z.ZodType ? z.input<TSchema> 
 
 export type SchemaOutput<TSchema> = TSchema extends z.ZodType ? z.output<TSchema> : never;
 
-export type ResponseBodyForStatus<
-	TContract extends Contract,
-	TStatus extends ContractResponseStatuses<TContract>,
-> = TContract["responses"][TStatus] extends { schema: infer TSchema extends z.ZodType }
-	? SchemaInput<TSchema>
-	: undefined;
-
-export type ResponseBodyForStatusTransformed<
-	TContract extends Contract,
-	TStatus extends ContractResponseStatuses<TContract>,
-> = TContract["responses"][TStatus] extends { schema: infer TSchema extends z.ZodType }
-	? SchemaOutput<TSchema>
-	: undefined;
-
 export type ResponseHeadersForStatus<
 	TContract extends Contract,
 	TStatus extends ContractResponseStatuses<TContract>,
@@ -43,14 +29,7 @@ export type ResponseHeadersForStatus<
 	? SchemaInput<TSchema>
 	: undefined;
 
-export type ResponseHeadersForStatusTransformed<
-	TContract extends Contract,
-	TStatus extends ContractResponseStatuses<TContract>,
-> = TContract["responses"][TStatus]["headers"] extends { schema: infer TSchema extends z.ZodType }
-	? SchemaOutput<TSchema>
-	: undefined;
-
-/** Like ResponseBodyForStatusTransformed but operates on a ContractResponses map directly */
+/** Extracts the body type for a given status from a ContractResponses map */
 export type ResponseBodyForStatusInResponses<
 	TResponses,
 	TStatus extends number,
@@ -60,7 +39,7 @@ export type ResponseBodyForStatusInResponses<
 		: undefined
 	: undefined;
 
-/** Like ResponseHeadersForStatusTransformed but operates on a ContractResponses map directly */
+/** Extracts the headers type for a given status from a ContractResponses map */
 export type ResponseHeadersForStatusInResponses<
 	TResponses,
 	TStatus extends number,

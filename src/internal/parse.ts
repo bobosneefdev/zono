@@ -3,14 +3,14 @@ import z from "zod";
 import type { Contract } from "~/contract/contract.types.js";
 import { isRecord } from "~/internal/util.js";
 
-export type RawContractInput = {
+type RawContractInput = {
 	pathParams?: unknown;
 	body?: unknown;
 	query?: unknown;
 	headers?: unknown;
 };
 
-export type ParseContractResult =
+type ParseContractResult =
 	| { success: true; data: Record<string, unknown> }
 	| { success: false; issues: Array<z.core.$ZodIssue> };
 
@@ -18,7 +18,7 @@ export type ParseContractResult =
  * Extracts the raw query value appropriate for the contract query type.
  * For SuperJSON queries the value arrives as a single `superjson` URL parameter.
  */
-export function parseRawQuery(contract: Contract, rawQuery: unknown): unknown {
+function parseRawQuery(contract: Contract, rawQuery: unknown): unknown {
 	if (!contract.query) {
 		return rawQuery;
 	}

@@ -1,5 +1,4 @@
 import z from "zod";
-import type { ErrorMode } from "~/contract/contract.error.js";
 import type { ContractOutput } from "~/contract/contract.io.js";
 import type {
 	Contract,
@@ -95,9 +94,4 @@ export type ServerHandlerMethodMap<
 	[TMethod in ContractMethod as TContractMap[TMethod] extends Contract
 		? TMethod
 		: never]: ServerHandlerGivenMethod<TContractMap, TParams, TMethod>;
-};
-
-/** Base options for server configuration */
-export type ServerOptionsBase = {
-	errorMode?: ErrorMode;
 };
