@@ -1,7 +1,8 @@
-import { defineConfig } from "tsup";
+import { defineConfig } from "tsdown";
 
 export default defineConfig({
-	format: ["esm"],
+	format: "esm",
+	dts: true,
 	entry: {
 		contract: "src/contract/index.ts",
 		middleware: "src/middleware/index.ts",
@@ -9,11 +10,11 @@ export default defineConfig({
 		hono: "src/hono/index.ts",
 		"hono-gateway": "src/hono_gateway/index.ts",
 	},
-	keepNames: true,
-	dts: true,
+	deps: {
+		skipNodeModulesBundle: true,
+	},
 	shims: true,
-	skipNodeModulesBundle: true,
 	clean: true,
-	splitting: true,
-	treeshake: "recommended",
+	treeshake: true,
+	target: false,
 });
