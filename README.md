@@ -193,7 +193,7 @@ const { routes: gatewayRoutes, middleware: generatedGatewayMiddleware } =
     },
   });
 
-const gatewayAuditMiddleware = createMiddlewares(gatewayRoutes, {
+const gatewayCustomMiddlewares = createMiddlewares(gatewayRoutes, {
   MIDDLEWARE: {
     requestLogging: {},
   },
@@ -207,8 +207,8 @@ const gatewayOptions = createGatewayOptions(gatewayRoutes, {
   errorMode: "public",
 });
 
-const gatewayAuditHandlers = createHonoMiddlewareHandlers(
-  gatewayAuditMiddleware,
+const gatewayCustomMiddlewareHandlers = createHonoMiddlewareHandlers(
+  gatewayCustomMiddlewares,
   gatewayOptions,
   {
     MIDDLEWARE: {
@@ -224,8 +224,8 @@ const gatewayApp = new Hono();
 createHonoGateway(
   gatewayApp,
   gatewayRoutes,
-  gatewayAuditMiddleware,
-  gatewayAuditHandlers,
+  gatewayCustomMiddlewares,
+  gatewayCustomMiddlewareHandlers,
   gatewayOptions,
 );
 ```
