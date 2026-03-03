@@ -16,6 +16,12 @@ const shape = {
 			},
 		},
 		health: { CONTRACT: true },
+		verbs: {
+			ROUTER: {
+				get: { CONTRACT: true },
+				post: { CONTRACT: true },
+			},
+		},
 		responses: {
 			ROUTER: {
 				json: { CONTRACT: true },
@@ -87,6 +93,34 @@ const contracts = createContracts(shape, {
 				get: {
 					responses: {
 						200: { type: "JSON", schema: z.object({ status: z.string() }) },
+					},
+				},
+			},
+		},
+		verbs: {
+			ROUTER: {
+				get: {
+					CONTRACT: {
+						get: {
+							responses: {
+								200: {
+									type: "JSON",
+									schema: z.object({ route: z.literal("get") }),
+								},
+							},
+						},
+					},
+				},
+				post: {
+					CONTRACT: {
+						get: {
+							responses: {
+								200: {
+									type: "JSON",
+									schema: z.object({ route: z.literal("post") }),
+								},
+							},
+						},
 					},
 				},
 			},
@@ -410,12 +444,14 @@ const typeClient = createClient(contracts, {
 	middleware: [middleware],
 });
 const assertType = <T>(_value: T) => undefined;
-assertType<Parameters<typeof typeClient.bodies.string.post>[0]>({ body: "ok" });
-assertType<Parameters<typeof typeClient.bodies.standardHeaders.post>[0]>({
+assertType<Parameters<typeof typeClient.health>[0]>("get");
+assertType<Parameters<typeof typeClient.bodies.string>[0]>("post");
+assertType<Parameters<typeof typeClient.bodies.string>[1]>({ body: "ok" });
+assertType<Parameters<typeof typeClient.bodies.standardHeaders>[1]>({
 	body: {},
 	headers: { "x-trace-id": "trace-123" },
 });
-assertType<Parameters<typeof typeClient.bodies.superjsonHeaders.post>[0]>({
+assertType<Parameters<typeof typeClient.bodies.superjsonHeaders>[1]>({
 	body: {},
 	headers: {
 		auth: {
@@ -430,7 +466,9 @@ assertType<Parameters<typeof typeClient.bodies.superjsonHeaders.post>[0]>({
 	},
 });
 // @ts-expect-error string body route does not accept numbers
-assertType<Parameters<typeof typeClient.bodies.string.post>[0]>({ body: 123 });
+assertType<Parameters<typeof typeClient.bodies.string>[1]>({ body: 123 });
+// @ts-expect-error routes without input fields do not expose a second parameter type
+type _HealthSecondParameter = Parameters<typeof typeClient.health>[1];
 
 let server: ReturnType<typeof Bun.serve>;
 const PORT = 19876;
@@ -480,6 +518,28 @@ beforeAll(() => {
 							status: 200 as const,
 							data: { status: "ok" },
 						}),
+					},
+				},
+				verbs: {
+					ROUTER: {
+						get: {
+							HANDLER: {
+								get: () => ({
+									type: "JSON" as const,
+									status: 200 as const,
+									data: { route: "get" as const },
+								}),
+							},
+						},
+						post: {
+							HANDLER: {
+								get: () => ({
+									type: "JSON" as const,
+									status: 200 as const,
+									data: { route: "post" as const },
+								}),
+							},
+						},
 					},
 				},
 				responses: {
@@ -755,16 +815,16 @@ describe("createClient", () => {
 	});
 
 	test("keeps existing JSON route behavior and error branches", async () => {
-		const health = await client.health.get();
+		const health = await client.health("get");
 		expect(health.status).toBe(200);
 		expect(health.body).toEqual({ status: "ok" });
 
-		const createUser = await client.users.register.post({
+		const createUser = await client.users.register("post", {
 			body: { name: "John", email: "john@example.com" },
 		});
 		expect(createUser.status).toBe(201);
 
-		const user = await client.users.$userId.get({
+		const user = await client.users.$userId("get", {
 			pathParams: { userId: "user-123" },
 		});
 		expect(user.status).toBe(200);
@@ -774,13 +834,13 @@ describe("createClient", () => {
 			middleware: [middleware],
 			serverErrorMode: "public",
 		});
-		const notFound = await missingBaseClient.health.get();
+		const notFound = await missingBaseClient.health("get");
 		expect(notFound.status).toBe(404);
 		if (notFound.status === 404) {
 			expect(notFound.body).toEqual({ type: "notFound" });
 		}
 
-		const internal = await client.users.$userId.get({
+		const internal = await client.users.$userId("get", {
 			pathParams: { userId: "explode" },
 		});
 		expect(internal.status).toBe(500);
@@ -789,22 +849,36 @@ describe("createClient", () => {
 		}
 	});
 
+	test("supports path segments that match HTTP verb names", async () => {
+		const getSegment = await client.verbs.get("get");
+		expect(getSegment.status).toBe(200);
+		if (getSegment.status === 200) {
+			expect(getSegment.body.route).toBe("get");
+		}
+
+		const postSegment = await client.verbs.post("get");
+		expect(postSegment.status).toBe(200);
+		if (postSegment.status === 200) {
+			expect(postSegment.body.route).toBe("post");
+		}
+	});
+
 	test("fails fast on invalid client body input", async () => {
 		await expect(
-			client.users.register.post({
+			client.users.register("post", {
 				body: { name: "John", email: "not-an-email" },
 			}),
 		).rejects.toThrow("Contract validation failed");
 	});
 
 	test("parses all response body types", async () => {
-		const json = await client.responses.json.get();
+		const json = await client.responses.json("get");
 		expect(json.status).toBe(200);
 		if (json.status === 200) {
 			expect(json.body).toEqual({ kind: "json" });
 		}
 
-		const superjson = await client.responses.superjson.get();
+		const superjson = await client.responses.superjson("get");
 		expect(superjson.status).toBe(200);
 		if (superjson.status === 200) {
 			expect(superjson.body.kind).toBe("superjson");
@@ -819,7 +893,7 @@ describe("createClient", () => {
 			expect(superjson.body.tags).toEqual(new Set(["alpha", "beta"]));
 		}
 
-		const superjsonQuery = await client.responses.superjsonQuery.get({
+		const superjsonQuery = await client.responses.superjsonQuery("get", {
 			query: {
 				filters: [
 					{
@@ -842,41 +916,41 @@ describe("createClient", () => {
 			});
 		}
 
-		const text = await client.responses.text.get();
+		const text = await client.responses.text("get");
 		expect(text.status).toBe(200);
 		if (text.status === 200) {
 			expect(text.body).toBe("plain-text");
 		}
 
-		const blob = await client.responses.blob.get();
+		const blob = await client.responses.blob("get");
 		expect(blob.status).toBe(200);
 		if (blob.status === 200) {
 			expect(blob.body).toBeInstanceOf(Blob);
 			expect(await blob.body.text()).toBe("blob-data");
 		}
 
-		const arrayBuffer = await client.responses.arrayBuffer.get();
+		const arrayBuffer = await client.responses.arrayBuffer("get");
 		expect(arrayBuffer.status).toBe(200);
 		if (arrayBuffer.status === 200) {
 			expect(arrayBuffer.body).toBeInstanceOf(ArrayBuffer);
 			expect(new TextDecoder().decode(arrayBuffer.body)).toBe("array-buffer");
 		}
 
-		const formData = await client.responses.formData.get();
+		const formData = await client.responses.formData("get");
 		expect(formData.status).toBe(200);
 		if (formData.status === 200) {
 			expect(formData.body).toBeInstanceOf(FormData);
 			expect(formData.body.get("field")).toBe("form-value");
 		}
 
-		const readableStream = await client.responses.readableStream.get();
+		const readableStream = await client.responses.readableStream("get");
 		expect(readableStream.status).toBe(200);
 		if (readableStream.status === 200) {
 			expect(readableStream.body).toBeInstanceOf(ReadableStream);
 			expect(await new Response(readableStream.body).text()).toBe("stream-body");
 		}
 
-		const voidResponse = await client.responses.voidResponse.get();
+		const voidResponse = await client.responses.voidResponse("get");
 		expect(voidResponse.status).toBe(204);
 		if (voidResponse.status === 204) {
 			expect(voidResponse.body).toBeUndefined();
@@ -884,13 +958,13 @@ describe("createClient", () => {
 	});
 
 	test("parses standard and superjson response headers", async () => {
-		const standard = await client.responses.standardHeaders.get();
+		const standard = await client.responses.standardHeaders("get");
 		expect(standard.status).toBe(200);
 		if (standard.status === 200) {
 			expect(standard.headers).toEqual({ "x-from-server": "hono" });
 		}
 
-		const superjson = await client.responses.superjsonHeaders.get();
+		const superjson = await client.responses.superjsonHeaders("get");
 		expect(superjson.status).toBe(200);
 		if (superjson.status === 200) {
 			expect(superjson.headers).toEqual({
@@ -909,13 +983,13 @@ describe("createClient", () => {
 	});
 
 	test("encodes and parses all request body types", async () => {
-		const json = await client.bodies.json.post({ body: { message: "hello" } });
+		const json = await client.bodies.json("post", { body: { message: "hello" } });
 		expect(json.status).toBe(200);
 		if (json.status === 200) {
 			expect(json.body.echoed).toBe("hello");
 		}
 
-		const superjson = await client.bodies.superjson.post({
+		const superjson = await client.bodies.superjson("post", {
 			body: {
 				payload: {
 					createdAt: new Date("2025-03-01T00:00:00.000Z"),
@@ -936,7 +1010,7 @@ describe("createClient", () => {
 			});
 		}
 
-		const text = await client.bodies.string.post({ body: "hello" });
+		const text = await client.bodies.string("post", { body: "hello" });
 		expect(text.status).toBe(200);
 		if (text.status === 200) {
 			expect(text.body).toBe("HELLO");
@@ -944,7 +1018,7 @@ describe("createClient", () => {
 
 		const params = new URLSearchParams();
 		params.set("q", "zono");
-		const urlSearchParams = await client.bodies.urlSearchParams.post({ body: params });
+		const urlSearchParams = await client.bodies.urlSearchParams("post", { body: params });
 		expect(urlSearchParams.status).toBe(200);
 		if (urlSearchParams.status === 200) {
 			expect(urlSearchParams.body.query).toBe("zono");
@@ -952,13 +1026,13 @@ describe("createClient", () => {
 
 		const formData = new FormData();
 		formData.set("field", "field-value");
-		const formDataRes = await client.bodies.formData.post({ body: formData });
+		const formDataRes = await client.bodies.formData("post", { body: formData });
 		expect(formDataRes.status).toBe(200);
 		if (formDataRes.status === 200) {
 			expect(formDataRes.body.field).toBe("field-value");
 		}
 
-		const blobRes = await client.bodies.blob.post({
+		const blobRes = await client.bodies.blob("post", {
 			body: new Blob(["blob-body"], { type: "text/plain" }),
 		});
 		expect(blobRes.status).toBe(200);
@@ -966,7 +1040,7 @@ describe("createClient", () => {
 			expect(blobRes.body.size).toBe(9);
 		}
 
-		const uint8ArrayRes = await client.bodies.uint8Array.post({
+		const uint8ArrayRes = await client.bodies.uint8Array("post", {
 			body: new Uint8Array([1, 2, 3, 4]),
 		});
 		expect(uint8ArrayRes.status).toBe(200);
@@ -976,7 +1050,7 @@ describe("createClient", () => {
 	});
 
 	test("encodes standard and superjson request headers", async () => {
-		const standard = await client.bodies.standardHeaders.post({
+		const standard = await client.bodies.standardHeaders("post", {
 			body: {},
 			headers: { "x-trace-id": "trace-123" },
 		});
@@ -985,7 +1059,7 @@ describe("createClient", () => {
 			expect(standard.body.traceId).toBe("trace-123");
 		}
 
-		const superjson = await client.bodies.superjsonHeaders.post({
+		const superjson = await client.bodies.superjsonHeaders("post", {
 			body: {},
 			headers: {
 				auth: {

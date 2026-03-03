@@ -144,28 +144,35 @@ export type ClientOutputForContract<
 > = WithGlobalErrorResponses<ClientOutputBase<TContract, TMiddlewareResponses>, TErrorMode>;
 
 type ClientMethodFn<
+	TMethod extends ContractMethod,
 	TContract extends Contract,
 	TMiddlewareResponses extends ContractResponses,
 	TErrorMode extends ErrorMode | undefined,
 > = keyof ContractInput<TContract> extends never
 	? (
-			input?: ContractInput<TContract>,
+			method: TMethod,
 		) => Promise<ClientOutputForContract<TContract, TMiddlewareResponses, TErrorMode>>
 	: (
+			method: TMethod,
 			input: ContractInput<TContract>,
 		) => Promise<ClientOutputForContract<TContract, TMiddlewareResponses, TErrorMode>>;
 
-type ClientMethods<
+type ClientMethodKeys<TContractMap> = Extract<keyof TContractMap, ContractMethod>;
+
+type ClientMethodInvoker<
 	TContractMap,
 	TMiddlewareResponses extends ContractResponses,
 	TErrorMode extends ErrorMode | undefined,
-> = {
-	[M in ContractMethod as M extends keyof TContractMap ? M : never]: M extends keyof TContractMap
-		? TContractMap[M] extends infer TContract extends Contract
-			? ClientMethodFn<TContract, TMiddlewareResponses, TErrorMode>
-			: never
-		: never;
-};
+> = [ClientMethodKeys<TContractMap>] extends [never]
+	? unknown
+	: UnionToIntersection<
+			{
+				[M in ClientMethodKeys<TContractMap>]: TContractMap[M] extends infer TContract extends
+					Contract
+					? ClientMethodFn<M, TContract, TMiddlewareResponses, TErrorMode>
+					: never;
+			}[ClientMethodKeys<TContractMap>]
+		>;
 
 type ClientNode<
 	TNode,
@@ -173,7 +180,7 @@ type ClientNode<
 	TPath extends ReadonlyArray<string>,
 	TErrorMode extends ErrorMode | undefined,
 > = (TNode extends { CONTRACT: infer C extends Record<string, unknown> }
-	? ClientMethods<C, CollectAllMiddlewareResponses<TMiddlewares, TPath>, TErrorMode>
+	? ClientMethodInvoker<C, CollectAllMiddlewareResponses<TMiddlewares, TPath>, TErrorMode>
 	: unknown) &
 	(TNode extends { ROUTER: infer R extends Record<string, unknown> }
 		? { [K in keyof R & string]: ClientNode<R[K], TMiddlewares, [...TPath, K], TErrorMode> }

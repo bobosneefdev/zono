@@ -159,7 +159,7 @@ const client = createClient(contracts, {
   serverErrorMode: "public",
 });
 
-const analytics = await client.analytics.get();
+const analytics = await client.analytics("get");
 if (analytics.status === 200) {
   analytics.body.generatedAt; // Date
   analytics.body.counters; // Map<string, number>

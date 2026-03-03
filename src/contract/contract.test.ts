@@ -132,6 +132,207 @@ const contracts = createContracts(shape, {
 	},
 });
 
+const dynamicPathParamShape = {
+	ROUTER: {
+		users: {
+			ROUTER: {
+				$userId: {
+					CONTRACT: true,
+				},
+			},
+		},
+	},
+} as const satisfies RouterShape;
+
+const nestedPathParamShape = {
+	ROUTER: {
+		users: {
+			ROUTER: {
+				$userId: {
+					ROUTER: {
+						posts: {
+							ROUTER: {
+								$postId: {
+									CONTRACT: true,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+} as const satisfies RouterShape;
+
+const staticPathParamShape = {
+	ROUTER: {
+		users: {
+			ROUTER: {
+				register: {
+					CONTRACT: true,
+				},
+			},
+		},
+	},
+} as const satisfies RouterShape;
+
+createContracts(dynamicPathParamShape, {
+	ROUTER: {
+		users: {
+			ROUTER: {
+				$userId: {
+					CONTRACT: {
+						get: {
+							pathParams: z.object({ userId: z.string() }),
+							responses: {
+								200: {
+									type: "JSON",
+									schema: z.object({ ok: z.boolean() }),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+});
+
+createContracts(dynamicPathParamShape, {
+	ROUTER: {
+		users: {
+			ROUTER: {
+				$userId: {
+					CONTRACT: {
+						// @ts-expect-error dynamic route must define pathParams for $userId
+						get: {
+							responses: {
+								200: {
+									type: "JSON",
+									schema: z.object({ ok: z.boolean() }),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+});
+
+createContracts(dynamicPathParamShape, {
+	ROUTER: {
+		users: {
+			ROUTER: {
+				$userId: {
+					CONTRACT: {
+						// @ts-expect-error dynamic route pathParams must not include extra keys
+						get: {
+							pathParams: z.object({
+								userId: z.string(),
+								extra: z.string(),
+							}),
+							responses: {
+								200: {
+									type: "JSON",
+									schema: z.object({ ok: z.boolean() }),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+});
+
+createContracts(nestedPathParamShape, {
+	ROUTER: {
+		users: {
+			ROUTER: {
+				$userId: {
+					ROUTER: {
+						posts: {
+							ROUTER: {
+								$postId: {
+									CONTRACT: {
+										get: {
+											pathParams: z.object({
+												userId: z.string(),
+												postId: z.string(),
+											}),
+											responses: {
+												200: {
+													type: "JSON",
+													schema: z.object({ ok: z.boolean() }),
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+});
+
+createContracts(nestedPathParamShape, {
+	ROUTER: {
+		users: {
+			ROUTER: {
+				$userId: {
+					ROUTER: {
+						posts: {
+							ROUTER: {
+								$postId: {
+									CONTRACT: {
+										get: {
+											// @ts-expect-error nested dynamic route must include ancestor and current path params
+											pathParams: z.object({ postId: z.string() }),
+											responses: {
+												200: {
+													type: "JSON",
+													schema: z.object({ ok: z.boolean() }),
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+});
+
+createContracts(staticPathParamShape, {
+	ROUTER: {
+		users: {
+			ROUTER: {
+				register: {
+					CONTRACT: {
+						post: {
+							// @ts-expect-error static route must not define pathParams
+							pathParams: z.object({ anything: z.string() }),
+							responses: {
+								201: {
+									type: "JSON",
+									schema: z.object({ created: z.boolean() }),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+});
+
 describe("createContracts", () => {
 	test("returns the definition as-is (identity)", () => {
 		expect(contracts.ROUTER).toBeDefined();

@@ -488,7 +488,7 @@ describe("Gateway", () => {
 				middleware: [gateway.middleware],
 			});
 
-			const res = await client.inventory.items.get();
+			const res = await client.inventory.items("get");
 			expect(res.status).toBe(200);
 			expect(res.body).toEqual([{ id: "1", name: "Item 1" }]);
 		});
@@ -502,7 +502,7 @@ describe("Gateway", () => {
 				middleware: [gateway.middleware],
 			});
 
-			const res = await client.inventory.items.$itemId.get({
+			const res = await client.inventory.items.$itemId("get", {
 				pathParams: { itemId: "item-99" },
 			});
 			expect(res.status).toBe(200);
@@ -520,7 +520,7 @@ describe("Gateway", () => {
 				middleware: [gateway.middleware],
 			});
 
-			const res = await client.inventory.superjsonBody.get();
+			const res = await client.inventory.superjsonBody("get");
 			expect(res.status).toBe(200);
 			if (res.status === 200) {
 				expect(res.body.createdAt.toISOString()).toBe("2025-01-01T00:00:00.000Z");
@@ -543,7 +543,7 @@ describe("Gateway", () => {
 				middleware: [gateway.middleware],
 			});
 
-			const res = await client.inventory.superjsonHeaders.get();
+			const res = await client.inventory.superjsonHeaders("get");
 			expect(res.status).toBe(200);
 			if (res.status === 200) {
 				expect(res.headers).toEqual({

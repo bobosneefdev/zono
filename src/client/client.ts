@@ -306,13 +306,22 @@ export function createClient<
 
 	function createProxy(pathSegments: Array<string>): unknown {
 		return new Proxy(() => {}, {
+			apply(_target, _thisArg, argArray) {
+				const [method, input] = argArray;
+				if (typeof method !== "string" || !HTTP_METHODS.has(method)) {
+					throw new Error(`Invalid HTTP method: ${String(method)}`);
+				}
+				if (argArray.length > 2) {
+					throw new Error("Route call accepts only method and optional input");
+				}
+				return executeRequest(
+					pathSegments,
+					method,
+					(input ?? {}) as Record<string, unknown>,
+				);
+			},
 			get(_target, prop) {
 				if (typeof prop !== "string") return undefined;
-				if (HTTP_METHODS.has(prop)) {
-					return async (input: Record<string, unknown> = {}) => {
-						return executeRequest(pathSegments, prop, input);
-					};
-				}
 				return createProxy([...pathSegments, prop]);
 			},
 		});

@@ -284,7 +284,7 @@ const gatewayClient = createClient(gatewayRoutes, {
 });
 
 (async () => {
-	const serviceRegister = await client.users.register.post({
+	const serviceRegister = await client.users.register("post", {
 		body: {
 			name: "Ada Lovelace",
 			email: "ada@example.com",
@@ -295,17 +295,17 @@ const gatewayClient = createClient(gatewayRoutes, {
 		console.log("Service created user:", serviceRegister.body.id);
 	}
 
-	const gatewayHealth = await gatewayClient.usersService.health.get();
+	const gatewayHealth = await gatewayClient.usersService.health("get");
 	if (gatewayHealth.status === 200) {
 		console.log("Gateway health:", gatewayHealth.body.status);
 	}
 
-	const transformed = await client.transforms.post({ body: { name: "  ada  " } });
+	const transformed = await client.transforms("post", { body: { name: "  ada  " } });
 	if (transformed.status === 200) {
 		console.log("Transformed response:", transformed.body.message);
 	}
 
-	const gatewayUser = await gatewayClient.usersService.users.$userId.get({
+	const gatewayUser = await gatewayClient.usersService.users.$userId("get", {
 		pathParams: {
 			userId: crypto.randomUUID(),
 		},

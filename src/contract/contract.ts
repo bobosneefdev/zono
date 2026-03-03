@@ -4,7 +4,11 @@ import type {
 	ContractResponses,
 	RouterShape,
 } from "~/contract/contract.types.js";
-import type { ContractDefinition, MergeContractResponsesMany } from "~/contract/contract.util.js";
+import type {
+	ContractDefinition,
+	MergeContractResponsesMany,
+	ValidateContractDefinition,
+} from "~/contract/contract.util.js";
 import { getContractMethods, isContractNode, isRecord, isRouterNode } from "~/internal/util.js";
 
 function validateContractNode(node: unknown): void {
@@ -40,7 +44,7 @@ function validateContractNode(node: unknown): void {
 export function createContracts<
 	const TShape extends RouterShape,
 	const TDef extends ContractDefinition<TShape>,
->(_shape: TShape, definition: TDef): TDef {
+>(_shape: TShape, definition: TDef & ValidateContractDefinition<TShape, TDef>): TDef {
 	validateContractNode(definition);
 	return definition;
 }
