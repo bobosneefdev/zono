@@ -317,4 +317,6 @@ const gatewayClient = createClient(gatewayRoutes, {
 	if (gatewayUser.status === 404) {
 		console.log(gatewayUser.body.message);
 	}
+
+	process.exit(0);
 })();
