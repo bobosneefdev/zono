@@ -122,7 +122,7 @@ const contracts = createContracts(shape, {
 	},
 });
 
-const middleware = createMiddlewares(contracts, {
+const middlewares = createMiddlewares(contracts, {
 	MIDDLEWARE: {
 		rateLimit: {
 			429: {
@@ -202,7 +202,7 @@ const honoRouteHandlers = createHonoRouteHandlers(contracts, honoOptions, {
 	},
 });
 
-const honoMiddlewareHandlers = createHonoMiddlewareHandlers(middleware, honoOptions, {
+const honoMiddlewareHandlers = createHonoMiddlewareHandlers(middlewares, honoOptions, {
 	MIDDLEWARE: {
 		rateLimit: async () => ({
 			type: "JSON" as const,
@@ -214,7 +214,7 @@ const honoMiddlewareHandlers = createHonoMiddlewareHandlers(middleware, honoOpti
 
 const app = new Hono();
 
-initHono(app, contracts, honoRouteHandlers, middleware, honoMiddlewareHandlers, honoOptions);
+initHono(app, contracts, honoRouteHandlers, middlewares, honoMiddlewareHandlers, honoOptions);
 
 Bun.serve({
 	fetch: app.fetch,
@@ -223,17 +223,19 @@ Bun.serve({
 
 const client = createClient(contracts, {
 	baseUrl: "http://localhost:3000",
-	middleware: [middleware],
+	middleware: [middlewares],
 	serverErrorMode: "public",
 });
 
-const { routes: gatewayRoutes, middleware: gatewayMiddleware } =
-	generateHonoGatewayRoutesAndMiddleware({
-		usersService: {
-			routes: contracts,
-			middleware,
-		},
-	});
+const gateway = generateHonoGatewayRoutesAndMiddleware({
+	usersService: {
+		routes: contracts,
+		middleware: middlewares,
+	},
+});
+
+const gatewayRoutes = gateway.routes;
+const gatewayMiddlewares = gateway.middleware;
 
 const gatewayOptions = createGatewayOptions(gatewayRoutes, {
 	services: {
@@ -241,14 +243,14 @@ const gatewayOptions = createGatewayOptions(gatewayRoutes, {
 	},
 });
 
-const gatewayCustomMiddleware = createMiddlewares(gatewayRoutes, {
+const customGatewayMiddlewares = createMiddlewares(gatewayRoutes, {
 	MIDDLEWARE: {
 		requestLogging: {},
 	},
 });
 
-const gatewayCustomMiddlewareHandlers = createHonoMiddlewareHandlers(
-	gatewayCustomMiddleware,
+const customGatewayMiddlewareHandlers = createHonoMiddlewareHandlers(
+	customGatewayMiddlewares,
 	gatewayOptions,
 	{
 		MIDDLEWARE: {
@@ -265,8 +267,8 @@ const gatewayApp = new Hono();
 initHonoGateway(
 	gatewayApp,
 	gatewayRoutes,
-	gatewayCustomMiddleware,
-	gatewayCustomMiddlewareHandlers,
+	customGatewayMiddlewares,
+	customGatewayMiddlewareHandlers,
 	gatewayOptions,
 );
 
@@ -277,7 +279,7 @@ Bun.serve({
 
 const gatewayClient = createClient(gatewayRoutes, {
 	baseUrl: "http://localhost:4000",
-	middleware: [gatewayMiddleware, gatewayCustomMiddleware],
+	middleware: [customGatewayMiddlewares, gatewayMiddlewares],
 	serverErrorMode: "public",
 });
 
