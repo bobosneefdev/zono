@@ -23,6 +23,9 @@ const shape = {
 				},
 			},
 		},
+		superjsonBody: {
+			CONTRACT: true,
+		},
 		superjsonHeaders: {
 			CONTRACT: true,
 		},
@@ -75,6 +78,22 @@ const serviceContracts = createContracts(shape, {
 				},
 			},
 		},
+		superjsonBody: {
+			CONTRACT: {
+				get: {
+					responses: {
+						200: {
+							type: "SuperJSON",
+							schema: z.object({
+								createdAt: z.date(),
+								counters: z.map(z.string(), z.number()),
+								tags: z.set(z.string()),
+							}),
+						},
+					},
+				},
+			},
+		},
 		superjsonHeaders: {
 			CONTRACT: {
 				get: {
@@ -85,7 +104,13 @@ const serviceContracts = createContracts(shape, {
 							headers: {
 								type: "SuperJSON",
 								schema: z.object({
-									meta: z.object({ source: z.string(), attempt: z.number() }),
+									meta: z.object({
+										source: z.string(),
+										attempt: z.number(),
+										generatedAt: z.date(),
+									}),
+									quotas: z.map(z.string(), z.number()),
+									scopes: z.set(z.string()),
 								}),
 							},
 						},
@@ -180,13 +205,40 @@ beforeAll(() => {
 						},
 					},
 				},
+				superjsonBody: {
+					HANDLER: {
+						get: () => ({
+							type: "SuperJSON" as const,
+							status: 200 as const,
+							data: {
+								createdAt: new Date("2025-01-01T00:00:00.000Z"),
+								counters: new Map([
+									["success", 2],
+									["failure", 1],
+								]),
+								tags: new Set(["alpha", "beta"]),
+							},
+						}),
+					},
+				},
 				superjsonHeaders: {
 					HANDLER: {
 						get: () => ({
 							type: "JSON" as const,
 							status: 200 as const,
 							data: { ok: true as const },
-							headers: { meta: { source: "service", attempt: 2 } },
+							headers: {
+								meta: {
+									source: "service",
+									attempt: 2,
+									generatedAt: new Date("2025-01-02T00:00:00.000Z"),
+								},
+								quotas: new Map([
+									["read", 5],
+									["write", 2],
+								]),
+								scopes: new Set(["read", "write"]),
+							},
 						}),
 					},
 				},
@@ -327,6 +379,35 @@ describe("Gateway", () => {
 			expect(body.id).toBe("item-42");
 		});
 
+		test("proxies superjson response body with date map and set", async () => {
+			const res = await fetch(`http://localhost:${GATEWAY_PORT}/inventory/superjsonBody`);
+			expect(res.status).toBe(200);
+
+			const wire = await res.json();
+			const decoded = superjson.deserialize<unknown>(
+				wire as Parameters<typeof superjson.deserialize>[0],
+			);
+
+			const parsedResult = z
+				.object({
+					createdAt: z.date(),
+					counters: z.map(z.string(), z.number()),
+					tags: z.set(z.string()),
+				})
+				.safeParse(decoded);
+			expect(parsedResult.success).toBe(true);
+			if (parsedResult.success) {
+				expect(parsedResult.data.createdAt.toISOString()).toBe("2025-01-01T00:00:00.000Z");
+				expect(parsedResult.data.counters).toEqual(
+					new Map([
+						["success", 2],
+						["failure", 1],
+					]),
+				);
+				expect(parsedResult.data.tags).toEqual(new Set(["alpha", "beta"]));
+			}
+		});
+
 		test("forwards superjson response headers", async () => {
 			const res = await fetch(`http://localhost:${GATEWAY_PORT}/inventory/superjsonHeaders`);
 			expect(res.status).toBe(200);
@@ -335,13 +416,29 @@ describe("Gateway", () => {
 			if (encoded) {
 				const parsedResult = z
 					.object({
-						meta: z.object({ source: z.string(), attempt: z.number() }),
+						meta: z.object({
+							source: z.string(),
+							attempt: z.number(),
+							generatedAt: z.date(),
+						}),
+						quotas: z.map(z.string(), z.number()),
+						scopes: z.set(z.string()),
 					})
-					.safeParse(superjson.parse(encoded));
+					.safeParse(superjson.parse<unknown>(encoded));
 				expect(parsedResult.success).toBe(true);
 				if (parsedResult.success) {
 					expect(parsedResult.data.meta.source).toBe("service");
 					expect(parsedResult.data.meta.attempt).toBe(2);
+					expect(parsedResult.data.meta.generatedAt.toISOString()).toBe(
+						"2025-01-02T00:00:00.000Z",
+					);
+					expect(parsedResult.data.quotas).toEqual(
+						new Map([
+							["read", 5],
+							["write", 2],
+						]),
+					);
+					expect(parsedResult.data.scopes).toEqual(new Set(["read", "write"]));
 				}
 			}
 		});
@@ -404,6 +501,29 @@ describe("Gateway", () => {
 			}
 		});
 
+		test("proxy-chain client receives superjson body via gateway", async () => {
+			const gateway = generateHonoGatewayRoutesAndMiddleware({
+				inventory: { routes: serviceContracts, middleware: serviceMiddleware },
+			});
+			const client = createClient(gateway.routes, {
+				baseUrl: `http://localhost:${GATEWAY_PORT}`,
+				middleware: [gateway.middleware],
+			});
+
+			const res = await client.inventory.superjsonBody.get();
+			expect(res.status).toBe(200);
+			if (res.status === 200) {
+				expect(res.body.createdAt.toISOString()).toBe("2025-01-01T00:00:00.000Z");
+				expect(res.body.counters).toEqual(
+					new Map([
+						["success", 2],
+						["failure", 1],
+					]),
+				);
+				expect(res.body.tags).toEqual(new Set(["alpha", "beta"]));
+			}
+		});
+
 		test("proxy-chain client receives superjson headers via gateway", async () => {
 			const gateway = generateHonoGatewayRoutesAndMiddleware({
 				inventory: { routes: serviceContracts, middleware: serviceMiddleware },
@@ -416,7 +536,18 @@ describe("Gateway", () => {
 			const res = await client.inventory.superjsonHeaders.get();
 			expect(res.status).toBe(200);
 			if (res.status === 200) {
-				expect(res.headers).toEqual({ meta: { source: "service", attempt: 2 } });
+				expect(res.headers).toEqual({
+					meta: {
+						source: "service",
+						attempt: 2,
+						generatedAt: new Date("2025-01-02T00:00:00.000Z"),
+					},
+					quotas: new Map([
+						["read", 5],
+						["write", 2],
+					]),
+					scopes: new Set(["read", "write"]),
+				});
 			}
 		});
 	});

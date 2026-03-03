@@ -112,7 +112,9 @@ const contracts = createContracts(shape, {
 									type: "SuperJSON",
 									schema: z.object({
 										kind: z.literal("superjson"),
-										count: z.number(),
+										createdAt: z.date(),
+										counters: z.map(z.string(), z.number()),
+										tags: z.set(z.string()),
 									}),
 								},
 							},
@@ -199,7 +201,10 @@ const contracts = createContracts(shape, {
 											meta: z.object({
 												source: z.string(),
 												attempt: z.number(),
+												generatedAt: z.date(),
 											}),
+											quotas: z.map(z.string(), z.number()),
+											scopes: z.set(z.string()),
 										}),
 									},
 								},
@@ -226,10 +231,23 @@ const contracts = createContracts(shape, {
 						post: {
 							body: {
 								type: "SuperJSON",
-								schema: z.object({ payload: z.object({ value: z.number() }) }),
+								schema: z.object({
+									payload: z.object({
+										createdAt: z.date(),
+										scores: z.map(z.string(), z.number()),
+										flags: z.set(z.string()),
+									}),
+								}),
 							},
 							responses: {
-								200: { type: "JSON", schema: z.object({ doubled: z.number() }) },
+								200: {
+									type: "JSON",
+									schema: z.object({
+										isoDate: z.string(),
+										scoreTotal: z.number(),
+										hasPriority: z.boolean(),
+									}),
+								},
 							},
 						},
 					},
@@ -306,12 +324,22 @@ const contracts = createContracts(shape, {
 								schema: z.object({
 									auth: z.object({
 										token: z.string(),
-										scopes: z.array(z.string()),
+										issuedAt: z.date(),
+										scopes: z.set(z.string()),
+										quotas: z.map(z.string(), z.number()),
 									}),
 								}),
 							},
 							responses: {
-								200: { type: "JSON", schema: z.object({ token: z.string() }) },
+								200: {
+									type: "JSON",
+									schema: z.object({
+										token: z.string(),
+										issuedAt: z.string(),
+										scopeCount: z.number(),
+										quotaTotal: z.number(),
+									}),
+								},
 							},
 						},
 					},
@@ -433,7 +461,15 @@ function createTestApp(options?: {
 								get: () => ({
 									type: "SuperJSON" as const,
 									status: 200 as const,
-									data: { kind: "superjson" as const, count: 2 },
+									data: {
+										kind: "superjson" as const,
+										createdAt: new Date("2025-01-01T00:00:00.000Z"),
+										counters: new Map([
+											["success", 2],
+											["failure", 1],
+										]),
+										tags: new Set(["alpha", "beta"]),
+									},
 								}),
 							},
 						},
@@ -517,7 +553,18 @@ function createTestApp(options?: {
 									type: "JSON" as const,
 									status: 200 as const,
 									data: { ok: true as const },
-									headers: { meta: { source: "hono", attempt: 1 } },
+									headers: {
+										meta: {
+											source: "hono",
+											attempt: 1,
+											generatedAt: new Date("2025-01-02T00:00:00.000Z"),
+										},
+										quotas: new Map([
+											["read", 5],
+											["write", 2],
+										]),
+										scopes: new Set(["read", "write"]),
+									},
 								}),
 							},
 						},
@@ -536,11 +583,21 @@ function createTestApp(options?: {
 						},
 						superjson: {
 							HANDLER: {
-								post: (input) => ({
-									type: "JSON" as const,
-									status: 200 as const,
-									data: { doubled: input.body.payload.value * 2 },
-								}),
+								post: (input) => {
+									const scoreTotal = [
+										...input.body.payload.scores.values(),
+									].reduce((total, score) => total + score, 0);
+
+									return {
+										type: "JSON" as const,
+										status: 200 as const,
+										data: {
+											isoDate: input.body.payload.createdAt.toISOString(),
+											scoreTotal,
+											hasPriority: input.body.payload.flags.has("priority"),
+										},
+									};
+								},
 							},
 						},
 						string: {
@@ -599,11 +656,22 @@ function createTestApp(options?: {
 						},
 						superjsonHeaders: {
 							HANDLER: {
-								post: (input) => ({
-									type: "JSON" as const,
-									status: 200 as const,
-									data: { token: input.headers.auth.token },
-								}),
+								post: (input) => {
+									const quotaTotal = [
+										...input.headers.auth.quotas.values(),
+									].reduce((total, value) => total + value, 0);
+
+									return {
+										type: "JSON" as const,
+										status: 200 as const,
+										data: {
+											token: input.headers.auth.token,
+											issuedAt: input.headers.auth.issuedAt.toISOString(),
+											scopeCount: input.headers.auth.scopes.size,
+											quotaTotal,
+										},
+									};
+								},
 							},
 						},
 					},
@@ -733,10 +801,25 @@ describe("createHono", () => {
 		const superjsonBody = await app.request("/bodies/superjson", {
 			method: "POST",
 			headers: { "content-type": "application/json" },
-			body: JSON.stringify(superjson.serialize({ payload: { value: 7 } })),
+			body: JSON.stringify(
+				superjson.serialize({
+					payload: {
+						createdAt: new Date("2025-03-01T00:00:00.000Z"),
+						scores: new Map([
+							["math", 4],
+							["science", 8],
+						]),
+						flags: new Set(["priority", "gift"]),
+					},
+				}),
+			),
 		});
 		expect(superjsonBody.status).toBe(200);
-		expect(await superjsonBody.json()).toEqual({ doubled: 14 });
+		expect(await superjsonBody.json()).toEqual({
+			isoDate: "2025-03-01T00:00:00.000Z",
+			scoreTotal: 12,
+			hasPriority: true,
+		});
 
 		const stringBody = await app.request("/bodies/string", {
 			method: "POST",
@@ -794,12 +877,25 @@ describe("createHono", () => {
 			method: "POST",
 			headers: {
 				"x-zono-superjson-headers": superjson.stringify({
-					auth: { token: "token-abc", scopes: ["read", "write"] },
+					auth: {
+						token: "token-abc",
+						issuedAt: new Date("2025-03-02T00:00:00.000Z"),
+						scopes: new Set(["read", "write"]),
+						quotas: new Map([
+							["read", 5],
+							["write", 2],
+						]),
+					},
 				}),
 			},
 		});
 		expect(superjsonHeaders.status).toBe(200);
-		expect(await superjsonHeaders.json()).toEqual({ token: "token-abc" });
+		expect(await superjsonHeaders.json()).toEqual({
+			token: "token-abc",
+			issuedAt: "2025-03-02T00:00:00.000Z",
+			scopeCount: 2,
+			quotaTotal: 7,
+		});
 	});
 
 	test("emits JSON, SuperJSON, Text, Blob, ArrayBuffer, FormData, ReadableStream, and Void responses", async () => {
@@ -816,11 +912,24 @@ describe("createHono", () => {
 			superjsonWire as Parameters<typeof superjson.deserialize>[0],
 		);
 		const parsedSuperjson = z
-			.object({ kind: z.literal("superjson"), count: z.number() })
+			.object({
+				kind: z.literal("superjson"),
+				createdAt: z.date(),
+				counters: z.map(z.string(), z.number()),
+				tags: z.set(z.string()),
+			})
 			.safeParse(superjsonDecoded);
 		expect(parsedSuperjson.success).toBe(true);
 		if (parsedSuperjson.success) {
-			expect(parsedSuperjson.data).toEqual({ kind: "superjson", count: 2 });
+			expect(parsedSuperjson.data.kind).toBe("superjson");
+			expect(parsedSuperjson.data.createdAt.toISOString()).toBe("2025-01-01T00:00:00.000Z");
+			expect(parsedSuperjson.data.counters).toEqual(
+				new Map([
+					["success", 2],
+					["failure", 1],
+				]),
+			);
+			expect(parsedSuperjson.data.tags).toEqual(new Set(["alpha", "beta"]));
 		}
 
 		const text = await app.request("/responses/text");
@@ -861,14 +970,31 @@ describe("createHono", () => {
 		expect(encoded).toBeTruthy();
 		if (encoded) {
 			const parsedHeaders = z
-				.object({ meta: z.object({ source: z.string(), attempt: z.number() }) })
+				.object({
+					meta: z.object({
+						source: z.string(),
+						attempt: z.number(),
+						generatedAt: z.date(),
+					}),
+					quotas: z.map(z.string(), z.number()),
+					scopes: z.set(z.string()),
+				})
 				.safeParse(
 					superjson.parse<unknown>(encoded as Parameters<typeof superjson.parse>[0]),
 				);
 			expect(parsedHeaders.success).toBe(true);
 			if (parsedHeaders.success) {
 				expect(parsedHeaders.data).toEqual({
-					meta: { source: "hono", attempt: 1 },
+					meta: {
+						source: "hono",
+						attempt: 1,
+						generatedAt: new Date("2025-01-02T00:00:00.000Z"),
+					},
+					quotas: new Map([
+						["read", 5],
+						["write", 2],
+					]),
+					scopes: new Set(["read", "write"]),
 				});
 			}
 		}

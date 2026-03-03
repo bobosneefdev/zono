@@ -1,59 +1,30 @@
 {
     "name": "@bobosneefdev/zono",
     "version": "8.0.0",
+    "type": "module",
     "packageManager": "bun@1.3.5",
     "description": "Easily create contract-first HTTP clients, servers, and gateways using Zod schemas.",
     "homepage": "https://github.com/bobosneefdev/zono#readme",
     "exports": {
         "./contract": {
-            "import": {
-                "types": "./dist/contract.d.mts",
-                "default": "./dist/contract.mjs"
-            },
-            "require": {
-                "types": "./dist/contract.d.ts",
-                "default": "./dist/contract.js"
-            }
+            "types": "./dist/contract.d.ts",
+            "import": "./dist/contract.mjs"
         },
         "./middleware": {
-            "import": {
-                "types": "./dist/middleware.d.mts",
-                "default": "./dist/middleware.mjs"
-            },
-            "require": {
-                "types": "./dist/middleware.d.ts",
-                "default": "./dist/middleware.js"
-            }
+            "types": "./dist/middleware.d.ts",
+            "import": "./dist/middleware.mjs"
         },
         "./client": {
-            "import": {
-                "types": "./dist/client.d.mts",
-                "default": "./dist/client.mjs"
-            },
-            "require": {
-                "types": "./dist/client.d.ts",
-                "default": "./dist/client.js"
-            }
+            "types": "./dist/client.d.ts",
+            "import": "./dist/client.mjs"
         },
         "./hono": {
-            "import": {
-                "types": "./dist/hono.d.mts",
-                "default": "./dist/hono.mjs"
-            },
-            "require": {
-                "types": "./dist/hono.d.ts",
-                "default": "./dist/hono.js"
-            }
+            "types": "./dist/hono.d.ts",
+            "import": "./dist/hono.mjs"
         },
         "./hono-gateway": {
-            "import": {
-                "types": "./dist/hono-gateway.d.mts",
-                "default": "./dist/hono-gateway.mjs"
-            },
-            "require": {
-                "types": "./dist/hono-gateway.d.ts",
-                "default": "./dist/hono-gateway.js"
-            }
+            "types": "./dist/hono-gateway.d.ts",
+            "import": "./dist/hono-gateway.mjs"
         }
     },
     "sideEffects": false,

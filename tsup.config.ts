@@ -1,7 +1,7 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-	format: ["esm", "cjs"],
+	format: ["esm"],
 	entry: {
 		contract: "src/contract/index.ts",
 		middleware: "src/middleware/index.ts",
