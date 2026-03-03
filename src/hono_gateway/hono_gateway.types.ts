@@ -3,8 +3,8 @@ import type { AdditionalHandlerParamsFn, HonoContextParams } from "~/hono/hono.t
 
 /** Input for a single service in the gateway */
 export type GatewayServiceInput = {
-	routes: unknown;
-	middleware?: unknown;
+	contracts: unknown;
+	middlewares?: unknown;
 };
 
 /** Map of service names to their route/middleware definitions */
@@ -14,9 +14,9 @@ export type GatewayInput = Record<string, GatewayServiceInput>;
  * Generated route structure for the gateway from service inputs.
  * @template T - The gateway input type
  */
-export type GeneratedGatewayRoutes<T extends GatewayInput> = {
+export type GeneratedGatewayContracts<T extends GatewayInput> = {
 	ROUTER: {
-		[K in keyof T & string]: T[K]["routes"];
+		[K in keyof T & string]: T[K]["contracts"];
 	};
 };
 
@@ -24,7 +24,7 @@ export type GeneratedGatewayRoutes<T extends GatewayInput> = {
  * Generated middleware structure for the gateway from service inputs.
  * @template T - The gateway input type
  */
-export type GeneratedGatewayMiddleware<T extends GatewayInput> = {
+export type GeneratedGatewayMiddlewares<T extends GatewayInput> = {
 	ROUTER: {
 		[K in keyof T & string]: T[K] extends { middleware: infer M } ? M : Record<never, never>;
 	};
@@ -35,8 +35,8 @@ export type GeneratedGatewayMiddleware<T extends GatewayInput> = {
  * @template T - The gateway input type
  */
 export type GeneratedGateway<T extends GatewayInput> = {
-	routes: GeneratedGatewayRoutes<T>;
-	middleware: GeneratedGatewayMiddleware<T>;
+	contracts: GeneratedGatewayContracts<T>;
+	middlewares: GeneratedGatewayMiddlewares<T>;
 };
 
 /**

@@ -11,7 +11,7 @@ import {
 } from "~/hono/hono.js";
 import {
 	createGatewayOptions,
-	generateHonoGatewayRoutesAndMiddleware,
+	generateHonoGatewayContractsAndMiddlewares,
 	initHonoGateway,
 } from "~/hono_gateway/hono_gateway.js";
 import { createMiddlewares } from "~/middleware/middleware.js";
@@ -41,6 +41,13 @@ const userSchema = z.object({
 	id: z.uuid(),
 	name: z.string(),
 	email: z.email(),
+});
+
+const honoOptions = createHonoOptions({
+	errorMode: "public",
+	additionalHandlerParams: async (ctx) => {
+		return [ctx.req.header("Authorization") ?? "no-auth"] as const;
+	},
 });
 
 const contracts = createContracts(shape, {
@@ -122,25 +129,7 @@ const contracts = createContracts(shape, {
 	},
 });
 
-const middlewares = createMiddlewares(contracts, {
-	MIDDLEWARE: {
-		rateLimit: {
-			429: {
-				type: "JSON",
-				schema: z.object({ retryAfterSeconds: z.number().int().positive() }),
-			},
-		},
-	},
-});
-
-const honoOptions = createHonoOptions({
-	errorMode: "public",
-	additionalHandlerParams: async (ctx) => {
-		return [ctx.req.header("Authorization") ?? "no-auth"] as const;
-	},
-});
-
-const honoRouteHandlers = createHonoContractHandlers(contracts, honoOptions, {
+const honoContractHandlers = createHonoContractHandlers(contracts, honoOptions, {
 	ROUTER: {
 		users: {
 			ROUTER: {
@@ -202,6 +191,17 @@ const honoRouteHandlers = createHonoContractHandlers(contracts, honoOptions, {
 	},
 });
 
+const middlewares = createMiddlewares(contracts, {
+	MIDDLEWARE: {
+		rateLimit: {
+			429: {
+				type: "JSON",
+				schema: z.object({ retryAfterSeconds: z.number().int().positive() }),
+			},
+		},
+	},
+});
+
 const honoMiddlewareHandlers = createHonoMiddlewareHandlers(middlewares, honoOptions, {
 	MIDDLEWARE: {
 		rateLimit: async () => ({
@@ -214,28 +214,20 @@ const honoMiddlewareHandlers = createHonoMiddlewareHandlers(middlewares, honoOpt
 
 const app = new Hono();
 
-initHono(app, contracts, honoRouteHandlers, middlewares, honoMiddlewareHandlers, honoOptions);
+initHono(app, contracts, honoContractHandlers, middlewares, honoMiddlewareHandlers, honoOptions);
 
-Bun.serve({
-	fetch: app.fetch,
-	port: 3000,
-});
+Bun.serve({ fetch: app.fetch, port: 3000 });
 
-const client = createClient(contracts, {
-	baseUrl: "http://localhost:3000",
-	middleware: [middlewares],
-	serverErrorMode: "public",
-});
-
-const gateway = generateHonoGatewayRoutesAndMiddleware({
+const gateway = generateHonoGatewayContractsAndMiddlewares({
 	usersService: {
-		routes: contracts,
-		middleware: middlewares,
+		contracts: contracts,
+		middlewares: middlewares,
 	},
 });
 
-const gatewayRoutes = gateway.routes;
-const gatewayMiddlewares = gateway.middleware;
+const gatewayRoutes = gateway.contracts;
+
+const gatewayMiddlewares = gateway.middlewares;
 
 const gatewayOptions = createGatewayOptions(gatewayRoutes, {
 	services: {
@@ -277,14 +269,14 @@ Bun.serve({
 	port: 4000,
 });
 
-const gatewayClient = createClient(gatewayRoutes, {
+const client = createClient(gatewayRoutes, {
 	baseUrl: "http://localhost:4000",
 	middleware: [customGatewayMiddlewares, gatewayMiddlewares],
 	serverErrorMode: "public",
 });
 
 (async () => {
-	const serviceRegister = await client.users.register("post", {
+	const serviceRegister = await client.usersService.users.register("post", {
 		body: {
 			name: "Ada Lovelace",
 			email: "ada@example.com",
@@ -295,17 +287,17 @@ const gatewayClient = createClient(gatewayRoutes, {
 		console.log("Service created user:", serviceRegister.body.id);
 	}
 
-	const gatewayHealth = await gatewayClient.usersService.health("get");
+	const gatewayHealth = await client.usersService.health("get");
 	if (gatewayHealth.status === 200) {
 		console.log("Gateway health:", gatewayHealth.body.status);
 	}
 
-	const transformed = await client.transforms("post", { body: { name: "  ada  " } });
+	const transformed = await client.usersService.transforms("post", { body: { name: "  ada  " } });
 	if (transformed.status === 200) {
 		console.log("Transformed response:", transformed.body.message);
 	}
 
-	const gatewayUser = await gatewayClient.usersService.users.$userId("get", {
+	const gatewayUser = await client.usersService.users.$userId("get", {
 		pathParams: {
 			userId: crypto.randomUUID(),
 		},

@@ -16,19 +16,6 @@ Optional peer dependency:
 ## Quick start: server + client
 
 ```ts
-import { Hono } from "hono";
-import z from "zod";
-import type { RouterShape } from "@bobosneefdev/zono/contract";
-import { createContracts } from "@bobosneefdev/zono/contract";
-import { createClient } from "@bobosneefdev/zono/client";
-import {
-  createHono,
-  createHonoMiddlewareHandlers,
-  createHonoOptions,
-  createHonoRouteHandlers,
-} from "@bobosneefdev/zono/hono";
-import { createMiddlewares } from "@bobosneefdev/zono/middleware";
-
 const shape = {
   ROUTER: {
     health: { CONTRACT: true },
@@ -149,7 +136,7 @@ const middlewareHandlers = createHonoMiddlewareHandlers(middleware, honoOptions,
 });
 
 const app = new Hono();
-createHono(app, contracts, contractHandlers, middleware, middlewareHandlers, honoOptions);
+initHono(app, contracts, contractHandlers, middleware, middlewareHandlers, honoOptions);
 
 Bun.serve({ fetch: app.fetch, port: 3000 });
 
@@ -169,7 +156,7 @@ if (analytics.status === 200) {
 
 ## Gateway composition
 
-Use [generateHonoGatewayRoutesAndMiddleware](README.md#gateway-composition) to compose multiple services behind a single Hono gateway.
+Use [generateHonoGatewayContractsAndMiddlewares](README.md#gateway-composition) to compose multiple services behind a single Hono gateway.
 
 ```ts
 import { Hono } from "hono";
@@ -177,29 +164,29 @@ import { createMiddlewares } from "@bobosneefdev/zono/middleware";
 import {
   createGatewayOptions,
   createHonoGateway,
-  generateHonoGatewayRoutesAndMiddleware,
+  generateHonoGatewayContractsAndMiddlewares,
 } from "@bobosneefdev/zono/hono-gateway";
 import { createHonoMiddlewareHandlers } from "@bobosneefdev/zono/hono";
 
-const { routes: gatewayRoutes, middleware: generatedGatewayMiddleware } =
-  generateHonoGatewayRoutesAndMiddleware({
+const { contracts: gatewayContracts, middlewares: generatedGatewayMiddleware } =
+  generateHonoGatewayContractsAndMiddlewares({
     usersService: {
-      routes: usersContracts,
-      middleware: usersMiddleware,
+      contracts: usersContracts,
+      middlewares: usersMiddleware,
     },
     billingService: {
-      routes: billingContracts,
-      middleware: billingMiddleware,
+      contracts: billingContracts,
+      middlewares: billingMiddleware,
     },
   });
 
-const gatewayCustomMiddlewares = createMiddlewares(gatewayRoutes, {
+const gatewayCustomMiddlewares = createMiddlewares(gatewayContracts, {
   MIDDLEWARE: {
     requestLogging: {},
   },
 });
 
-const gatewayOptions = createGatewayOptions(gatewayRoutes, {
+const gatewayOptions = createGatewayOptions(gatewayContracts, {
   services: {
     usersService: "http://localhost:3001",
     billingService: "http://localhost:3002",
@@ -221,9 +208,9 @@ const gatewayCustomMiddlewareHandlers = createHonoMiddlewareHandlers(
 );
 
 const gatewayApp = new Hono();
-createHonoGateway(
+initHonoGateway(
   gatewayApp,
-  gatewayRoutes,
+  gatewayContracts,
   gatewayCustomMiddlewares,
   gatewayCustomMiddlewareHandlers,
   gatewayOptions,

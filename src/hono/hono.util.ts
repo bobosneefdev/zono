@@ -39,6 +39,18 @@ export function normalizeBasePath(basePath: string | undefined): string {
 	return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
 }
 
+async function consumeUnreadRequestBody(request: Request): Promise<void> {
+	if (request.bodyUsed || !request.body) {
+		return;
+	}
+
+	try {
+		await request.arrayBuffer();
+	} catch {
+		// best-effort drain for keep-alive socket safety
+	}
+}
+
 export async function executeMiddlewareChain<TContextParams extends ReadonlyArray<unknown>>(
 	context: Context,
 	middleware: Array<MiddlewareEntry<TContextParams>>,
@@ -60,17 +72,25 @@ export async function executeMiddlewareChain<TContextParams extends ReadonlyArra
 		}
 
 		const entry = middleware[index];
+		let nextCalled = false;
 		const typedResult = await entry.handler(
 			context,
 			async () => {
+				nextCalled = true;
 				await dispatch(index + 1);
 			},
 			...contextParams,
 		);
 
 		if (typedResult instanceof Response) {
+			if (!nextCalled) {
+				await consumeUnreadRequestBody(context.req.raw);
+			}
 			context.res = typedResult;
 		} else if (typedResult != null && typeof typedResult === "object") {
+			if (!nextCalled) {
+				await consumeUnreadRequestBody(context.req.raw);
+			}
 			// MiddlewareReturn — build a Response from the typed return object
 			context.res = buildTypedResponse(
 				typedResult as { type: string; status: number; data?: unknown },

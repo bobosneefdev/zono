@@ -151,20 +151,20 @@ function collectGatewayMiddleware(
  * @param services - Map of service names to their route/middleware definitions
  * @returns Generated gateway structure with routes and middleware
  */
-export function generateHonoGatewayRoutesAndMiddleware<const T extends GatewayInput>(
+export function generateHonoGatewayContractsAndMiddlewares<const T extends GatewayInput>(
 	services: T,
 ): GeneratedGateway<T> {
-	const routes: Record<string, unknown> = {};
-	const middleware: Record<string, unknown> = {};
+	const contracts: Record<string, unknown> = {};
+	const middlewares: Record<string, unknown> = {};
 
 	for (const [name, service] of Object.entries(services)) {
-		routes[name] = service.routes;
-		middleware[name] = service.middleware ?? {};
+		contracts[name] = service.contracts;
+		middlewares[name] = service.middlewares ?? {};
 	}
 
 	return {
-		routes: { ROUTER: routes },
-		middleware: { ROUTER: middleware },
+		contracts: { ROUTER: contracts },
+		middlewares: { ROUTER: middlewares },
 	} as GeneratedGateway<T>;
 }
 
@@ -172,29 +172,29 @@ export function generateHonoGatewayRoutesAndMiddleware<const T extends GatewayIn
  * Initializes a Hono gateway that proxies requests to backend services.
  * Supports middlewares that execute before proxying.
  * @param app - Hono app instance
- * @param routes - Generated gateway routes
- * @param middleware - Middleware definition for the gateway
+ * @param contracts - Generated gateway routes
+ * @param middlewares - Middleware definition for the gateway
  * @param middlewareHandlers - Middleware handler implementations
  * @param options - Gateway configuration including service URLs
  * @returns The configured Hono gateway app
  */
 export function initHonoGateway<
-	TRoutes,
-	TMiddleware extends MiddlewaresDefinition<TRoutes> = MiddlewaresDefinition<TRoutes>,
+	TContracts,
+	TMiddlewares extends MiddlewaresDefinition<TContracts> = MiddlewaresDefinition<TContracts>,
 	TContextParams extends HonoContextParams = [],
 >(
 	app: Hono,
-	routes: TRoutes,
-	middleware: TMiddleware,
-	middlewareHandlers: HonoMiddlewareHandlerTree<TMiddleware, TContextParams>,
-	options: GatewayOptions<TRoutes, TContextParams>,
+	contracts: TContracts,
+	middlewares: TMiddlewares,
+	middlewareHandlers: HonoMiddlewareHandlerTree<TMiddlewares, TContextParams>,
+	options: GatewayOptions<TContracts, TContextParams>,
 ): Hono {
 	const basePath = normalizeBasePath(options.basePath);
 	app.notFound(() => buildNotFoundErrorResponse());
 	app.onError(() => buildInternalErrorResponse());
 
 	const services = options.services as Record<string, string>;
-	const registrations = collectGatewayRoutes(routes as Record<string, unknown>);
+	const registrations = collectGatewayRoutes(contracts as Record<string, unknown>);
 
 	for (const registration of registrations) {
 		const serviceBaseUrl = services[registration.namespace];
@@ -207,7 +207,7 @@ export function initHonoGateway<
 			.split("/")
 			.filter(Boolean);
 		const middlewareChain = collectGatewayMiddleware(
-			middleware,
+			middlewares,
 			middlewareHandlers,
 			gatewayPathSegments.map((s) => (s.startsWith(":") ? `$${s.slice(1)}` : s)),
 		);

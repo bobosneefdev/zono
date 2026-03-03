@@ -1,6 +1,6 @@
 export {
 	createGatewayOptions,
-	generateHonoGatewayRoutesAndMiddleware,
+	generateHonoGatewayContractsAndMiddlewares,
 	initHonoGateway,
 } from "~/hono_gateway/hono_gateway.js";
 export type {
@@ -8,6 +8,6 @@ export type {
 	GatewayOptions,
 	GatewayServiceInput,
 	GeneratedGateway,
-	GeneratedGatewayMiddleware,
-	GeneratedGatewayRoutes,
+	GeneratedGatewayContracts,
+	GeneratedGatewayMiddlewares,
 } from "~/hono_gateway/hono_gateway.types.js";

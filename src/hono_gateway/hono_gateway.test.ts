@@ -8,7 +8,7 @@ import type { RouterShape } from "~/contract/contract.types.js";
 import { createHonoMiddlewareHandlers, initHono } from "~/hono/hono.js";
 import {
 	createGatewayOptions,
-	generateHonoGatewayRoutesAndMiddleware,
+	generateHonoGatewayContractsAndMiddlewares,
 	initHonoGateway,
 } from "~/hono_gateway/hono_gateway.js";
 import { createMiddlewares } from "~/middleware/middleware.js";
@@ -293,20 +293,20 @@ beforeAll(() => {
 	);
 	serviceServer = Bun.serve({ fetch: serviceApp.fetch, port: SERVICE_PORT });
 
-	const gateway = generateHonoGatewayRoutesAndMiddleware({
+	const gateway = generateHonoGatewayContractsAndMiddlewares({
 		inventory: {
-			routes: serviceContracts,
-			middleware: serviceMiddleware,
+			contracts: serviceContracts,
+			middlewares: serviceMiddleware,
 		},
 	});
 
-	const gatewayMiddleware = createMiddlewares(gateway.routes, {
+	const gatewayMiddleware = createMiddlewares(gateway.contracts, {
 		MIDDLEWARE: {
 			logging: {},
 		},
 	});
 
-	const gatewayOptions = createGatewayOptions(gateway.routes, {
+	const gatewayOptions = createGatewayOptions(gateway.contracts, {
 		services: {
 			inventory: `http://localhost:${SERVICE_PORT}`,
 		},
@@ -328,7 +328,7 @@ beforeAll(() => {
 	const gatewayApp = new Hono();
 	initHonoGateway(
 		gatewayApp,
-		gateway.routes,
+		gateway.contracts,
 		gatewayMiddleware,
 		gatewayMiddlewareHandlers,
 		gatewayOptions,
@@ -345,11 +345,11 @@ afterAll(() => {
 describe("Gateway", () => {
 	describe("generateHonoGatewayRoutesAndMiddleware", () => {
 		test("generates routes with service name prefix", () => {
-			const gateway = generateHonoGatewayRoutesAndMiddleware({
-				svc: { routes: serviceContracts, middleware: serviceMiddleware },
+			const gateway = generateHonoGatewayContractsAndMiddlewares({
+				svc: { contracts: serviceContracts, middlewares: serviceMiddleware },
 			});
-			expect(gateway.routes.ROUTER.svc).toBe(serviceContracts);
-			expect(gateway.middleware.ROUTER.svc).toBe(serviceMiddleware);
+			expect(gateway.contracts.ROUTER.svc).toBe(serviceContracts);
+			expect(gateway.middlewares.ROUTER.svc).toBe(serviceMiddleware);
 		});
 	});
 
@@ -480,12 +480,12 @@ describe("Gateway", () => {
 
 	describe("gateway client", () => {
 		test("proxy-chain client works through gateway", async () => {
-			const gateway = generateHonoGatewayRoutesAndMiddleware({
-				inventory: { routes: serviceContracts, middleware: serviceMiddleware },
+			const gateway = generateHonoGatewayContractsAndMiddlewares({
+				inventory: { contracts: serviceContracts, middlewares: serviceMiddleware },
 			});
-			const client = createClient(gateway.routes, {
+			const client = createClient(gateway.contracts, {
 				baseUrl: `http://localhost:${GATEWAY_PORT}`,
-				middleware: [gateway.middleware],
+				middleware: [gateway.middlewares],
 			});
 
 			const res = await client.inventory.items("get");
@@ -494,12 +494,12 @@ describe("Gateway", () => {
 		});
 
 		test("proxy-chain client with path params through gateway", async () => {
-			const gateway = generateHonoGatewayRoutesAndMiddleware({
-				inventory: { routes: serviceContracts, middleware: serviceMiddleware },
+			const gateway = generateHonoGatewayContractsAndMiddlewares({
+				inventory: { contracts: serviceContracts, middlewares: serviceMiddleware },
 			});
-			const client = createClient(gateway.routes, {
+			const client = createClient(gateway.contracts, {
 				baseUrl: `http://localhost:${GATEWAY_PORT}`,
-				middleware: [gateway.middleware],
+				middleware: [gateway.middlewares],
 			});
 
 			const res = await client.inventory.items.$itemId("get", {
@@ -512,12 +512,12 @@ describe("Gateway", () => {
 		});
 
 		test("proxy-chain client receives superjson body via gateway", async () => {
-			const gateway = generateHonoGatewayRoutesAndMiddleware({
-				inventory: { routes: serviceContracts, middleware: serviceMiddleware },
+			const gateway = generateHonoGatewayContractsAndMiddlewares({
+				inventory: { contracts: serviceContracts, middlewares: serviceMiddleware },
 			});
-			const client = createClient(gateway.routes, {
+			const client = createClient(gateway.contracts, {
 				baseUrl: `http://localhost:${GATEWAY_PORT}`,
-				middleware: [gateway.middleware],
+				middleware: [gateway.middlewares],
 			});
 
 			const res = await client.inventory.superjsonBody("get");
@@ -535,12 +535,12 @@ describe("Gateway", () => {
 		});
 
 		test("proxy-chain client receives superjson headers via gateway", async () => {
-			const gateway = generateHonoGatewayRoutesAndMiddleware({
-				inventory: { routes: serviceContracts, middleware: serviceMiddleware },
+			const gateway = generateHonoGatewayContractsAndMiddlewares({
+				inventory: { contracts: serviceContracts, middlewares: serviceMiddleware },
 			});
-			const client = createClient(gateway.routes, {
+			const client = createClient(gateway.contracts, {
 				baseUrl: `http://localhost:${GATEWAY_PORT}`,
-				middleware: [gateway.middleware],
+				middleware: [gateway.middlewares],
 			});
 
 			const res = await client.inventory.superjsonHeaders("get");

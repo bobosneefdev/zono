@@ -17,8 +17,12 @@ import type {
 
 const HTTP_METHODS = new Set<string>(CONTRACT_METHOD_ORDER);
 
-function resolveContract(routes: unknown, pathSegments: Array<string>, method: string): Contract {
-	let node = routes as Record<string, unknown>;
+function resolveContract(
+	contracts: unknown,
+	pathSegments: Array<string>,
+	method: string,
+): Contract {
+	let node = contracts as Record<string, unknown>;
 	for (const segment of pathSegments) {
 		const router = node.ROUTER as Record<string, unknown> | undefined;
 		if (!router || !(segment in router)) {
