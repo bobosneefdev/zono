@@ -4,9 +4,9 @@ import { createClient } from "~/client/client.js";
 import { createContracts } from "~/contract/contract.js";
 import type { RouterShape } from "~/contract/contract.types.js";
 import {
+	createHonoContractHandlers,
 	createHonoMiddlewareHandlers,
 	createHonoOptions,
-	createHonoRouteHandlers,
 	initHono,
 } from "~/hono/hono.js";
 import {
@@ -140,7 +140,7 @@ const honoOptions = createHonoOptions({
 	},
 });
 
-const honoRouteHandlers = createHonoRouteHandlers(contracts, honoOptions, {
+const honoRouteHandlers = createHonoContractHandlers(contracts, honoOptions, {
 	ROUTER: {
 		users: {
 			ROUTER: {

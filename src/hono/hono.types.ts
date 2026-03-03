@@ -37,7 +37,7 @@ export type InferAdditionalHandlerParams<T extends AdditionalHandlerParamsFn<Hon
  * @template TContract - The contract defining request/response types
  * @template TContextParams - Additional parameters extracted from context
  */
-export type HonoHandler<
+export type HonoContractHandler<
 	TContract extends Contract,
 	TContextParams extends HonoContextParams = [],
 > = (
@@ -51,23 +51,26 @@ export type HonoHandler<
  * @template TContractMap - The contract method map
  * @template TContextParams - Additional parameters extracted from context
  */
-export type HonoHandlerMethodMap<
+export type HonoContractHandlerMethodMap<
 	TContractMap extends ContractMethodMap,
 	TContextParams extends HonoContextParams = [],
 > = {
-	[M in ContractMethod as TContractMap[M] extends Contract ? M : never]: HonoHandler<
+	[M in ContractMethod as TContractMap[M] extends Contract ? M : never]: HonoContractHandler<
 		Extract<TContractMap[M], Contract>,
 		TContextParams
 	>;
 };
 
-type HonoRouteHandlerNode<TNode, TContextParams extends HonoContextParams = []> = (TNode extends {
+type HonoContractHandlerNode<
+	TNode,
+	TContextParams extends HonoContextParams = [],
+> = (TNode extends {
 	CONTRACT: infer C extends ContractMethodMap;
 }
-	? { HANDLER: HonoHandlerMethodMap<C, TContextParams> }
+	? { HANDLER: HonoContractHandlerMethodMap<C, TContextParams> }
 	: unknown) &
 	(TNode extends { ROUTER: infer R extends Record<string, unknown> }
-		? { ROUTER: { [K in keyof R]: HonoRouteHandlerNode<R[K], TContextParams> } }
+		? { ROUTER: { [K in keyof R]: HonoContractHandlerNode<R[K], TContextParams> } }
 		: unknown);
 
 /**
@@ -75,13 +78,13 @@ type HonoRouteHandlerNode<TNode, TContextParams extends HonoContextParams = []> 
  * @template TContracts - The contract definition type
  * @template TContextParams - Additional parameters extracted from context
  */
-export type HonoRouteHandlerTree<
+export type HonoContractHandlerTree<
 	TContracts,
 	TContextParams extends HonoContextParams = [],
 > = TContracts extends {
 	ROUTER: infer R extends Record<string, unknown>;
 }
-	? { ROUTER: { [K in keyof R]: HonoRouteHandlerNode<R[K], TContextParams> } }
+	? { ROUTER: { [K in keyof R]: HonoContractHandlerNode<R[K], TContextParams> } }
 	: never;
 
 /**

@@ -98,7 +98,7 @@ const middleware = createMiddlewares(contracts, {
 
 const honoOptions = createHonoOptions({ errorMode: "public" });
 
-const routeHandlers = createHonoRouteHandlers(contracts, honoOptions, {
+const contractHandlers = createHonoContractHandlers(contracts, honoOptions, {
   ROUTER: {
     health: {
       HANDLER: {
@@ -149,7 +149,7 @@ const middlewareHandlers = createHonoMiddlewareHandlers(middleware, honoOptions,
 });
 
 const app = new Hono();
-createHono(app, contracts, routeHandlers, middleware, middlewareHandlers, honoOptions);
+createHono(app, contracts, contractHandlers, middleware, middlewareHandlers, honoOptions);
 
 Bun.serve({ fetch: app.fetch, port: 3000 });
 

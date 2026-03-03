@@ -8,9 +8,9 @@ import type {
 import type {
 	AdditionalHandlerParamsFn,
 	HonoContextParams,
+	HonoContractHandlerTree,
 	HonoMiddlewareHandlerTree,
 	HonoOptions,
-	HonoRouteHandlerTree,
 } from "~/hono/hono.types.js";
 import {
 	collectMiddlewareEntriesFromNode,
@@ -220,11 +220,14 @@ function collectRoutes(
 /**
  * Creates type-safe route handlers for use with createHono.
  */
-export function createHonoRouteHandlers<TContracts, TContextParams extends HonoContextParams = []>(
+export function createHonoContractHandlers<
+	TContracts,
+	TContextParams extends HonoContextParams = [],
+>(
 	_contracts: TContracts,
 	_options: HonoOptions<TContextParams>,
-	handlers: HonoRouteHandlerTree<TContracts, TContextParams>,
-): HonoRouteHandlerTree<TContracts, TContextParams> {
+	handlers: HonoContractHandlerTree<TContracts, TContextParams>,
+): HonoContractHandlerTree<TContracts, TContextParams> {
 	return handlers;
 }
 
@@ -268,7 +271,7 @@ export function initHono<
 >(
 	app: Hono,
 	contracts: TContracts,
-	routeHandlers: HonoRouteHandlerTree<TContracts, TContextParams>,
+	routeHandlers: HonoContractHandlerTree<TContracts, TContextParams>,
 	middleware?: TMiddleware,
 	middlewareHandlers?: HonoMiddlewareHandlerTree<TMiddleware, TContextParams>,
 	options?: HonoOptions<TContextParams>,

@@ -1,18 +1,18 @@
 export {
+	createHonoContractHandlers,
 	createHonoMiddlewareHandlers,
 	createHonoOptions,
-	createHonoRouteHandlers,
 	initHono,
 } from "~/hono/hono.js";
 export type {
 	AdditionalHandlerParamsFn,
 	HonoContextParams,
-	HonoHandler,
-	HonoHandlerMethodMap,
+	HonoContractHandler,
+	HonoContractHandlerMethodMap,
+	HonoContractHandlerTree,
 	HonoMiddlewareHandler,
 	HonoMiddlewareHandlerTree,
 	HonoOptions,
-	HonoRouteHandlerTree,
 	InferAdditionalHandlerParams,
 } from "~/hono/hono.types.js";
 export type {
