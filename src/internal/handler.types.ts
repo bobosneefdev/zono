@@ -1,5 +1,4 @@
 import z from "zod";
-import type { ContractOutput } from "~/contract/contract.io.js";
 import type {
 	Contract,
 	ContractMethod,
@@ -7,6 +6,7 @@ import type {
 	ContractResponseStatuses,
 	ContractResponses,
 } from "~/contract/contract.types.js";
+import type { ContractOutput } from "~/contract/contract.util.js";
 import type { PossiblePromise, ResponseHeadersForStatus } from "~/internal/util.types.js";
 import type { MiddlewareContractMap } from "~/middleware/middleware.types.js";
 

@@ -3,8 +3,8 @@ import type { Context } from "hono";
 import { Hono } from "hono";
 import superjson from "superjson";
 import z from "zod";
+import { createContracts } from "~/contract/contract.js";
 import type { RouterShape } from "~/contract/contract.types.js";
-import { createContracts } from "~/contract/contracts.js";
 import { createHonoMiddlewareHandlers, createHonoOptions, initHono } from "~/hono/hono.js";
 import { createMiddlewares } from "~/middleware/middleware.js";
 

@@ -1,6 +1,10 @@
 import superjson from "superjson";
-import type { ErrorMode } from "~/contract/contract.error.js";
-import type { Contract, ContractQuery, ContractResponses } from "~/contract/contract.types.js";
+import type {
+	Contract,
+	ContractQuery,
+	ContractResponses,
+	ErrorMode,
+} from "~/contract/contract.types.js";
 import { parseResponseBody } from "~/internal/body.util.js";
 import { parseContractFields } from "~/internal/parse.js";
 import { CONTRACT_METHOD_ORDER, isRecord } from "~/internal/util.js";

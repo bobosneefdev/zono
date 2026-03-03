@@ -1,12 +1,13 @@
 import type {
+	Contract,
+	ContractMethod,
+	ContractResponses,
 	ErrorMode,
 	InternalErrorBody,
 	NotFoundErrorBody,
 	ValidationErrorBody,
-} from "~/contract/contract.error.js";
-import type { ContractInput } from "~/contract/contract.io.js";
-import type { MergeContractResponses } from "~/contract/contract.responses.js";
-import type { Contract, ContractMethod, ContractResponses } from "~/contract/contract.types.js";
+} from "~/contract/contract.types.js";
+import type { ContractInput, MergeContractResponses } from "~/contract/contract.util.js";
 import type {
 	PossiblePromise,
 	Prettify,

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import z from "zod";
+import { createContracts } from "~/contract/contract.js";
 import type { RouterShape } from "~/contract/contract.types.js";
-import { createContracts } from "~/contract/contracts.js";
 import { createMiddlewares } from "~/middleware/middleware.js";
 
 const shape = {

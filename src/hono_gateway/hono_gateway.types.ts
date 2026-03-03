@@ -1,4 +1,4 @@
-import type { ErrorMode } from "~/contract/contract.error.js";
+import type { ErrorMode } from "~/contract/contract.types.js";
 import type { AdditionalHandlerParamsFn, HonoContextParams } from "~/hono/hono.types.js";
 
 /** Input for a single service in the gateway */

@@ -1,12 +1,12 @@
 import type { Context } from "hono";
-import type { ErrorMode } from "~/contract/contract.error.js";
-import type { ContractOutput } from "~/contract/contract.io.js";
 import type {
 	Contract,
 	ContractMethod,
 	ContractMethodMap,
 	ContractResponses,
+	ErrorMode,
 } from "~/contract/contract.types.js";
+import type { ContractOutput } from "~/contract/contract.util.js";
 import type { MiddlewareReturn, ServerHandlerOutput } from "~/internal/handler.types.js";
 import type { PossiblePromise } from "~/internal/util.types.js";
 import type { MiddlewareContractMap } from "~/middleware/middleware.types.js";

@@ -2,8 +2,8 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import z from "zod";
 import { createClient } from "~/client/client.js";
+import { createContracts } from "~/contract/contract.js";
 import type { RouterShape } from "~/contract/contract.types.js";
-import { createContracts } from "~/contract/contracts.js";
 import { initHono } from "~/hono/hono.js";
 import { createMiddlewares } from "~/middleware/middleware.js";
 

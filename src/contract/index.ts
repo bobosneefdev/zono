@@ -1,15 +1,4 @@
-export type {
-	ErrorMode,
-	InternalErrorBody,
-	NotFoundErrorBody,
-	ValidationErrorBody,
-} from "~/contract/contract.error.js";
-export type { ContractInput, ContractOutput } from "~/contract/contract.io.js";
-export type {
-	MergeContractResponses,
-	MergeContractResponsesMany,
-} from "~/contract/contract.responses.js";
-export { mergeContractResponses } from "~/contract/contract.responses.js";
+export { createContracts, mergeContractResponses } from "~/contract/contract.js";
 export type {
 	Contract,
 	ContractBody,
@@ -32,8 +21,19 @@ export type {
 	ContractResponse,
 	ContractResponseStatuses,
 	ContractResponses,
+	ErrorMode,
+	InternalErrorBody,
+	NotFoundErrorBody,
 	RouterShape,
 	ShapeNode,
+	ValidationErrorBody,
+	ValidationErrorBodyHidden,
+	ValidationErrorBodyPublic,
 } from "~/contract/contract.types.js";
-export type { ContractDefinition } from "~/contract/contracts.js";
-export { createContracts } from "~/contract/contracts.js";
+export type {
+	ContractDefinition,
+	ContractInput,
+	ContractOutput,
+	MergeContractResponses,
+	MergeContractResponsesMany,
+} from "~/contract/contract.util.js";

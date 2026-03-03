@@ -1,7 +1,11 @@
 import type { Context, Hono } from "hono";
 import superjson from "superjson";
-import type { ErrorMode } from "~/contract/contract.error.js";
-import type { Contract, ContractMethod, ContractMethodMap } from "~/contract/contract.types.js";
+import type {
+	Contract,
+	ContractMethod,
+	ContractMethodMap,
+	ErrorMode,
+} from "~/contract/contract.types.js";
 import type {
 	AdditionalHandlerParamsFn,
 	HonoContextParams,
@@ -21,6 +25,7 @@ import { parseContractFields } from "~/internal/parse.js";
 import {
 	buildInternalErrorResponse,
 	buildNotFoundErrorResponse,
+	buildTypedResponse,
 	buildValidationErrorResponse,
 } from "~/internal/server.js";
 import {
@@ -32,6 +37,31 @@ import {
 } from "~/internal/util.js";
 import type { MiddlewaresDefinition } from "~/middleware/index.js";
 
+function resolveResponseHeaders(
+	output: { status: number; headers?: unknown },
+	contract: Contract,
+): HeadersInit | undefined {
+	if (!output.headers) return undefined;
+
+	const responseDef = contract.responses[output.status];
+	if (!responseDef?.headers) return undefined;
+
+	if (responseDef.headers.type === "SuperJSON") {
+		return {
+			"x-zono-superjson-headers": superjson.stringify(output.headers),
+		};
+	}
+
+	const responseHeaders: Record<string, string> = {};
+	for (const [key, value] of Object.entries(output.headers as Record<string, unknown>)) {
+		if (typeof value === "string") {
+			responseHeaders[key] = value;
+		}
+	}
+
+	return responseHeaders;
+}
+
 /**
  * Builds an HTTP Response from a handler output object { type, status, data?, headers? }.
  * Response headers from the contract definition are applied when present.
@@ -40,65 +70,12 @@ function buildResponseFromOutput(
 	output: { type: string; status: number; data?: unknown; headers?: unknown },
 	contract: Contract,
 ): Response {
-	const responseHeaders: Record<string, string> = {};
-
-	if (output.headers) {
-		const responseDef = contract.responses[output.status];
-		if (responseDef?.headers) {
-			if (responseDef.headers.type === "SuperJSON") {
-				responseHeaders["x-zono-superjson-headers"] = superjson.stringify(output.headers);
-			} else {
-				for (const [k, v] of Object.entries(output.headers as Record<string, string>)) {
-					if (typeof v === "string") responseHeaders[k] = v;
-				}
-			}
-		}
-	}
-
-	switch (output.type) {
-		case "JSON":
-			return new Response(JSON.stringify(output.data), {
-				status: output.status,
-				headers: { "content-type": "application/json", ...responseHeaders },
-			});
-		case "SuperJSON":
-			return new Response(JSON.stringify(superjson.serialize(output.data)), {
-				status: output.status,
-				headers: { "content-type": "application/json", ...responseHeaders },
-			});
-		case "Text":
-			return new Response(String(output.data), {
-				status: output.status,
-				headers: { "content-type": "text/plain", ...responseHeaders },
-			});
-		case "Blob":
-			return new Response(output.data as Blob, {
-				status: output.status,
-				headers: responseHeaders,
-			});
-		case "ArrayBuffer":
-			return new Response(output.data as ArrayBuffer, {
-				status: output.status,
-				headers: responseHeaders,
-			});
-		case "FormData":
-			return new Response(output.data as FormData, {
-				status: output.status,
-				headers: responseHeaders,
-			});
-		case "ReadableStream":
-			return new Response(output.data as ReadableStream, {
-				status: output.status,
-				headers: responseHeaders,
-			});
-		case "Void":
-			return new Response(null, {
-				status: output.status,
-				headers: responseHeaders,
-			});
-		default:
-			throw new Error(`Unknown response type: ${output.type}`);
-	}
+	return buildTypedResponse({
+		type: output.type,
+		status: output.status,
+		data: output.data,
+		headers: resolveResponseHeaders(output, contract),
+	});
 }
 
 type ResolvedHonoOptions = {
