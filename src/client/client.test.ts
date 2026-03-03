@@ -20,6 +20,7 @@ const shape = {
 			ROUTER: {
 				json: { CONTRACT: true },
 				superjson: { CONTRACT: true },
+				superjsonQuery: { CONTRACT: true },
 				text: { CONTRACT: true },
 				blob: { CONTRACT: true },
 				arrayBuffer: { CONTRACT: true },
@@ -115,6 +116,34 @@ const contracts = createContracts(shape, {
 										createdAt: z.date(),
 										counters: z.map(z.string(), z.number()),
 										tags: z.set(z.string()),
+									}),
+								},
+							},
+						},
+					},
+				},
+				superjsonQuery: {
+					CONTRACT: {
+						get: {
+							query: {
+								type: "SuperJSON",
+								schema: z.object({
+									filters: z.array(
+										z.object({
+											label: z.string(),
+											at: z.date(),
+										}),
+									),
+									metadata: z.map(z.string(), z.number()),
+								}),
+							},
+							responses: {
+								200: {
+									type: "JSON",
+									schema: z.object({
+										filterCount: z.number(),
+										firstAtIso: z.string(),
+										metadataTotal: z.number(),
 									}),
 								},
 							},
@@ -481,6 +510,27 @@ beforeAll(() => {
 								}),
 							},
 						},
+						superjsonQuery: {
+							HANDLER: {
+								get: (input) => {
+									const metadataTotal = [...input.query.metadata.values()].reduce(
+										(total, value) => total + value,
+										0,
+									);
+
+									return {
+										type: "JSON" as const,
+										status: 200 as const,
+										data: {
+											filterCount: input.query.filters.length,
+											firstAtIso:
+												input.query.filters[0]?.at.toISOString() ?? "",
+											metadataTotal,
+										},
+									};
+								},
+							},
+						},
 						text: {
 							HANDLER: {
 								get: () => ({
@@ -769,6 +819,29 @@ describe("createClient", () => {
 			expect(superjson.body.tags).toEqual(new Set(["alpha", "beta"]));
 		}
 
+		const superjsonQuery = await client.responses.superjsonQuery.get({
+			query: {
+				filters: [
+					{
+						label: "one",
+						at: new Date("2025-05-01T00:00:00.000Z"),
+					},
+				],
+				metadata: new Map([
+					["a", 1],
+					["b", 2],
+				]),
+			},
+		});
+		expect(superjsonQuery.status).toBe(200);
+		if (superjsonQuery.status === 200) {
+			expect(superjsonQuery.body).toEqual({
+				filterCount: 1,
+				firstAtIso: "2025-05-01T00:00:00.000Z",
+				metadataTotal: 3,
+			});
+		}
+
 		const text = await client.responses.text.get();
 		expect(text.status).toBe(200);
 		if (text.status === 200) {
@@ -935,5 +1008,7 @@ describe("createClient", () => {
 				quotaTotal: 7,
 			});
 		}
+
+		expect(superjson.response.headers.get("x-zono-superjson-headers")).toBeNull();
 	});
 });

@@ -411,9 +411,15 @@ describe("Gateway", () => {
 		test("forwards superjson response headers", async () => {
 			const res = await fetch(`http://localhost:${GATEWAY_PORT}/inventory/superjsonHeaders`);
 			expect(res.status).toBe(200);
-			const encoded = res.headers.get("x-zono-superjson-headers");
-			expect(encoded).toBeTruthy();
-			if (encoded) {
+			expect(res.headers.get("x-zono-superjson-headers")).toBeNull();
+
+			const encodedMeta = res.headers.get("meta");
+			const encodedQuotas = res.headers.get("quotas");
+			const encodedScopes = res.headers.get("scopes");
+			expect(encodedMeta).toBeTruthy();
+			expect(encodedQuotas).toBeTruthy();
+			expect(encodedScopes).toBeTruthy();
+			if (encodedMeta && encodedQuotas && encodedScopes) {
 				const parsedResult = z
 					.object({
 						meta: z.object({
@@ -424,7 +430,11 @@ describe("Gateway", () => {
 						quotas: z.map(z.string(), z.number()),
 						scopes: z.set(z.string()),
 					})
-					.safeParse(superjson.parse<unknown>(encoded));
+					.safeParse({
+						meta: superjson.parse<unknown>(encodedMeta),
+						quotas: superjson.parse<unknown>(encodedQuotas),
+						scopes: superjson.parse<unknown>(encodedScopes),
+					});
 				expect(parsedResult.success).toBe(true);
 				if (parsedResult.success) {
 					expect(parsedResult.data.meta.source).toBe("service");

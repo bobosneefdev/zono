@@ -1,5 +1,4 @@
 import type { Context, Hono } from "hono";
-import superjson from "superjson";
 import type {
 	Contract,
 	ContractMethod,
@@ -28,6 +27,7 @@ import {
 	buildTypedResponse,
 	buildValidationErrorResponse,
 } from "~/internal/server.js";
+import { encodeSuperjsonFields } from "~/internal/superjson.util.js";
 import {
 	dotPathToParamPath,
 	getContractMethods,
@@ -47,9 +47,7 @@ function resolveResponseHeaders(
 	if (!responseDef?.headers) return undefined;
 
 	if (responseDef.headers.type === "SuperJSON") {
-		return {
-			"x-zono-superjson-headers": superjson.stringify(output.headers),
-		};
+		return encodeSuperjsonFields(output.headers as Record<string, unknown>);
 	}
 
 	const responseHeaders: Record<string, string> = {};

@@ -7,6 +7,7 @@ import type {
 } from "~/contract/contract.types.js";
 import { parseResponseBody } from "~/internal/body.util.js";
 import { parseContractFields } from "~/internal/parse.js";
+import { decodeSuperjsonFields, encodeSuperjsonFields } from "~/internal/superjson.util.js";
 import { CONTRACT_METHOD_ORDER, isRecord } from "~/internal/util.js";
 import type {
 	ClientOptions,
@@ -110,10 +111,17 @@ function buildQueryStringStandard(
 	return serialized.length > 0 ? `?${serialized}` : "";
 }
 
+function buildQueryStringSuperjson(query: unknown): string {
+	if (!isRecord(query)) return "";
+	const encodedQuery = encodeSuperjsonFields(query);
+	const serialized = new URLSearchParams(encodedQuery).toString();
+	return serialized.length > 0 ? `?${serialized}` : "";
+}
+
 function buildQueryString(queryContract: ContractQuery | undefined, query: unknown): string {
 	if (!queryContract || query === undefined) return "";
 	if (queryContract.type === "SuperJSON") {
-		return `?${new URLSearchParams({ superjson: superjson.stringify(query) }).toString()}`;
+		return buildQueryStringSuperjson(query);
 	}
 	return buildQueryStringStandard(query as Record<string, string | Array<string> | undefined>);
 }
@@ -163,8 +171,10 @@ async function parseIncomingResponse(
 	let headers: unknown;
 	if (statusDefinition.headers) {
 		if (statusDefinition.headers.type === "SuperJSON") {
-			const encoded = response.headers.get("x-zono-superjson-headers");
-			headers = encoded ? superjson.parse(encoded) : undefined;
+			const rawHeaders = Object.fromEntries(response.headers.entries());
+			headers = await statusDefinition.headers.schema.parseAsync(
+				decodeSuperjsonFields(rawHeaders),
+			);
 		} else {
 			const rawHeaders = Object.fromEntries(response.headers.entries());
 			headers = await statusDefinition.headers.schema.parseAsync(rawHeaders);
@@ -216,10 +226,12 @@ export function createClient<
 		// Apply typed headers to request headers
 		if (parsed.headers && typeof parsed.headers === "object") {
 			if (contract.headers?.type === "SuperJSON") {
-				resolvedHeaders.set(
-					"x-zono-superjson-headers",
-					superjson.stringify(parsed.headers),
+				const encodedHeaders = encodeSuperjsonFields(
+					parsed.headers as Record<string, unknown>,
 				);
+				for (const [headerKey, headerValue] of Object.entries(encodedHeaders)) {
+					resolvedHeaders.set(headerKey, headerValue);
+				}
 			} else {
 				for (const [headerKey, headerValue] of Object.entries(
 					parsed.headers as Record<string, unknown>,

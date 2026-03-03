@@ -130,7 +130,7 @@ export type ContractQueryStandard = {
 	>;
 };
 
-/** SuperJSON-encoded query parameters (supports Dates, Maps, Sets, etc.) */
+/** SuperJSON-encoded query parameters using declared query keys (supports Dates, Maps, Sets, etc.) */
 export type ContractQuerySuperJSON = {
 	type: "SuperJSON";
 	schema: z.ZodType<Record<string, SuperJSONValue>, Record<string, SuperJSONValue>>;
@@ -145,7 +145,7 @@ export type ContractHeadersStandard = {
 	schema: z.ZodType<Record<string, string>, Record<string, string>>;
 };
 
-/** SuperJSON-encoded headers (supports complex values via x-zono-superjson-headers) */
+/** SuperJSON-encoded headers using declared header keys (supports complex values) */
 export type ContractHeadersSuperJSON = {
 	type: "SuperJSON";
 	schema: z.ZodType<Record<string, SuperJSONValue>, Record<string, SuperJSONValue>>;

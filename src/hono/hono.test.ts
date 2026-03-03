@@ -21,6 +21,7 @@ const shape = {
 			ROUTER: {
 				json: { CONTRACT: true },
 				superjson: { CONTRACT: true },
+				superjsonQuery: { CONTRACT: true },
 				text: { CONTRACT: true },
 				blob: { CONTRACT: true },
 				arrayBuffer: { CONTRACT: true },
@@ -115,6 +116,34 @@ const contracts = createContracts(shape, {
 										createdAt: z.date(),
 										counters: z.map(z.string(), z.number()),
 										tags: z.set(z.string()),
+									}),
+								},
+							},
+						},
+					},
+				},
+				superjsonQuery: {
+					CONTRACT: {
+						get: {
+							query: {
+								type: "SuperJSON",
+								schema: z.object({
+									filters: z.array(
+										z.object({
+											label: z.string(),
+											at: z.date(),
+										}),
+									),
+									metadata: z.map(z.string(), z.number()),
+								}),
+							},
+							responses: {
+								200: {
+									type: "JSON",
+									schema: z.object({
+										filterCount: z.number(),
+										firstAtIso: z.string(),
+										metadataTotal: z.number(),
 									}),
 								},
 							},
@@ -471,6 +500,27 @@ function createTestApp(options?: {
 										tags: new Set(["alpha", "beta"]),
 									},
 								}),
+							},
+						},
+						superjsonQuery: {
+							HANDLER: {
+								get: (input) => {
+									const metadataTotal = [...input.query.metadata.values()].reduce(
+										(total, value) => total + value,
+										0,
+									);
+
+									return {
+										type: "JSON" as const,
+										status: 200 as const,
+										data: {
+											filterCount: input.query.filters.length,
+											firstAtIso:
+												input.query.filters[0]?.at.toISOString() ?? "",
+											metadataTotal,
+										},
+									};
+								},
 							},
 						},
 						text: {
@@ -876,16 +926,14 @@ describe("createHono", () => {
 		const superjsonHeaders = await app.request("/bodies/superjsonHeaders", {
 			method: "POST",
 			headers: {
-				"x-zono-superjson-headers": superjson.stringify({
-					auth: {
-						token: "token-abc",
-						issuedAt: new Date("2025-03-02T00:00:00.000Z"),
-						scopes: new Set(["read", "write"]),
-						quotas: new Map([
-							["read", 5],
-							["write", 2],
-						]),
-					},
+				auth: superjson.stringify({
+					token: "token-abc",
+					issuedAt: new Date("2025-03-02T00:00:00.000Z"),
+					scopes: new Set(["read", "write"]),
+					quotas: new Map([
+						["read", 5],
+						["write", 2],
+					]),
 				}),
 			},
 		});
@@ -932,6 +980,26 @@ describe("createHono", () => {
 			expect(parsedSuperjson.data.tags).toEqual(new Set(["alpha", "beta"]));
 		}
 
+		const superjsonQuery = await app.request(
+			`/responses/superjsonQuery?${new URLSearchParams({
+				filters: superjson.stringify([
+					{ label: "one", at: new Date("2025-05-01T00:00:00.000Z") },
+				]),
+				metadata: superjson.stringify(
+					new Map([
+						["a", 1],
+						["b", 2],
+					]),
+				),
+			})}`,
+		);
+		expect(superjsonQuery.status).toBe(200);
+		expect(await superjsonQuery.json()).toEqual({
+			filterCount: 1,
+			firstAtIso: "2025-05-01T00:00:00.000Z",
+			metadataTotal: 3,
+		});
+
 		const text = await app.request("/responses/text");
 		expect(text.status).toBe(200);
 		expect(await text.text()).toBe("plain-text");
@@ -966,9 +1034,16 @@ describe("createHono", () => {
 
 		const superjsonHeaders = await app.request("/responses/superjsonHeaders");
 		expect(superjsonHeaders.status).toBe(200);
-		const encoded = superjsonHeaders.headers.get("x-zono-superjson-headers");
-		expect(encoded).toBeTruthy();
-		if (encoded) {
+		expect(superjsonHeaders.headers.get("x-zono-superjson-headers")).toBeNull();
+
+		const encodedMeta = superjsonHeaders.headers.get("meta");
+		const encodedQuotas = superjsonHeaders.headers.get("quotas");
+		const encodedScopes = superjsonHeaders.headers.get("scopes");
+		expect(encodedMeta).toBeTruthy();
+		expect(encodedQuotas).toBeTruthy();
+		expect(encodedScopes).toBeTruthy();
+
+		if (encodedMeta && encodedQuotas && encodedScopes) {
 			const parsedHeaders = z
 				.object({
 					meta: z.object({
@@ -979,9 +1054,11 @@ describe("createHono", () => {
 					quotas: z.map(z.string(), z.number()),
 					scopes: z.set(z.string()),
 				})
-				.safeParse(
-					superjson.parse<unknown>(encoded as Parameters<typeof superjson.parse>[0]),
-				);
+				.safeParse({
+					meta: superjson.parse<unknown>(encodedMeta),
+					quotas: superjson.parse<unknown>(encodedQuotas),
+					scopes: superjson.parse<unknown>(encodedScopes),
+				});
 			expect(parsedHeaders.success).toBe(true);
 			if (parsedHeaders.success) {
 				expect(parsedHeaders.data).toEqual({

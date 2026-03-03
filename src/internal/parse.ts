@@ -1,6 +1,6 @@
-import superjson from "superjson";
 import z from "zod";
 import type { Contract } from "~/contract/contract.types.js";
+import { decodeSuperjsonFields } from "~/internal/superjson.util.js";
 import { isRecord } from "~/internal/util.js";
 
 type RawContractInput = {
@@ -16,22 +16,22 @@ type ParseContractResult =
 
 /**
  * Extracts the raw query value appropriate for the contract query type.
- * For SuperJSON queries the value arrives as a single `superjson` URL parameter.
+ * For SuperJSON queries each declared key carries its own SuperJSON string value.
  */
-function parseRawQuery(contract: Contract, rawQuery: unknown): unknown {
+function parseRawQuery(contract: Contract, rawQuery: unknown, mode: "server" | "client"): unknown {
 	if (!contract.query) {
 		return rawQuery;
 	}
 
 	if (contract.query.type === "SuperJSON") {
+		if (mode === "client") {
+			return rawQuery;
+		}
+
 		if (!isRecord(rawQuery)) {
 			return rawQuery;
 		}
-		const encoded = rawQuery.superjson;
-		if (typeof encoded === "string") {
-			return superjson.parse(encoded);
-		}
-		return "superjson" in rawQuery ? undefined : rawQuery;
+		return decodeSuperjsonFields(rawQuery);
 	}
 
 	return rawQuery;
@@ -39,7 +39,7 @@ function parseRawQuery(contract: Contract, rawQuery: unknown): unknown {
 
 /**
  * Extracts the raw headers value appropriate for the contract headers type.
- * For SuperJSON headers the full object arrives in x-zono-superjson-headers.
+ * For SuperJSON headers each declared key carries its own SuperJSON string value.
  */
 function parseRawHeaders(
 	contract: Contract,
@@ -55,13 +55,10 @@ function parseRawHeaders(
 			return rawHeaders;
 		}
 
-		const encoded = isRecord(rawHeaders)
-			? (rawHeaders["x-zono-superjson-headers"] as string | undefined)
-			: undefined;
-		if (typeof encoded === "string") {
-			return superjson.parse(encoded);
+		if (isRecord(rawHeaders)) {
+			return decodeSuperjsonFields(rawHeaders);
 		}
-		return undefined;
+		return rawHeaders;
 	}
 
 	return rawHeaders;
@@ -92,7 +89,7 @@ export async function parseContractFields(
 	}
 
 	if (contract.query) {
-		const rawQuery = parseRawQuery(contract, rawInput.query);
+		const rawQuery = parseRawQuery(contract, rawInput.query, mode);
 		const result = await contract.query.schema.safeParseAsync(rawQuery);
 		if (result.success) {
 			parsed.query = mode === "server" ? result.data : rawQuery;
