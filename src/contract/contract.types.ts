@@ -1,6 +1,6 @@
 import type { SuperJSONValue } from "superjson";
 import z from "zod";
-import type { JsonValue } from "~/internal/util.types.js";
+import type { JsonValue, RecordNotArray } from "~/internal/util.types.js";
 
 /** Controls how much validation error detail is exposed to clients */
 export type ErrorMode = "public" | "hidden";
@@ -125,15 +125,18 @@ export type ContractMethodMap<TContract extends Contract = Contract> = Partial<
 export type ContractQueryStandard = {
 	type: "Standard";
 	schema: z.ZodType<
-		Record<string, string | Array<string> | undefined>,
-		Record<string, string | Array<string> | undefined>
+		RecordNotArray<string, string | Array<string> | undefined>,
+		RecordNotArray<string, string | Array<string> | undefined>
 	>;
 };
 
 /** SuperJSON-encoded query parameters using declared query keys (supports Dates, Maps, Sets, etc.) */
 export type ContractQuerySuperJSON = {
 	type: "SuperJSON";
-	schema: z.ZodType<Record<string, SuperJSONValue>, Record<string, SuperJSONValue>>;
+	schema: z.ZodType<
+		RecordNotArray<string, SuperJSONValue>,
+		RecordNotArray<string, SuperJSONValue>
+	>;
 };
 
 /** Union of query parameter types */
@@ -142,13 +145,16 @@ export type ContractQuery = ContractQueryStandard | ContractQuerySuperJSON;
 /** Standard HTTP headers (string values only) */
 export type ContractHeadersStandard = {
 	type: "Standard";
-	schema: z.ZodType<Record<string, string>, Record<string, string>>;
+	schema: z.ZodType<RecordNotArray<string, string>, RecordNotArray<string, string>>;
 };
 
 /** SuperJSON-encoded headers using declared header keys (supports complex values) */
 export type ContractHeadersSuperJSON = {
 	type: "SuperJSON";
-	schema: z.ZodType<Record<string, SuperJSONValue>, Record<string, SuperJSONValue>>;
+	schema: z.ZodType<
+		RecordNotArray<string, SuperJSONValue>,
+		RecordNotArray<string, SuperJSONValue>
+	>;
 };
 
 /** Union of header types */

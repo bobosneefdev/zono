@@ -6,7 +6,7 @@ import type {
 	RouterShape,
 	ShapeNode,
 } from "~/contract/contract.types.js";
-import type { JoinPath, SchemaInput, SchemaOutput } from "~/internal/util.types.js";
+import type { JoinPath, Prettify, SchemaInput, SchemaOutput } from "~/internal/util.types.js";
 
 type ContractDefinitionNode<TNode extends ShapeNode, TPath extends string> = (TNode extends {
 	CONTRACT: true;
@@ -94,7 +94,9 @@ export type ContractInput<TContract extends Contract> = IncludePathParams<TContr
  * z.output of each schema.
  * @template TContract - The contract to extract output type from
  */
-export type ContractOutput<TContract extends Contract> = IncludePathParams<TContract, "output"> &
-	IncludeContractSchemaField<TContract, "output", "body"> &
-	IncludeContractSchemaField<TContract, "output", "query"> &
-	IncludeContractSchemaField<TContract, "output", "headers">;
+export type ContractOutput<TContract extends Contract> = Prettify<
+	IncludePathParams<TContract, "output"> &
+		IncludeContractSchemaField<TContract, "output", "body"> &
+		IncludeContractSchemaField<TContract, "output", "query"> &
+		IncludeContractSchemaField<TContract, "output", "headers">
+>;

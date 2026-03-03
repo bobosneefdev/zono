@@ -52,3 +52,6 @@ export type ResponseHeadersForStatusInResponses<
 export type JoinPath<TPrefix extends string, TSegment extends string> = TPrefix extends ""
 	? TSegment
 	: `${TPrefix}.${TSegment}`;
+
+/** Basically just the same as the standard Record type, but with the iterator symbol prohibited. */
+export type RecordNotArray<K extends string, V> = Record<K, V> & { [Symbol.iterator]?: never };

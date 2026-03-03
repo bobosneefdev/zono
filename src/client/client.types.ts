@@ -68,17 +68,22 @@ type MergedResponses<
 type ClientOutputBase<
 	TContract extends Contract,
 	TMiddlewareResponses extends ContractResponses,
-> = {
-	[S in Extract<keyof MergedResponses<TContract, TMiddlewareResponses>, number>]: {
-		status: S;
-		body: ResponseBodyForStatusInResponses<MergedResponses<TContract, TMiddlewareResponses>, S>;
-		headers: ResponseHeadersForStatusInResponses<
-			MergedResponses<TContract, TMiddlewareResponses>,
-			S
-		>;
-		response: Response;
-	};
-}[Extract<keyof MergedResponses<TContract, TMiddlewareResponses>, number>];
+> = Prettify<
+	{
+		[S in Extract<keyof MergedResponses<TContract, TMiddlewareResponses>, number>]: {
+			status: S;
+			body: ResponseBodyForStatusInResponses<
+				MergedResponses<TContract, TMiddlewareResponses>,
+				S
+			>;
+			headers: ResponseHeadersForStatusInResponses<
+				MergedResponses<TContract, TMiddlewareResponses>,
+				S
+			>;
+			response: Response;
+		};
+	}[Extract<keyof MergedResponses<TContract, TMiddlewareResponses>, number>]
+>;
 
 type WithGlobalErrorResponses<
 	TOutput,
