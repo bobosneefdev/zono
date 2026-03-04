@@ -156,20 +156,11 @@ if (analytics.status === 200) {
 
 ## Gateway composition
 
-Use [generateHonoGatewayContractsAndMiddlewares](README.md#gateway-composition) to compose multiple services behind a single Hono gateway.
+Use [generateHonoGateway](README.md#gateway-composition) to compose multiple services behind a single Hono gateway.
 
 ```ts
-import { Hono } from "hono";
-import { createMiddlewares } from "@bobosneefdev/zono/middleware";
-import {
-  createGatewayOptions,
-  createHonoGateway,
-  generateHonoGatewayContractsAndMiddlewares,
-} from "@bobosneefdev/zono/hono-gateway";
-import { createHonoMiddlewareHandlers } from "@bobosneefdev/zono/hono";
-
 const { contracts: gatewayContracts, middlewares: generatedGatewayMiddleware } =
-  generateHonoGatewayContractsAndMiddlewares({
+  generateHonoGateway({
     usersService: {
       contracts: usersContracts,
       middlewares: usersMiddleware,

@@ -151,7 +151,7 @@ function collectGatewayMiddleware(
  * @param services - Map of service names to their route/middleware definitions
  * @returns Generated gateway structure with routes and middleware
  */
-export function generateHonoGatewayContractsAndMiddlewares<const T extends GatewayInput>(
+export function generateHonoGateway<const T extends GatewayInput>(
 	services: T,
 ): GeneratedGateway<T> {
 	const contracts: Record<string, unknown> = {};

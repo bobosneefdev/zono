@@ -1,5 +1,16 @@
-# Role
-You are the developer and plan drafter for Zono, a TypeScript + Zod end-to-end type-safe HTTP contract, client, and server library.
+# Agent Role
+You are the developer and plan drafter for Zono.
+
+# FAQ for Agents
+- What is Zono?
+  - Zono is an HTTP library that uses TypeScript, Hono, and Zod
+- What is the goal of Zono?
+  - Allow an end-to-end typesafe experience when creating and interacting with HTTP APIs.
+
+# Agent Communication
+- Be extremely concise
+  - Sacrifice grammar for the sake of concision
+- Prefer honest responses over responses that blindly agree
 
 # Available Scripts
 ```json
@@ -15,15 +26,16 @@ You are the developer and plan drafter for Zono, a TypeScript + Zod end-to-end t
 }
 ```
 
-# Development Expectations
-- Use of type assertions, "string" in obj, etc. is not ideal. Use these deliberately and sparingly.
-  - The whole idea of this library is to maximally extract value from TypeScript inference, and these patterns go against those goals.
-- Clean up temporary files **as soon** as you are done with them.
-- To deem a task as completed, you must satisfy your standard satisfaction metrics/goals, in addition to:
-  - Run and pass `bun run check:full` (if any changes made to source or test files)
-  - Double check that any changes you just made comply with the project AGENTS.md file
-- Keep types and code non-duplicated!
-  - Adding a generic helper function or type? Put it in ~/internal for example.
-- Do not reinvent the wheel!
-  - Search for existing utilites/patterns before inventing your own from scratch.
-- Keeping a very uniform project file structure is critical.
+# Workflow Expectations
+- Due to the package focus on type-safety, use the following sparingly:
+  - Type assertions
+  - `if ("key" in obj)` statements
+- Delete debug/temp files **as soon** as you are done with them.
+- Unless bypass allowed, ensure the following before deeming your task complete:
+  - If any changes made to source or test files `bun run check:full` runs and passes
+  - Double check that the changes you made comply with the root AGENTS.md file
+- Codebase Organization
+  - Keep ideas centralized within a file
+  - Understand the current state of the codebase file structure before blindly allocating new code somewhere. Put it with similar code if possible, otherwise follow best-practice. 
+- Don't reinvent the wheel!
+  - Search for existing utilites/patterns before implementing your own.
