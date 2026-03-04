@@ -17,6 +17,13 @@ import type {
 
 const HTTP_METHODS = new Set<string>(CONTRACT_METHOD_ORDER);
 
+type ClientCallMode = "request" | "config" | "validate";
+
+type ParsedClientMethod = {
+	mode: ClientCallMode;
+	method: string;
+};
+
 function resolveContract(
 	contracts: unknown,
 	pathSegments: Array<string>,
@@ -82,6 +89,35 @@ type ResolvedRouteMetadata = {
 	contract: Contract;
 	additionalResponses: ContractResponses | undefined;
 };
+
+type PreparedRequest = ResolvedRouteMetadata & {
+	url: string;
+	init: RequestInit;
+};
+
+function parseClientMethod(token: string): ParsedClientMethod {
+	if (token.startsWith("config_")) {
+		const method = token.slice("config_".length);
+		if (HTTP_METHODS.has(method)) {
+			return { mode: "config", method };
+		}
+		throw new Error(`Invalid HTTP method: ${token}`);
+	}
+
+	if (token.startsWith("validate_")) {
+		const method = token.slice("validate_".length);
+		if (HTTP_METHODS.has(method)) {
+			return { mode: "validate", method };
+		}
+		throw new Error(`Invalid HTTP method: ${token}`);
+	}
+
+	if (HTTP_METHODS.has(token)) {
+		return { mode: "request", method: token };
+	}
+
+	throw new Error(`Invalid HTTP method: ${token}`);
+}
 
 function buildPathWithParams(
 	pathSegments: Array<string>,
@@ -232,11 +268,11 @@ export function createClient<
 		return resolved;
 	}
 
-	async function executeRequest(
+	async function prepareRequest(
 		pathSegments: Array<string>,
 		method: string,
 		input: Record<string, unknown>,
-	): Promise<unknown> {
+	): Promise<PreparedRequest> {
 		const { contract, additionalResponses } = getResolvedRouteMetadata(pathSegments, method);
 
 		const rawInput = {
@@ -324,8 +360,45 @@ export function createClient<
 			}
 		}
 
-		const response = await fetch(`${normalizedBaseUrl}${fullPath}${queryString}`, init);
+		return {
+			contract,
+			additionalResponses,
+			url: `${normalizedBaseUrl}${fullPath}${queryString}`,
+			init,
+		};
+	}
 
+	async function executeRequest(
+		pathSegments: Array<string>,
+		method: string,
+		input: Record<string, unknown>,
+	): Promise<unknown> {
+		const prepared = await prepareRequest(pathSegments, method, input);
+		const response = await fetch(prepared.url, prepared.init);
+
+		return parseIncomingResponse(
+			prepared.contract,
+			response,
+			options.serverErrorMode,
+			prepared.additionalResponses,
+		);
+	}
+
+	async function executeConfig(
+		pathSegments: Array<string>,
+		method: string,
+		input: Record<string, unknown>,
+	): Promise<[url: string, init: RequestInit]> {
+		const prepared = await prepareRequest(pathSegments, method, input);
+		return [prepared.url, prepared.init];
+	}
+
+	async function executeValidate(
+		pathSegments: Array<string>,
+		method: string,
+		response: Response,
+	): Promise<unknown> {
+		const { contract, additionalResponses } = getResolvedRouteMetadata(pathSegments, method);
 		return parseIncomingResponse(
 			contract,
 			response,
@@ -337,17 +410,38 @@ export function createClient<
 	function createProxy(pathSegments: Array<string>): unknown {
 		return new Proxy(() => {}, {
 			apply(_target, _thisArg, argArray) {
-				const [method, input] = argArray;
-				if (typeof method !== "string" || !HTTP_METHODS.has(method)) {
-					throw new Error(`Invalid HTTP method: ${String(method)}`);
+				const [methodToken, secondArg] = argArray;
+				if (typeof methodToken !== "string") {
+					throw new Error(`Invalid HTTP method: ${String(methodToken)}`);
 				}
+
+				const parsedMethod = parseClientMethod(methodToken);
+
+				if (parsedMethod.mode === "validate") {
+					if (argArray.length !== 2 || !(secondArg instanceof Response)) {
+						throw new Error(
+							"validate_<method> route call requires method and Response as second argument",
+						);
+					}
+					return executeValidate(pathSegments, parsedMethod.method, secondArg);
+				}
+
 				if (argArray.length > 2) {
-					throw new Error("Route call accepts only method and optional input");
+					throw new Error("Route call accepts only method and optional second argument");
 				}
+
+				if (parsedMethod.mode === "config") {
+					return executeConfig(
+						pathSegments,
+						parsedMethod.method,
+						(secondArg ?? {}) as Record<string, unknown>,
+					);
+				}
+
 				return executeRequest(
 					pathSegments,
-					method,
-					(input ?? {}) as Record<string, unknown>,
+					parsedMethod.method,
+					(secondArg ?? {}) as Record<string, unknown>,
 				);
 			},
 			get(_target, prop) {

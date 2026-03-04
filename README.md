@@ -152,6 +152,13 @@ if (analytics.status === 200) {
   analytics.body.counters; // Map<string, number>
   analytics.body.tags; // Set<string>
 }
+
+const [healthUrl, healthInit] = await client.health("config_get");
+const healthResponse = await fetch(...[healthUrl, healthInit]);
+const validatedHealth = await client.health("validate_get", healthResponse);
+if (validatedHealth.status === 200) {
+  validatedHealth.body.status; // "ok"
+}
 ```
 
 ## Gateway composition

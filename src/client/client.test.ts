@@ -443,32 +443,60 @@ const typeClient = createClient(contracts, {
 	baseUrl: "http://localhost:0",
 	middleware: [middleware],
 });
-const assertType = <T>(_value: T) => undefined;
-assertType<Parameters<typeof typeClient.health>[0]>("get");
-assertType<Parameters<typeof typeClient.bodies.string>[0]>("post");
-assertType<Parameters<typeof typeClient.bodies.string>[1]>({ body: "ok" });
-assertType<Parameters<typeof typeClient.bodies.standardHeaders>[1]>({
-	body: {},
-	headers: { "x-trace-id": "trace-123" },
-});
-assertType<Parameters<typeof typeClient.bodies.superjsonHeaders>[1]>({
-	body: {},
-	headers: {
-		auth: {
-			token: "token-abc",
-			issuedAt: new Date("2025-03-01T00:00:00.000Z"),
-			scopes: new Set(["read", "write"]),
-			quotas: new Map([
-				["read", 5],
-				["write", 2],
-			]),
-		},
+const healthGetFn: (method: "get") => Promise<unknown> = typeClient.health;
+const healthConfigGetFn: (method: "config_get") => Promise<[url: string, init: RequestInit]> =
+	typeClient.health;
+const healthValidateGetFn: (
+	method: "validate_get",
+	response: Response,
+) => ReturnType<typeof healthGetFn> = typeClient.health;
+
+const stringPostFn: (method: "post", input: { body: string }) => Promise<unknown> =
+	typeClient.bodies.string;
+const stringConfigPostFn: (
+	method: "config_post",
+	input: { body: string },
+) => Promise<[url: string, init: RequestInit]> = typeClient.bodies.string;
+const stringValidatePostFn: (
+	method: "validate_post",
+	response: Response,
+) => ReturnType<typeof stringPostFn> = typeClient.bodies.string;
+
+const standardHeadersPostFn: (
+	method: "post",
+	input: { body: Record<string, never>; headers: { "x-trace-id": string } },
+) => Promise<unknown> = typeClient.bodies.standardHeaders;
+
+const superjsonHeadersPostFn: (
+	method: "post",
+	input: {
+		body: Record<string, never>;
+		headers: {
+			auth: {
+				token: string;
+				issuedAt: Date;
+				scopes: Set<string>;
+				quotas: Map<string, number>;
+			};
+		};
 	},
-});
+) => Promise<unknown> = typeClient.bodies.superjsonHeaders;
+
+void healthGetFn;
+void healthConfigGetFn;
+void healthValidateGetFn;
+void stringPostFn;
+void stringConfigPostFn;
+void stringValidatePostFn;
+void standardHeadersPostFn;
+void superjsonHeadersPostFn;
+
 // @ts-expect-error string body route does not accept numbers
-assertType<Parameters<typeof typeClient.bodies.string>[1]>({ body: 123 });
-// @ts-expect-error routes without input fields do not expose a second parameter type
-type _HealthSecondParameter = Parameters<typeof typeClient.health>[1];
+const invalidStringPostInput: Parameters<typeof stringPostFn>[1] = { body: 123 };
+void invalidStringPostInput;
+const validHealthWithSecondArgFn: (method: "get", input: unknown) => Promise<unknown> =
+	typeClient.health;
+void validHealthWithSecondArgFn;
 
 let server: ReturnType<typeof Bun.serve>;
 const PORT = 19876;
@@ -863,12 +891,59 @@ describe("createClient", () => {
 		}
 	});
 
+	test("builds spread-safe fetch config and validates fetched response", async () => {
+		const [url, init] = await client.health("config_get");
+		expect(typeof url).toBe("string");
+		expect(url).toBe(`http://localhost:${PORT}/health`);
+		expect(init.method).toBe("GET");
+
+		const response = await fetch(...[url, init]);
+		const validated = await client.health("validate_get", response);
+		expect(validated.status).toBe(200);
+		if (validated.status === 200) {
+			expect(validated.body).toEqual({ status: "ok" });
+		}
+	});
+
+	test("supports config and validate prefixed verbs on input routes", async () => {
+		const [url, init] = await client.users.register("config_post", {
+			body: { name: "Ada", email: "ada@example.com" },
+		});
+		expect(url).toBe(`http://localhost:${PORT}/users/register`);
+		expect(init.method).toBe("POST");
+
+		const response = await fetch(...[url, init]);
+		const validated = await client.users.register("validate_post", response);
+		expect(validated.status).toBe(201);
+		if (validated.status === 201) {
+			expect(validated.body.email).toBe("ada@example.com");
+		}
+	});
+
 	test("fails fast on invalid client body input", async () => {
-		await expect(
+		expect(
 			client.users.register("post", {
 				body: { name: "John", email: "not-an-email" },
 			}),
 		).rejects.toThrow("Contract validation failed");
+	});
+
+	test("fails fast on invalid prefixed method and invalid validate arg", async () => {
+		const unsafeHealth = client.health as unknown as (
+			method: string,
+			secondArg?: unknown,
+		) => Promise<unknown>;
+		expect(
+			unsafeHealth("config_put", {
+				pathParams: {},
+			}),
+		).rejects.toThrow("No contract for PUT /health");
+
+		expect(() =>
+			client.health("validate_get", {
+				not: "a-response",
+			} as unknown as Response),
+		).toThrow("validate_<method> route call requires method and Response as second argument");
 	});
 
 	test("parses all response body types", async () => {
@@ -1109,13 +1184,13 @@ describe("createClient", () => {
 	});
 
 	test("keeps validation errors stable across repeated calls", async () => {
-		await expect(
+		expect(
 			client.users.register("post", {
 				body: { name: "John", email: "not-an-email" },
 			}),
 		).rejects.toThrow("Contract validation failed");
 
-		await expect(
+		expect(
 			client.users.register("post", {
 				body: { name: "Jane", email: "not-an-email" },
 			}),

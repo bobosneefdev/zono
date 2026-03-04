@@ -143,6 +143,8 @@ export type ClientOutputForContract<
 	TErrorMode extends ErrorMode | undefined,
 > = WithGlobalErrorResponses<ClientOutputBase<TContract, TMiddlewareResponses>, TErrorMode>;
 
+type ClientRequestConfigTuple = [url: string, init: RequestInit];
+
 type ClientMethodFn<
 	TMethod extends ContractMethod,
 	TContract extends Contract,
@@ -157,6 +159,36 @@ type ClientMethodFn<
 			input: ContractInput<TContract>,
 		) => Promise<ClientOutputForContract<TContract, TMiddlewareResponses, TErrorMode>>;
 
+type ClientConfigMethodFn<
+	TMethod extends ContractMethod,
+	TContract extends Contract,
+> = keyof ContractInput<TContract> extends never
+	? (method: `config_${TMethod}`) => Promise<ClientRequestConfigTuple>
+	: (
+			method: `config_${TMethod}`,
+			input: ContractInput<TContract>,
+		) => Promise<ClientRequestConfigTuple>;
+
+type ClientValidateMethodFn<
+	TMethod extends ContractMethod,
+	TContract extends Contract,
+	TMiddlewareResponses extends ContractResponses,
+	TErrorMode extends ErrorMode | undefined,
+> = (
+	method: `validate_${TMethod}`,
+	response: Response,
+) => Promise<ClientOutputForContract<TContract, TMiddlewareResponses, TErrorMode>>;
+
+type ClientMethodVariants<
+	TMethod extends ContractMethod,
+	TContract extends Contract,
+	TMiddlewareResponses extends ContractResponses,
+	TErrorMode extends ErrorMode | undefined,
+> =
+	| ClientMethodFn<TMethod, TContract, TMiddlewareResponses, TErrorMode>
+	| ClientConfigMethodFn<TMethod, TContract>
+	| ClientValidateMethodFn<TMethod, TContract, TMiddlewareResponses, TErrorMode>;
+
 type ClientMethodKeys<TContractMap> = Extract<keyof TContractMap, ContractMethod>;
 
 type ClientMethodInvoker<
@@ -169,7 +201,7 @@ type ClientMethodInvoker<
 			{
 				[M in ClientMethodKeys<TContractMap>]: TContractMap[M] extends infer TContract extends
 					Contract
-					? ClientMethodFn<M, TContract, TMiddlewareResponses, TErrorMode>
+					? ClientMethodVariants<M, TContract, TMiddlewareResponses, TErrorMode>
 					: never;
 			}[ClientMethodKeys<TContractMap>]
 		>;
