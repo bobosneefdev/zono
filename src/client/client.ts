@@ -78,6 +78,11 @@ function collectAllMiddlewareResponses(
 	return acc as ContractResponses;
 }
 
+type ResolvedRouteMetadata = {
+	contract: Contract;
+	additionalResponses: ContractResponses | undefined;
+};
+
 function buildPathWithParams(
 	pathSegments: Array<string>,
 	pathParams?: Record<string, string>,
@@ -204,13 +209,35 @@ export function createClient<
 	options: ClientOptions<TMiddlewares, TErrorMode>,
 ): ClientProxy<TContracts, TMiddlewares, TErrorMode> {
 	const middlewares = (options.middleware ?? []) as ReadonlyArray<unknown>;
+	const routeMetadataCache = new Map<string, ResolvedRouteMetadata>();
+
+	function getResolvedRouteMetadata(
+		pathSegments: Array<string>,
+		method: string,
+	): ResolvedRouteMetadata {
+		const routeKey = `${method} /${pathSegments.join("/")}`;
+		const cached = routeMetadataCache.get(routeKey);
+		if (cached) {
+			return cached;
+		}
+
+		const contract = resolveContract(contracts, pathSegments, method);
+		const additionalResponses = collectAllMiddlewareResponses(middlewares, pathSegments);
+		const resolved: ResolvedRouteMetadata = {
+			contract,
+			additionalResponses:
+				Object.keys(additionalResponses).length > 0 ? additionalResponses : undefined,
+		};
+		routeMetadataCache.set(routeKey, resolved);
+		return resolved;
+	}
 
 	async function executeRequest(
 		pathSegments: Array<string>,
 		method: string,
 		input: Record<string, unknown>,
 	): Promise<unknown> {
-		const contract = resolveContract(contracts, pathSegments, method);
+		const { contract, additionalResponses } = getResolvedRouteMetadata(pathSegments, method);
 
 		const rawInput = {
 			pathParams: input.pathParams,
@@ -298,13 +325,12 @@ export function createClient<
 		}
 
 		const response = await fetch(`${normalizedBaseUrl}${fullPath}${queryString}`, init);
-		const additionalResponses = collectAllMiddlewareResponses(middlewares, pathSegments);
 
 		return parseIncomingResponse(
 			contract,
 			response,
 			options.serverErrorMode,
-			Object.keys(additionalResponses).length > 0 ? additionalResponses : undefined,
+			additionalResponses,
 		);
 	}
 

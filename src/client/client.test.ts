@@ -1085,4 +1085,40 @@ describe("createClient", () => {
 
 		expect(superjson.response.headers.get("x-zono-superjson-headers")).toBeNull();
 	});
+
+	test("keeps behavior stable across repeated and mixed route calls", async () => {
+		const firstHealth = await client.health("get");
+		expect(firstHealth.status).toBe(200);
+		if (firstHealth.status === 200) {
+			expect(firstHealth.body).toEqual({ status: "ok" });
+		}
+
+		const user = await client.users.$userId("get", {
+			pathParams: { userId: "cache-check" },
+		});
+		expect(user.status).toBe(200);
+		if (user.status === 200) {
+			expect(user.body.id).toBe("cache-check");
+		}
+
+		const secondHealth = await client.health("get");
+		expect(secondHealth.status).toBe(200);
+		if (secondHealth.status === 200) {
+			expect(secondHealth.body).toEqual({ status: "ok" });
+		}
+	});
+
+	test("keeps validation errors stable across repeated calls", async () => {
+		await expect(
+			client.users.register("post", {
+				body: { name: "John", email: "not-an-email" },
+			}),
+		).rejects.toThrow("Contract validation failed");
+
+		await expect(
+			client.users.register("post", {
+				body: { name: "Jane", email: "not-an-email" },
+			}),
+		).rejects.toThrow("Contract validation failed");
+	});
 });

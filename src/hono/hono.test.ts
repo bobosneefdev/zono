@@ -773,6 +773,18 @@ describe("createHono", () => {
 		expect(await res.json()).toEqual({ status: "ok" });
 	});
 
+	test("routes without query or headers contracts ignore extra request query and headers", async () => {
+		const app = createTestApp();
+		const res = await app.request("/health?unused=yes", {
+			headers: {
+				auth: "not-superjson",
+				"x-extra": "value",
+			},
+		});
+		expect(res.status).toBe(200);
+		expect(await res.json()).toEqual({ status: "ok" });
+	});
+
 	test("registers POST routes with body parsing", async () => {
 		const app = createTestApp();
 		const res = await app.request("/users/register", {
@@ -944,6 +956,20 @@ describe("createHono", () => {
 			scopeCount: 2,
 			quotaTotal: 7,
 		});
+	});
+
+	test("still validates query and headers when contracts declare them", async () => {
+		const app = createTestApp();
+
+		const missingQuery = await app.request("/responses/superjsonQuery");
+		expect(missingQuery.status).toBe(400);
+		expect((await missingQuery.json()).type).toBe("invalidInput");
+
+		const missingHeader = await app.request("/bodies/standardHeaders", {
+			method: "POST",
+		});
+		expect(missingHeader.status).toBe(400);
+		expect((await missingHeader.json()).type).toBe("invalidInput");
 	});
 
 	test("emits JSON, SuperJSON, Text, Blob, ArrayBuffer, FormData, ReadableStream, and Void responses", async () => {

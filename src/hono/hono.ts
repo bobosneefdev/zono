@@ -159,16 +159,33 @@ function collectRoutes(
 						additionalParams: ReadonlyArray<unknown>,
 						options: ResolvedHonoOptions,
 					) => {
-						const rawBody = contract.body
-							? await resolveRequestBody(contract.body, context.req.raw)
-							: undefined;
+						const rawInput: {
+							pathParams?: unknown;
+							query?: unknown;
+							headers?: unknown;
+							body?: unknown;
+						} = {};
 
-						const rawInput = {
-							pathParams: context.req.param(),
-							query: context.req.query(),
-							headers: Object.fromEntries(context.req.raw.headers.entries()),
-							body: rawBody,
-						};
+						if (contract.pathParams) {
+							rawInput.pathParams = context.req.param();
+						}
+
+						if (contract.query) {
+							rawInput.query = context.req.query();
+						}
+
+						if (contract.headers) {
+							rawInput.headers = Object.fromEntries(
+								context.req.raw.headers.entries(),
+							);
+						}
+
+						if (contract.body) {
+							rawInput.body = await resolveRequestBody(
+								contract.body,
+								context.req.raw,
+							);
+						}
 						const parseResult = await parseContractFields(contract, rawInput, "server");
 						if (!parseResult.success) {
 							return buildValidationErrorResponse(
