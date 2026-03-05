@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import z from "zod";
-import { createContracts } from "~/contract/contract.js";
+import { createContracts, pickContracts } from "~/contract/contract.js";
 import type { RouterShape } from "~/contract/contract.types.js";
+import type { ContractPickSelector } from "~/contract/contract.util.js";
 import { createMiddlewares } from "~/middleware/middleware.js";
 
 const shape = {
@@ -333,6 +334,30 @@ createContracts(staticPathParamShape, {
 	},
 });
 
+const pickedContractsForTypes = pickContracts(contracts, {
+	users: {
+		register: true,
+	},
+});
+
+void pickedContractsForTypes.ROUTER.users.ROUTER.register.CONTRACT.post;
+// @ts-expect-error $userId route not selected
+void pickedContractsForTypes.ROUTER.users.ROUTER.$userId;
+// @ts-expect-error health route not selected
+void pickedContractsForTypes.ROUTER.health;
+
+pickContracts(contracts, {
+	users: {
+		// @ts-expect-error unknown nested key
+		unknownRoute: true,
+	},
+});
+
+pickContracts(contracts, {
+	// @ts-expect-error unknown top-level key
+	unknownRoute: true,
+});
+
 describe("createContracts", () => {
 	test("returns the definition as-is (identity)", () => {
 		expect(contracts.ROUTER).toBeDefined();
@@ -400,6 +425,51 @@ describe("createContracts", () => {
 
 		expect(multiTypeContracts.ROUTER.files.CONTRACT.post?.body?.type).toBe("FormData");
 		expect(multiTypeContracts.ROUTER.files.CONTRACT.post?.responses[201].type).toBe("Blob");
+	});
+});
+
+describe("pickContracts", () => {
+	test("picks only selected paths", () => {
+		const picked = pickContracts(contracts, {
+			users: {
+				register: true,
+			},
+		});
+
+		expect(picked.ROUTER.users.ROUTER.register.CONTRACT.post).toBeDefined();
+		expect("$userId" in picked.ROUTER.users.ROUTER).toBe(false);
+		expect("health" in picked.ROUTER).toBe(false);
+	});
+
+	test("includes full subtree when selector is true", () => {
+		const picked = pickContracts(contracts, {
+			users: {
+				$userId: true,
+			},
+		});
+
+		expect(picked.ROUTER.users.ROUTER.$userId.CONTRACT.get).toBeDefined();
+		expect(picked.ROUTER.users.ROUTER.$userId.ROUTER.posts.CONTRACT.get).toBeDefined();
+		expect(
+			picked.ROUTER.users.ROUTER.$userId.ROUTER.posts.ROUTER.$postId.CONTRACT.get,
+		).toBeDefined();
+		expect(picked.ROUTER.users.ROUTER.$userId).toBe(contracts.ROUTER.users.ROUTER.$userId);
+	});
+
+	test("ignores unknown selector keys at runtime", () => {
+		const selector = {
+			users: {
+				register: true,
+				unknownNested: true,
+			},
+			unknownTopLevel: true,
+		} as unknown as ContractPickSelector<typeof contracts>;
+
+		const picked = pickContracts(contracts, selector);
+
+		expect(picked.ROUTER.users.ROUTER.register.CONTRACT.post).toBeDefined();
+		expect("unknownTopLevel" in picked.ROUTER).toBe(false);
+		expect("unknownNested" in picked.ROUTER.users.ROUTER).toBe(false);
 	});
 });
 

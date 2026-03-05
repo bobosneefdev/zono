@@ -6,7 +6,9 @@ import type {
 } from "~/contract/contract.types.js";
 import type {
 	ContractDefinition,
+	ContractPickSelector,
 	MergeContractResponsesMany,
+	PickContracts,
 	ValidateContractDefinition,
 } from "~/contract/contract.util.js";
 import { getContractMethods, isContractNode, isRecord, isRouterNode } from "~/internal/util.js";
@@ -65,4 +67,51 @@ export function mergeContractResponses<const TResponses extends ReadonlyArray<Co
 	}
 
 	return merged as MergeContractResponsesMany<TResponses>;
+}
+
+function pickContractNode(node: unknown, selector: unknown): unknown {
+	if (!isRecord(node)) {
+		return undefined;
+	}
+
+	if (selector === true) {
+		return node;
+	}
+
+	if (!isRecord(selector) || !isRouterNode(node)) {
+		return undefined;
+	}
+
+	const pickedRouter: Record<string, unknown> = {};
+	for (const [key, childSelector] of Object.entries(selector)) {
+		const childNode = node.ROUTER[key];
+		const pickedChild = pickContractNode(childNode, childSelector);
+		if (pickedChild !== undefined) {
+			pickedRouter[key] = pickedChild;
+		}
+	}
+
+	if (Object.keys(pickedRouter).length === 0) {
+		return undefined;
+	}
+
+	return { ROUTER: pickedRouter };
+}
+
+/**
+ * Picks a subset of a contract tree by route selector.
+ * - `true` includes a route node and its full subtree
+ * - nested objects select specific child routes
+ * - unknown selector keys are ignored at runtime
+ */
+export function pickContracts<
+	const TContracts extends { ROUTER: Record<string, unknown> },
+	const TSelector extends ContractPickSelector<TContracts>,
+>(contracts: TContracts, selector: TSelector): PickContracts<TContracts, TSelector> {
+	const picked = pickContractNode(contracts, selector);
+	if (!isRecord(picked) || !isRouterNode(picked)) {
+		return { ROUTER: {} } as PickContracts<TContracts, TSelector>;
+	}
+
+	return picked as PickContracts<TContracts, TSelector>;
 }
