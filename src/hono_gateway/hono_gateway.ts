@@ -25,7 +25,7 @@ import {
 	isRecord,
 	isRouterNode,
 } from "~/internal/util.js";
-import type { ExactObjectDeep } from "~/internal/util.types.js";
+import type { StrictBuilderInput } from "~/internal/util.types.js";
 import type { MiddlewaresDefinition } from "~/middleware/index.js";
 
 type GatewayRouteRegistration = {
@@ -220,27 +220,34 @@ function pickGatewayMiddlewareNode(node: unknown, mask: unknown): unknown {
 export function createHonoGatewayService<
 	const TContracts extends { ROUTER: Record<string, unknown> },
 	const TMiddlewares extends MiddlewaresDefinition<TContracts>,
-	const TMask extends GatewayServiceMask<TContracts> | undefined = undefined,
 >(
 	contracts: TContracts,
 	middlewares: TMiddlewares,
-	mask?: TMask extends GatewayServiceMask<TContracts>
-		? TMask & ExactObjectDeep<TMask, GatewayServiceMask<TContracts>>
-		: TMask,
-): TMask extends GatewayServiceMask<TContracts>
-	? {
-			contracts: SelectedGatewayContracts<TContracts, TMask>;
-			middlewares: MiddlewaresDefinition<SelectedGatewayContracts<TContracts, TMask>>;
-		}
-	: {
-			contracts: TContracts;
-			middlewares: TMiddlewares;
-		} {
+): {
+	contracts: TContracts;
+	middlewares: TMiddlewares;
+};
+export function createHonoGatewayService<
+	const TContracts extends { ROUTER: Record<string, unknown> },
+	const TMiddlewares extends MiddlewaresDefinition<TContracts>,
+	const TMask extends GatewayServiceMask<TContracts>,
+>(
+	contracts: TContracts,
+	middlewares: TMiddlewares,
+	mask: StrictBuilderInput<GatewayServiceMask<TContracts>, TMask>,
+): {
+	contracts: SelectedGatewayContracts<TContracts, TMask>;
+	middlewares: MiddlewaresDefinition<SelectedGatewayContracts<TContracts, TMask>>;
+};
+export function createHonoGatewayService<
+	const TContracts extends { ROUTER: Record<string, unknown> },
+	const TMiddlewares extends MiddlewaresDefinition<TContracts>,
+>(contracts: TContracts, middlewares: TMiddlewares, mask?: GatewayServiceMask<TContracts>) {
 	if (!mask) {
 		return {
 			contracts,
 			middlewares,
-		} as any;
+		};
 	}
 
 	const selectedContracts = pickGatewayContractNode(contracts, mask);

@@ -35,7 +35,7 @@ import {
 	isRecord,
 	isRouterNode,
 } from "~/internal/util.js";
-import type { ExactObjectDeep } from "~/internal/util.types.js";
+import type { StrictBuilderInput } from "~/internal/util.types.js";
 import type { MiddlewaresDefinition } from "~/middleware/index.js";
 
 function resolveResponseHeaders(
@@ -248,8 +248,7 @@ export function createHonoContractHandlers<
 >(
 	_contracts: TContracts,
 	_options: HonoOptions<TContextParams>,
-	handlers: THandlers &
-		ExactObjectDeep<THandlers, HonoContractHandlerTree<TContracts, TContextParams>>,
+	handlers: StrictBuilderInput<HonoContractHandlerTree<TContracts, TContextParams>, THandlers>,
 ): THandlers {
 	return handlers;
 }
@@ -267,8 +266,7 @@ export function createHonoMiddlewareHandlers<
 >(
 	_middleware: TMiddleware,
 	_options: HonoOptions<TContextParams>,
-	handlers: THandlers &
-		ExactObjectDeep<THandlers, HonoMiddlewareHandlerTree<TMiddleware, TContextParams>>,
+	handlers: StrictBuilderInput<HonoMiddlewareHandlerTree<TMiddleware, TContextParams>, THandlers>,
 ): THandlers {
 	return handlers;
 }

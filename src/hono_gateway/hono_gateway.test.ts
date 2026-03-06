@@ -173,6 +173,12 @@ const maskedGatewayService = createHonoGatewayService(serviceContracts, serviceM
 	items: true,
 });
 
+const nestedMaskedGatewayService = createHonoGatewayService(serviceContracts, serviceMiddleware, {
+	items: {
+		$itemId: true,
+	},
+});
+
 createHonoGatewayService(serviceContracts, serviceMiddleware, {
 	// @ts-expect-error invalid top-level key in gateway service mask
 	missing: true,
@@ -190,6 +196,9 @@ const fullGatewayService = createHonoGatewayService(serviceContracts, serviceMid
 void maskedGatewayService.contracts.ROUTER.items.CONTRACT.get;
 // @ts-expect-error not included in gateway service mask
 void maskedGatewayService.contracts.ROUTER.superjsonBody;
+void nestedMaskedGatewayService.contracts.ROUTER.items.ROUTER.$itemId.CONTRACT.get;
+// @ts-expect-error parent contract not included when selecting only nested branch
+void nestedMaskedGatewayService.contracts.ROUTER.items.CONTRACT;
 void fullGatewayService.contracts.ROUTER.superjsonBody.CONTRACT.get;
 
 const SERVICE_PORT = 19877;

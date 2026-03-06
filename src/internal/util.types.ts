@@ -73,3 +73,11 @@ export type ExactObjectDeep<TInput, TExpected> = TInput extends TExpected
 				}
 		: TInput
 	: never;
+
+/**
+ * Strict builder input that preserves contextual typing from the expected shape
+ * while still rejecting unknown keys recursively.
+ */
+export type StrictBuilderInput<TExpected, TInput extends TExpected> = TInput &
+	TExpected &
+	ExactObjectDeep<TInput, TExpected>;

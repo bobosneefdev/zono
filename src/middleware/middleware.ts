@@ -1,4 +1,4 @@
-import type { ExactObjectDeep } from "~/internal/util.types.js";
+import type { StrictBuilderInput } from "~/internal/util.types.js";
 import type { MiddlewaresDefinition } from "~/middleware/middleware.types.js";
 
 /**
@@ -12,7 +12,7 @@ export function createMiddlewares<
 	const TDef extends MiddlewaresDefinition<TContracts>,
 >(
 	_contracts: TContracts,
-	definition: TDef & ExactObjectDeep<TDef, MiddlewaresDefinition<TContracts>>,
+	definition: StrictBuilderInput<MiddlewaresDefinition<TContracts>, TDef>,
 ): TDef {
 	return definition;
 }
