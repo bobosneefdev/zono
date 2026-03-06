@@ -173,6 +173,18 @@ const maskedGatewayService = createHonoGatewayService(serviceContracts, serviceM
 	items: true,
 });
 
+createHonoGatewayService(serviceContracts, serviceMiddleware, {
+	// @ts-expect-error invalid top-level key in gateway service mask
+	missing: true,
+});
+
+createHonoGatewayService(serviceContracts, serviceMiddleware, {
+	items: {
+		// @ts-expect-error invalid nested key in gateway service mask
+		missing: true,
+	},
+});
+
 const fullGatewayService = createHonoGatewayService(serviceContracts, serviceMiddleware);
 
 void maskedGatewayService.contracts.ROUTER.items.CONTRACT.get;
@@ -307,16 +319,18 @@ beforeAll(() => {
 	);
 	serviceServer = Bun.serve({ fetch: serviceApp.fetch, port: SERVICE_PORT });
 
+	const inventoryService = createHonoGatewayService(serviceContracts, serviceMiddleware, {
+		items: true,
+		superjsonBody: true,
+		superjsonHeaders: true,
+		text: true,
+		blob: true,
+		arrayBuffer: true,
+		voidResponse: true,
+	});
+
 	const gateway = generateHonoGateway({
-		inventory: createHonoGatewayService(serviceContracts, serviceMiddleware, {
-			items: true,
-			superjsonBody: true,
-			superjsonHeaders: true,
-			text: true,
-			blob: true,
-			arrayBuffer: true,
-			voidResponse: true,
-		}),
+		inventory: inventoryService,
 	});
 
 	const gatewayMiddleware = createMiddlewares(gateway.contracts, {

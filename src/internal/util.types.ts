@@ -55,3 +55,21 @@ export type JoinPath<TPrefix extends string, TSegment extends string> = TPrefix 
 
 /** Basically just the same as the standard Record type, but with the iterator symbol prohibited. */
 export type RecordNotArray<K extends string, V> = Record<K, V> & { [Symbol.iterator]?: never };
+
+type ExtractRecord<T> = Extract<T, Record<string, unknown>>;
+
+/**
+ * Recursively rejects object keys that are not present in the expected shape.
+ * Useful for public builder APIs where generic inference would otherwise allow extra keys.
+ */
+export type ExactObjectDeep<TInput, TExpected> = TInput extends TExpected
+	? TInput extends Record<string, unknown>
+		? [ExtractRecord<TExpected>] extends [never]
+			? TInput
+			: {
+					[K in keyof TInput]: K extends keyof ExtractRecord<TExpected>
+						? ExactObjectDeep<TInput[K], ExtractRecord<TExpected>[K]>
+						: never;
+				}
+		: TInput
+	: never;

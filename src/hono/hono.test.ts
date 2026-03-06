@@ -5,7 +5,12 @@ import superjson from "superjson";
 import z from "zod";
 import { createContracts } from "~/contract/contract.js";
 import type { RouterShape } from "~/contract/contract.types.js";
-import { createHonoMiddlewareHandlers, createHonoOptions, initHono } from "~/hono/hono.js";
+import {
+	createHonoContractHandlers,
+	createHonoMiddlewareHandlers,
+	createHonoOptions,
+	initHono,
+} from "~/hono/hono.js";
 import { createMiddlewares } from "~/middleware/middleware.js";
 
 const shape = {
@@ -405,6 +410,22 @@ const middleware = createMiddlewares(contracts, {
 	},
 });
 
+createMiddlewares(contracts, {
+	// @ts-expect-error invalid top-level key in middleware definition
+	MISSING: {},
+});
+
+createMiddlewares(contracts, {
+	ROUTER: {
+		users: {
+			ROUTER: {
+				// @ts-expect-error invalid nested key in middleware definition
+				missing: {},
+			},
+		},
+	},
+});
+
 const middlewareOptions = createHonoOptions({ errorMode: "public" });
 createHonoMiddlewareHandlers(middleware, middlewareOptions, {
 	MIDDLEWARE: {
@@ -414,6 +435,60 @@ createHonoMiddlewareHandlers(middleware, middlewareOptions, {
 			status: 429 as const,
 			data: "wrong type",
 		}),
+	},
+});
+
+createHonoMiddlewareHandlers(middleware, middlewareOptions, {
+	// @ts-expect-error invalid top-level key in Hono middleware handlers
+	MISSING: {},
+});
+
+const strictHandlerShape = {
+	ROUTER: {
+		ping: {
+			CONTRACT: true,
+		},
+	},
+} as const satisfies RouterShape;
+
+const strictHandlerContracts = createContracts(strictHandlerShape, {
+	ROUTER: {
+		ping: {
+			CONTRACT: {
+				get: {
+					responses: {
+						200: {
+							type: "JSON",
+							schema: z.object({ ok: z.boolean() }),
+						},
+					},
+				},
+			},
+		},
+	},
+});
+
+createHonoContractHandlers(strictHandlerContracts, middlewareOptions, {
+	ROUTER: {
+		ping: {
+			HANDLER: {
+				get: () => ({
+					type: "JSON" as const,
+					status: 200 as const,
+					data: { ok: true },
+				}),
+			},
+		},
+		// @ts-expect-error invalid top-level key in Hono contract handlers
+		missing: {
+			HANDLER: {
+				get: () => ({
+					type: "JSON" as const,
+					status: 200 as const,
+					data: { ok: true },
+				}),
+			},
+		},
 	},
 });
 

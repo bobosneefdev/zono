@@ -1,3 +1,4 @@
+import type { ExactObjectDeep } from "~/internal/util.types.js";
 import type { MiddlewaresDefinition } from "~/middleware/middleware.types.js";
 
 /**
@@ -9,6 +10,9 @@ import type { MiddlewaresDefinition } from "~/middleware/middleware.types.js";
 export function createMiddlewares<
 	const TContracts,
 	const TDef extends MiddlewaresDefinition<TContracts>,
->(_contracts: TContracts, definition: TDef): TDef {
+>(
+	_contracts: TContracts,
+	definition: TDef & ExactObjectDeep<TDef, MiddlewaresDefinition<TContracts>>,
+): TDef {
 	return definition;
 }

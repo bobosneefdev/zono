@@ -35,6 +35,7 @@ import {
 	isRecord,
 	isRouterNode,
 } from "~/internal/util.js";
+import type { ExactObjectDeep } from "~/internal/util.types.js";
 import type { MiddlewaresDefinition } from "~/middleware/index.js";
 
 function resolveResponseHeaders(
@@ -240,11 +241,16 @@ function collectRoutes(
 export function createHonoContractHandlers<
 	TContracts,
 	TContextParams extends HonoContextParams = [],
+	const THandlers extends HonoContractHandlerTree<
+		TContracts,
+		TContextParams
+	> = HonoContractHandlerTree<TContracts, TContextParams>,
 >(
 	_contracts: TContracts,
 	_options: HonoOptions<TContextParams>,
-	handlers: HonoContractHandlerTree<TContracts, TContextParams>,
-): HonoContractHandlerTree<TContracts, TContextParams> {
+	handlers: THandlers &
+		ExactObjectDeep<THandlers, HonoContractHandlerTree<TContracts, TContextParams>>,
+): THandlers {
 	return handlers;
 }
 
@@ -254,11 +260,16 @@ export function createHonoContractHandlers<
 export function createHonoMiddlewareHandlers<
 	TMiddleware,
 	TContextParams extends HonoContextParams = [],
+	const THandlers extends HonoMiddlewareHandlerTree<
+		TMiddleware,
+		TContextParams
+	> = HonoMiddlewareHandlerTree<TMiddleware, TContextParams>,
 >(
 	_middleware: TMiddleware,
 	_options: HonoOptions<TContextParams>,
-	handlers: HonoMiddlewareHandlerTree<TMiddleware, TContextParams>,
-): HonoMiddlewareHandlerTree<TMiddleware, TContextParams> {
+	handlers: THandlers &
+		ExactObjectDeep<THandlers, HonoMiddlewareHandlerTree<TMiddleware, TContextParams>>,
+): THandlers {
 	return handlers;
 }
 

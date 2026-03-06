@@ -25,6 +25,7 @@ import {
 	isRecord,
 	isRouterNode,
 } from "~/internal/util.js";
+import type { ExactObjectDeep } from "~/internal/util.types.js";
 import type { MiddlewaresDefinition } from "~/middleware/index.js";
 
 type GatewayRouteRegistration = {
@@ -223,29 +224,23 @@ export function createHonoGatewayService<
 >(
 	contracts: TContracts,
 	middlewares: TMiddlewares,
-	mask?: TMask,
-): {
-	contracts: TMask extends GatewayServiceMask<TContracts>
-		? SelectedGatewayContracts<TContracts, TMask>
-		: TContracts;
-	middlewares: TMask extends GatewayServiceMask<TContracts>
-		? MiddlewaresDefinition<SelectedGatewayContracts<TContracts, TMask>>
-		: TMiddlewares;
-} {
-	type TReturn = {
-		contracts: TMask extends GatewayServiceMask<TContracts>
-			? SelectedGatewayContracts<TContracts, TMask>
-			: TContracts;
-		middlewares: TMask extends GatewayServiceMask<TContracts>
-			? MiddlewaresDefinition<SelectedGatewayContracts<TContracts, TMask>>
-			: TMiddlewares;
-	};
-
-	if (mask == null) {
+	mask?: TMask extends GatewayServiceMask<TContracts>
+		? TMask & ExactObjectDeep<TMask, GatewayServiceMask<TContracts>>
+		: TMask,
+): TMask extends GatewayServiceMask<TContracts>
+	? {
+			contracts: SelectedGatewayContracts<TContracts, TMask>;
+			middlewares: MiddlewaresDefinition<SelectedGatewayContracts<TContracts, TMask>>;
+		}
+	: {
+			contracts: TContracts;
+			middlewares: TMiddlewares;
+		} {
+	if (!mask) {
 		return {
 			contracts,
 			middlewares,
-		} as TReturn;
+		} as any;
 	}
 
 	const selectedContracts = pickGatewayContractNode(contracts, mask);
@@ -260,7 +255,7 @@ export function createHonoGatewayService<
 	return {
 		contracts: normalizedContracts,
 		middlewares: normalizedMiddlewares,
-	} as TReturn;
+	} as any;
 }
 
 /**
