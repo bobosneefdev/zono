@@ -1,13 +1,16 @@
 export {
 	createGatewayOptions,
+	createHonoGatewayService,
 	generateHonoGateway,
 	initHonoGateway,
 } from "~/hono_gateway/hono_gateway.js";
 export type {
 	GatewayInput,
 	GatewayOptions,
-	GatewayServiceInput,
+	GatewayService,
+	GatewayServiceMask,
 	GeneratedGateway,
 	GeneratedGatewayContracts,
 	GeneratedGatewayMiddlewares,
+	SelectedGatewayContracts,
 } from "~/hono_gateway/hono_gateway.types.js";

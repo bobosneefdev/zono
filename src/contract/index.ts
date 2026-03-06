@@ -1,4 +1,4 @@
-export { createContracts, mergeContractResponses, pickContracts } from "~/contract/contract.js";
+export { createContracts, mergeContractResponses } from "~/contract/contract.js";
 export type {
 	Contract,
 	ContractBody,
@@ -34,8 +34,6 @@ export type {
 	ContractDefinition,
 	ContractInput,
 	ContractOutput,
-	ContractPickSelector,
 	MergeContractResponses,
 	MergeContractResponsesMany,
-	PickContracts,
 } from "~/contract/contract.util.js";

@@ -147,60 +147,6 @@ export type ValidateContractDefinition<
 		}
 	: never;
 
-type ContractPickSelectorNode<TNode> =
-	| true
-	| (TNode extends { ROUTER: infer TRouter extends Record<string, unknown> }
-			? { [TKey in keyof TRouter & string]?: ContractPickSelectorNode<TRouter[TKey]> }
-			: never);
-
-/**
- * Selector map for recursively picking contracts by route path.
- * - `true` includes a node and its full subtree
- * - object values continue selection into child routes
- */
-export type ContractPickSelector<TContracts extends { ROUTER: Record<string, unknown> }> = {
-	[TKey in keyof TContracts["ROUTER"] & string]?: ContractPickSelectorNode<
-		TContracts["ROUTER"][TKey]
-	>;
-};
-
-type PickContractNode<TNode, TSelector> = TSelector extends true
-	? TNode
-	: TSelector extends Record<string, unknown>
-		? TNode extends { ROUTER: infer TRouter extends Record<string, unknown> }
-			? PickContractRouter<TRouter, TSelector> extends infer TPickedRouter extends Record<
-					string,
-					unknown
-				>
-				? keyof TPickedRouter extends never
-					? never
-					: { ROUTER: TPickedRouter }
-				: never
-			: never
-		: never;
-
-type PickContractRouter<
-	TRouter extends Record<string, unknown>,
-	TSelector extends Record<string, unknown>,
-> = {
-	[TKey in keyof TRouter & keyof TSelector & string as PickContractNode<
-		TRouter[TKey],
-		TSelector[TKey]
-	> extends never
-		? never
-		: TKey]: PickContractNode<TRouter[TKey], TSelector[TKey]>;
-};
-
-/**
- * Resulting contract tree for a given pick selector.
- */
-export type PickContracts<
-	TContracts extends { ROUTER: Record<string, unknown> },
-	TSelector extends ContractPickSelector<TContracts>,
-> = {
-	ROUTER: PickContractRouter<TContracts["ROUTER"], TSelector>;
-};
-
 /**
  * Merges two contract response maps, combining responses for the same status code into a union.
  * @template TBaseResponses - Base response map

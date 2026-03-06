@@ -8,6 +8,7 @@ import type { RouterShape } from "~/contract/contract.types.js";
 import { createHonoMiddlewareHandlers, initHono } from "~/hono/hono.js";
 import {
 	createGatewayOptions,
+	createHonoGatewayService,
 	generateHonoGateway,
 	initHonoGateway,
 } from "~/hono_gateway/hono_gateway.js";
@@ -168,10 +169,23 @@ const serviceMiddleware = createMiddlewares(serviceContracts, {
 	},
 });
 
+const maskedGatewayService = createHonoGatewayService(serviceContracts, serviceMiddleware, {
+	items: true,
+});
+
+const fullGatewayService = createHonoGatewayService(serviceContracts, serviceMiddleware);
+
+void maskedGatewayService.contracts.ROUTER.items.CONTRACT.get;
+// @ts-expect-error not included in gateway service mask
+void maskedGatewayService.contracts.ROUTER.superjsonBody;
+void fullGatewayService.contracts.ROUTER.superjsonBody.CONTRACT.get;
+
 const SERVICE_PORT = 19877;
 const GATEWAY_PORT = 19878;
+const LIMITED_GATEWAY_PORT = 19879;
 let serviceServer: ReturnType<typeof Bun.serve>;
 let gatewayServer: ReturnType<typeof Bun.serve>;
+let limitedGatewayServer: ReturnType<typeof Bun.serve>;
 
 beforeAll(() => {
 	const serviceApp = new Hono();
@@ -294,10 +308,15 @@ beforeAll(() => {
 	serviceServer = Bun.serve({ fetch: serviceApp.fetch, port: SERVICE_PORT });
 
 	const gateway = generateHonoGateway({
-		inventory: {
-			contracts: serviceContracts,
-			middlewares: serviceMiddleware,
-		},
+		inventory: createHonoGatewayService(serviceContracts, serviceMiddleware, {
+			items: true,
+			superjsonBody: true,
+			superjsonHeaders: true,
+			text: true,
+			blob: true,
+			arrayBuffer: true,
+			voidResponse: true,
+		}),
 	});
 
 	const gatewayMiddleware = createMiddlewares(gateway.contracts, {
@@ -335,21 +354,55 @@ beforeAll(() => {
 	);
 
 	gatewayServer = Bun.serve({ fetch: gatewayApp.fetch, port: GATEWAY_PORT });
+
+	const limitedGateway = generateHonoGateway({
+		inventory: createHonoGatewayService(serviceContracts, serviceMiddleware, {
+			items: true,
+		}),
+	});
+	const limitedGatewayMiddlewares = createMiddlewares(limitedGateway.contracts, {});
+	const limitedGatewayOptions = createGatewayOptions(limitedGateway.contracts, {
+		services: {
+			inventory: `http://localhost:${SERVICE_PORT}`,
+		},
+		errorMode: "public",
+	});
+	const limitedGatewayMiddlewareHandlers = createHonoMiddlewareHandlers(
+		limitedGatewayMiddlewares,
+		limitedGatewayOptions,
+		{},
+	);
+	const limitedGatewayApp = new Hono();
+	initHonoGateway(
+		limitedGatewayApp,
+		limitedGateway.contracts,
+		limitedGatewayMiddlewares,
+		limitedGatewayMiddlewareHandlers,
+		limitedGatewayOptions,
+	);
+	limitedGatewayServer = Bun.serve({
+		fetch: limitedGatewayApp.fetch,
+		port: LIMITED_GATEWAY_PORT,
+	});
 });
 
 afterAll(() => {
 	serviceServer.stop();
 	gatewayServer.stop();
+	limitedGatewayServer.stop();
 });
 
 describe("Gateway", () => {
 	describe("generateHonoGateway", () => {
 		test("generates routes with service name prefix", () => {
 			const gateway = generateHonoGateway({
-				svc: { contracts: serviceContracts, middlewares: serviceMiddleware },
+				svc: createHonoGatewayService(serviceContracts, serviceMiddleware, {
+					items: true,
+				}),
 			});
-			expect(gateway.contracts.ROUTER.svc).toBe(serviceContracts);
-			expect(gateway.middlewares.ROUTER.svc).toBe(serviceMiddleware);
+			expect(gateway.contracts.ROUTER.svc.ROUTER.items.CONTRACT.get).toBeDefined();
+			expect("superjsonBody" in gateway.contracts.ROUTER.svc.ROUTER).toBe(false);
+			expect(gateway.middlewares.ROUTER.svc.MIDDLEWARE).toBeDefined();
 		});
 	});
 
@@ -476,12 +529,21 @@ describe("Gateway", () => {
 			expect(voidResponse.status).toBe(204);
 			expect(await voidResponse.text()).toBe("");
 		});
+
+		test("returns 404 for route not provided by gateway service", async () => {
+			const res = await fetch(
+				`http://localhost:${LIMITED_GATEWAY_PORT}/inventory/superjsonBody`,
+			);
+			expect(res.status).toBe(404);
+		});
 	});
 
 	describe("gateway client", () => {
 		test("proxy-chain client works through gateway", async () => {
 			const gateway = generateHonoGateway({
-				inventory: { contracts: serviceContracts, middlewares: serviceMiddleware },
+				inventory: createHonoGatewayService(serviceContracts, serviceMiddleware, {
+					items: true,
+				}),
 			});
 			const client = createClient(gateway.contracts, {
 				baseUrl: `http://localhost:${GATEWAY_PORT}`,
@@ -495,7 +557,9 @@ describe("Gateway", () => {
 
 		test("proxy-chain client with path params through gateway", async () => {
 			const gateway = generateHonoGateway({
-				inventory: { contracts: serviceContracts, middlewares: serviceMiddleware },
+				inventory: createHonoGatewayService(serviceContracts, serviceMiddleware, {
+					items: true,
+				}),
 			});
 			const client = createClient(gateway.contracts, {
 				baseUrl: `http://localhost:${GATEWAY_PORT}`,
@@ -513,7 +577,9 @@ describe("Gateway", () => {
 
 		test("proxy-chain client receives superjson body via gateway", async () => {
 			const gateway = generateHonoGateway({
-				inventory: { contracts: serviceContracts, middlewares: serviceMiddleware },
+				inventory: createHonoGatewayService(serviceContracts, serviceMiddleware, {
+					superjsonBody: true,
+				}),
 			});
 			const client = createClient(gateway.contracts, {
 				baseUrl: `http://localhost:${GATEWAY_PORT}`,
@@ -536,7 +602,9 @@ describe("Gateway", () => {
 
 		test("proxy-chain client receives superjson headers via gateway", async () => {
 			const gateway = generateHonoGateway({
-				inventory: { contracts: serviceContracts, middlewares: serviceMiddleware },
+				inventory: createHonoGatewayService(serviceContracts, serviceMiddleware, {
+					superjsonHeaders: true,
+				}),
 			});
 			const client = createClient(gateway.contracts, {
 				baseUrl: `http://localhost:${GATEWAY_PORT}`,

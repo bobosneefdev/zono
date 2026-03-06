@@ -11,7 +11,9 @@ import {
 import type {
 	GatewayInput,
 	GatewayOptions,
+	GatewayServiceMask,
 	GeneratedGateway,
+	SelectedGatewayContracts,
 } from "~/hono_gateway/hono_gateway.types.js";
 import { buildInternalErrorResponse, buildNotFoundErrorResponse } from "~/internal/server.js";
 import {
@@ -19,6 +21,7 @@ import {
 	dotPathToSlashPath,
 	getContractMethods,
 	isContractNode,
+	isMiddlewareNode,
 	isRecord,
 	isRouterNode,
 } from "~/internal/util.js";
@@ -145,6 +148,121 @@ function collectGatewayMiddleware(
 	return entries;
 }
 
+function pickGatewayContractNode(node: unknown, mask: unknown): unknown {
+	if (!isRecord(node)) {
+		return undefined;
+	}
+
+	if (mask === true) {
+		return node;
+	}
+
+	if (!isRecord(mask) || !isRouterNode(node)) {
+		return undefined;
+	}
+
+	const pickedRouter: Record<string, unknown> = {};
+	for (const [key, childMask] of Object.entries(mask)) {
+		const childNode = node.ROUTER[key];
+		const pickedChild = pickGatewayContractNode(childNode, childMask);
+		if (pickedChild !== undefined) {
+			pickedRouter[key] = pickedChild;
+		}
+	}
+
+	if (Object.keys(pickedRouter).length === 0) {
+		return undefined;
+	}
+
+	return { ROUTER: pickedRouter };
+}
+
+function pickGatewayMiddlewareNode(node: unknown, mask: unknown): unknown {
+	if (!isRecord(node)) {
+		return undefined;
+	}
+
+	if (mask === true) {
+		return node;
+	}
+
+	if (!isRecord(mask)) {
+		return undefined;
+	}
+
+	const pickedRouter: Record<string, unknown> = {};
+	if (isRouterNode(node)) {
+		for (const [key, childMask] of Object.entries(mask)) {
+			const childNode = node.ROUTER[key];
+			const pickedChild = pickGatewayMiddlewareNode(childNode, childMask);
+			if (pickedChild !== undefined) {
+				pickedRouter[key] = pickedChild;
+			}
+		}
+	}
+
+	const pickedNode: Record<string, unknown> = {};
+	if (isMiddlewareNode(node)) {
+		pickedNode.MIDDLEWARE = node.MIDDLEWARE;
+	}
+	if (Object.keys(pickedRouter).length > 0) {
+		pickedNode.ROUTER = pickedRouter;
+	}
+
+	if (Object.keys(pickedNode).length === 0) {
+		return undefined;
+	}
+
+	return pickedNode;
+}
+
+export function createHonoGatewayService<
+	const TContracts extends { ROUTER: Record<string, unknown> },
+	const TMiddlewares extends MiddlewaresDefinition<TContracts>,
+	const TMask extends GatewayServiceMask<TContracts> | undefined = undefined,
+>(
+	contracts: TContracts,
+	middlewares: TMiddlewares,
+	mask?: TMask,
+): {
+	contracts: TMask extends GatewayServiceMask<TContracts>
+		? SelectedGatewayContracts<TContracts, TMask>
+		: TContracts;
+	middlewares: TMask extends GatewayServiceMask<TContracts>
+		? MiddlewaresDefinition<SelectedGatewayContracts<TContracts, TMask>>
+		: TMiddlewares;
+} {
+	type TReturn = {
+		contracts: TMask extends GatewayServiceMask<TContracts>
+			? SelectedGatewayContracts<TContracts, TMask>
+			: TContracts;
+		middlewares: TMask extends GatewayServiceMask<TContracts>
+			? MiddlewaresDefinition<SelectedGatewayContracts<TContracts, TMask>>
+			: TMiddlewares;
+	};
+
+	if (mask == null) {
+		return {
+			contracts,
+			middlewares,
+		} as TReturn;
+	}
+
+	const selectedContracts = pickGatewayContractNode(contracts, mask);
+	const normalizedContracts =
+		isRecord(selectedContracts) && isRouterNode(selectedContracts)
+			? selectedContracts
+			: { ROUTER: {} };
+
+	const selectedMiddlewares = pickGatewayMiddlewareNode(middlewares, mask);
+	const normalizedMiddlewares = isRecord(selectedMiddlewares) ? selectedMiddlewares : {};
+
+	return {
+		contracts: normalizedContracts,
+		middlewares: normalizedMiddlewares,
+	} as TReturn;
+}
+
 /**
  * Generates gateway route and middleware structures from service definitions.
  * Combines multiple services into a single routable structure.
@@ -159,7 +277,7 @@ export function generateHonoGateway<const T extends GatewayInput>(
 
 	for (const [name, service] of Object.entries(services)) {
 		contracts[name] = service.contracts;
-		middlewares[name] = service.middlewares ?? {};
+		middlewares[name] = service.middlewares;
 	}
 
 	return {

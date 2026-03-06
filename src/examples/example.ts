@@ -11,6 +11,7 @@ import {
 } from "~/hono/hono.js";
 import {
 	createGatewayOptions,
+	createHonoGatewayService,
 	generateHonoGateway,
 	initHonoGateway,
 } from "~/hono_gateway/hono_gateway.js";
@@ -219,10 +220,11 @@ initHono(app, contracts, honoContractHandlers, middlewares, honoMiddlewareHandle
 Bun.serve({ fetch: app.fetch, port: 3000 });
 
 const gateway = generateHonoGateway({
-	usersService: {
-		contracts: contracts,
-		middlewares: middlewares,
-	},
+	usersService: createHonoGatewayService(contracts, middlewares, {
+		users: true,
+		health: true,
+		transforms: true,
+	}),
 });
 
 const gatewayRoutes = gateway.contracts;
