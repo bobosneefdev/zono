@@ -1,5 +1,7 @@
 # Zono
 
+NOTE: This project is mainly a solo project for me to learn more about advanced TypeScript types, HTTP, etc. I do not reccomend this get used for anything too serious.
+
 TypeScript + Zod end-to-end type-safe HTTP contracts, clients, and server adapters.
 
 Define routes once, then reuse the same contract across server and client with runtime validation and static typing.
