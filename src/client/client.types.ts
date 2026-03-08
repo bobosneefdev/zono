@@ -7,7 +7,11 @@ import type {
 	InferContractRequestData,
 } from "../contract/contract.types.js";
 import type { MiddlewareDefinition } from "../middleware/middleware.types.js";
-import type { ClientResponseUnion, ErrorMode } from "../server/server.types.js";
+import type {
+	ClientFetchResponseUnion,
+	ClientResponseUnion,
+	ErrorMode,
+} from "../server/server.types.js";
 import type { Prettify } from "../shared/shared.types.js";
 
 type PrettifyUnion<T> = T extends unknown ? Prettify<T> : never;
@@ -26,10 +30,12 @@ export type ClientFetchMethod<
 	data?: InferContractRequestData<ContractMethodAtPath<TContracts, TPath, TMethod>>,
 ) => Promise<
 	PrettifyUnion<
-		ClientResponseUnion<
-			ContractMethodAtPath<TContracts, TPath, TMethod>,
-			TMiddlewares,
-			TErrorMode
+		ClientFetchResponseUnion<
+			ClientResponseUnion<
+				ContractMethodAtPath<TContracts, TPath, TMethod>,
+				TMiddlewares,
+				TErrorMode
+			>
 		>
 	>
 >;

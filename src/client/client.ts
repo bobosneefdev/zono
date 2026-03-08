@@ -106,10 +106,11 @@ export const createClient = <
 	) => {
 		const request = buildRequest(baseUrl, path, method, toRequestEnvelope(data));
 		const response = await fetch(request.url, request.init);
+		const responseCopy = response.clone();
 		const parsed = await parseSerializedResponse(response);
 		return {
 			status: response.status,
-			type: parsed.type,
+			response: responseCopy,
 			data: parsed.data,
 		} as Awaited<ReturnType<typeof fetchMethod>>;
 	};

@@ -6,6 +6,7 @@ import {
 	createGatewayClient,
 	createGatewayService,
 	createGatewayServices,
+	GatewayMiddlewares,
 	initGateway,
 } from "./gateway/gateway.js";
 import { GatewayServiceShape } from "./gateway/gateway.types.js";
@@ -181,7 +182,7 @@ const usersServiceClient = createClient<
 	const users = await usersServiceClient.fetch("/users/$userId", "get", {
 		pathParams: { userId: crypto.randomUUID() },
 	});
-	console.log(users);
+	console.log(users.response.status, users.data);
 })();
 
 // GatewayServiceShape is pretty much like a "Pick" util for the shape of the existing service shape.
@@ -205,9 +206,50 @@ const usersGatewayService = createGatewayService(
 const gatewayServices = createGatewayServices({
 	users: usersGatewayService,
 });
+type GatewayServices = typeof gatewayServices;
+
+const gatewayMiddlewares = {
+	SHAPE: {
+		users: {
+			// This would represent the users service
+			SHAPE: {
+				users: {
+					// This would represent the users endpoint on the users service
+					MIDDLEWARE: {
+						auth: {
+							403: {
+								type: "JSON",
+								schema: z.object({ message: z.string() }),
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+} as const satisfies GatewayMiddlewares<GatewayServices>;
 
 const gatewayApp = new Hono();
-initGateway(gatewayApp, gatewayServices);
+initGateway(gatewayApp, gatewayServices, {
+	middlewares: createHonoMiddlewareHandlers(gatewayMiddlewares, {
+		SHAPE: {
+			users: {
+				SHAPE: {
+					users: {
+						MIDDLEWARE: {
+							auth: () => ({
+								type: "JSON",
+								status: 403,
+								data: { message: "Unauthorized" },
+							}),
+						},
+					},
+				},
+			},
+		},
+	}),
+	// createContext should be another option here
+});
 Bun.serve({ fetch: gatewayApp.fetch, port: 3001 });
 
 // Note that client no longer gets real run-time schemas, etc. This is to protect leakage of full API details to the client.
@@ -215,5 +257,5 @@ const gatewayClient = createGatewayClient<typeof gatewayServices>("http://localh
 
 (async () => {
 	const users = await gatewayClient.users.fetch("/users", "get");
-	console.log(users);
+	console.log(users.response.status, users.data);
 })();

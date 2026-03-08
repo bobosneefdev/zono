@@ -329,7 +329,7 @@ describe("gateway proxy", () => {
 		const users = await gatewayClient.users.fetch("/users", "get");
 
 		expect(users.status).toBe(200);
-		expect(users.type).toBe("SuperJSON");
+		expect(users.response.status).toBe(200);
 		expect(users.data).toEqual([{ id: "u1", createdAt: new Date("2024-01-01T00:00:00.000Z") }]);
 	});
 });

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import z from "zod";
 import type { Contracts } from "../contract/contract.types.js";
+import { createHonoMiddlewareHandlers } from "../middleware/middleware.js";
 import type { Middlewares } from "../middleware/middleware.types.js";
 import { createSerializedResponse, parseSerializedResponse } from "../shared/shared.js";
 import type { Shape } from "../shared/shared.types.js";
@@ -9,6 +10,7 @@ import {
 	createGatewayClient,
 	createGatewayService,
 	createGatewayServices,
+	type GatewayMiddlewares,
 	initGateway,
 } from "./gateway.js";
 import type { GatewayServiceShape } from "./gateway.types.js";
@@ -30,6 +32,8 @@ afterEach(() => {
 const serviceShape = {
 	SHAPE: {
 		echo: { CONTRACT: true },
+		plain: { CONTRACT: true },
+		users: { CONTRACT: true },
 	},
 } as const satisfies Shape;
 
@@ -48,6 +52,22 @@ const serviceContracts = {
 				post: {
 					responses: {
 						201: { type: "Text", body: z.string() },
+					},
+				},
+			},
+		},
+		plain: {
+			CONTRACT: {
+				get: {
+					responses: { 200: { type: "JSON", body: z.object({ ok: z.boolean() }) } },
+				},
+			},
+		},
+		users: {
+			CONTRACT: {
+				get: {
+					responses: {
+						200: { type: "JSON", body: z.object({ users: z.array(z.string()) }) },
 					},
 				},
 			},
@@ -136,6 +156,195 @@ describe("gateway runtime", () => {
 		expect(parsedPost.data).toBe("body:hello");
 	});
 
+	test("runs layered gateway middlewares in path order and passes gateway context", async () => {
+		const upstreamApp = new Hono();
+		upstreamApp.get("/users", () => {
+			return createSerializedResponse({
+				status: 200,
+				type: "JSON",
+				source: "contract",
+				data: { users: ["u1"] },
+			});
+		});
+
+		const services = createGatewayServices({
+			usersService: createGatewayService(
+				{ SHAPE: { users: { CONTRACT: true }, plain: { CONTRACT: true } } },
+				serviceContracts,
+				serviceMiddlewares,
+				"public",
+				startServer(upstreamApp),
+			),
+		});
+
+		const gatewayMiddlewares = {
+			SHAPE: {
+				usersService: {
+					MIDDLEWARE: {
+						rootGuard: {
+							401: { type: "JSON", schema: z.object({ message: z.string() }) },
+						},
+					},
+					SHAPE: {
+						users: {
+							MIDDLEWARE: {
+								auth: {
+									403: {
+										type: "JSON",
+										schema: z.object({ message: z.string() }),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		} as const satisfies GatewayMiddlewares<typeof services>;
+
+		const steps: Array<string> = [];
+		const boundGatewayMiddlewares = createHonoMiddlewareHandlers<
+			typeof gatewayMiddlewares,
+			{ requestId: string }
+		>(gatewayMiddlewares, {
+			SHAPE: {
+				usersService: {
+					MIDDLEWARE: {
+						rootGuard: async (_ctx, next, ourContext) => {
+							steps.push(`root:before:${ourContext.requestId}`);
+							await next();
+							steps.push("root:after");
+						},
+					},
+					SHAPE: {
+						users: {
+							MIDDLEWARE: {
+								auth: async (_ctx, next, ourContext) => {
+									steps.push(`auth:before:${ourContext.requestId}`);
+									await next();
+									steps.push("auth:after");
+								},
+							},
+						},
+					},
+				},
+			},
+		});
+
+		const gatewayApp = new Hono();
+		initGateway(gatewayApp, services, {
+			middlewares: boundGatewayMiddlewares,
+			createContext: () => ({ requestId: "ctx-1" }),
+		});
+
+		const response = await fetch(`${startServer(gatewayApp)}/users`);
+		const parsed = await parseSerializedResponse(response);
+
+		expect(response.status).toBe(200);
+		expect(parsed.source).toBe("contract");
+		expect(parsed.data).toEqual({ users: ["u1"] });
+		expect(steps).toEqual([
+			"root:before:ctx-1",
+			"auth:before:ctx-1",
+			"auth:after",
+			"root:after",
+		]);
+	});
+
+	test("gateway middleware short-circuits before upstream proxy", async () => {
+		let upstreamHitCount = 0;
+		const upstreamApp = new Hono();
+		upstreamApp.get("/users", () => {
+			upstreamHitCount += 1;
+			return createSerializedResponse({
+				status: 200,
+				type: "JSON",
+				source: "contract",
+				data: { users: ["u1"] },
+			});
+		});
+
+		const services = createGatewayServices({
+			usersService: createGatewayService(
+				{ SHAPE: { users: { CONTRACT: true } } },
+				serviceContracts,
+				serviceMiddlewares,
+				"public",
+				startServer(upstreamApp),
+			),
+		});
+
+		const gatewayMiddlewares = {
+			SHAPE: {
+				usersService: {
+					MIDDLEWARE: {
+						rootGuard: {
+							401: { type: "JSON", schema: z.object({ message: z.string() }) },
+						},
+					},
+					SHAPE: {
+						users: {
+							MIDDLEWARE: {
+								auth: {
+									403: {
+										type: "JSON",
+										schema: z.object({ message: z.string() }),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		} as const satisfies GatewayMiddlewares<typeof services>;
+
+		const steps: Array<string> = [];
+		const boundGatewayMiddlewares = createHonoMiddlewareHandlers<
+			typeof gatewayMiddlewares,
+			{ requestId: string }
+		>(gatewayMiddlewares, {
+			SHAPE: {
+				usersService: {
+					MIDDLEWARE: {
+						rootGuard: async (_ctx, next) => {
+							steps.push("root:before");
+							await next();
+							steps.push("root:after");
+						},
+					},
+					SHAPE: {
+						users: {
+							MIDDLEWARE: {
+								auth: () => {
+									steps.push("auth:block");
+									return {
+										status: 403,
+										type: "JSON",
+										data: { message: "Unauthorized" },
+									};
+								},
+							},
+						},
+					},
+				},
+			},
+		});
+
+		const gatewayApp = new Hono();
+		initGateway(gatewayApp, services, {
+			middlewares: boundGatewayMiddlewares,
+			createContext: () => ({ requestId: "ctx-2" }),
+		});
+
+		const response = await fetch(`${startServer(gatewayApp)}/users`);
+		const parsed = await parseSerializedResponse(response);
+
+		expect(response.status).toBe(403);
+		expect(parsed.source).toBe("middleware");
+		expect(parsed.data).toEqual({ message: "Unauthorized" });
+		expect(upstreamHitCount).toBe(0);
+		expect(steps).toEqual(["root:before", "auth:block", "root:after"]);
+	});
+
 	test("createGatewayClient caches service clients", () => {
 		const gatewayClient =
 			createGatewayClient<
@@ -153,28 +362,81 @@ describe("gateway runtime", () => {
 const gatewayShapeTyped = {
 	SHAPE: {
 		echo: { CONTRACT: true },
+		plain: { CONTRACT: true },
+		users: { CONTRACT: true },
 	},
 } as const satisfies GatewayServiceShape<typeof serviceShape>;
 void gatewayShapeTyped;
 
+type ExtractStatus<T, TStatus extends number> = Extract<T, { status: TStatus }>;
 const typeOnly = (_cb: () => void): void => {};
 
 typeOnly(() => {
 	const service = createGatewayService(
-		{ SHAPE: { echo: { CONTRACT: true } } },
+		{
+			SHAPE: {
+				echo: { CONTRACT: true },
+				plain: { CONTRACT: true },
+				users: { CONTRACT: true },
+			},
+		},
 		serviceContracts,
 		serviceMiddlewares,
 		"public",
 		"http://localhost",
 	);
-	const services = createGatewayServices({ users: service });
-	const client = createGatewayClient<typeof services>("http://localhost");
+	const services = createGatewayServices({ usersService: service });
 
-	void client.users.fetch("/echo", "get");
+	const gatewayMiddlewares = {
+		SHAPE: {
+			usersService: {
+				MIDDLEWARE: {
+					auth: {
+						403: { type: "JSON", schema: z.object({ message: z.string() }) },
+					},
+				},
+				SHAPE: {
+					users: {
+						MIDDLEWARE: {
+							rateLimit: {
+								429: { type: "JSON", schema: z.object({ retryAfter: z.number() }) },
+							},
+						},
+					},
+				},
+			},
+		},
+	} as const satisfies GatewayMiddlewares<typeof services>;
+
+	const client = createGatewayClient<typeof services, typeof gatewayMiddlewares>(
+		"http://localhost",
+	);
+
+	void client.usersService.fetch("/echo", "get");
 
 	// @ts-expect-error invalid path for service contracts
-	void client.users.fetch("/missing", "get");
+	void client.usersService.fetch("/missing", "get");
 
 	// @ts-expect-error method not defined on route
-	void client.users.fetch("/echo", "put");
+	void client.usersService.fetch("/echo", "put");
+
+	const usersResponsePromise = client.usersService.fetch("/users", "get");
+	type UsersResponse = Awaited<typeof usersResponsePromise>;
+	const usersAuthData: ExtractStatus<UsersResponse, 403>["data"] = { message: "Unauthorized" };
+	const usersRateLimitData: ExtractStatus<UsersResponse, 429>["data"] = { retryAfter: 1000 };
+	void usersAuthData;
+	void usersRateLimitData;
+
+	const plainResponsePromise = client.usersService.fetch("/plain", "get");
+	type PlainResponse = Awaited<typeof plainResponsePromise>;
+	const plainAuthData: ExtractStatus<PlainResponse, 403>["data"] = { message: "Unauthorized" };
+	void plainAuthData;
+
+	// @ts-expect-error /plain should not include /users scoped gateway middleware status 429
+	const plainRateLimit: ExtractStatus<PlainResponse, 429> = {
+		status: 429,
+		data: { retryAfter: 1 },
+		response: new Response(),
+	};
+	void plainRateLimit;
 });

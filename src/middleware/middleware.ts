@@ -1,11 +1,16 @@
 import type { Context } from "hono";
 import { getRuntimeResponseSchemaParser } from "../contract/contract.js";
-import type { BoundMiddlewareHandlers, RuntimeHandlerResponse } from "../server/server.types.js";
+import type {
+	BoundMiddlewareHandlers,
+	MiddlewareHandlers,
+	RuntimeHandlerResponse,
+} from "../server/server.types.js";
 import { createSerializedResponse } from "../shared/shared.js";
 import type {
 	MiddlewareDefinition,
 	MiddlewareResponseSchema,
 	Middlewares,
+	MiddlewareTree,
 } from "./middleware.types.js";
 
 const getMiddlewareSchemaAtStatus = (
@@ -39,11 +44,11 @@ const validateMiddlewareResponse = (
 };
 
 export const createHonoMiddlewareHandlers = <
-	TMiddlewares extends { MIDDLEWARE: Record<string, MiddlewareDefinition> },
+	TMiddlewares extends MiddlewareTree,
 	TContext = unknown,
 >(
 	middlewares: TMiddlewares,
-	handlers: BoundMiddlewareHandlers<TMiddlewares, TContext>["handlers"],
+	handlers: MiddlewareHandlers<TMiddlewares, TContext>,
 ): BoundMiddlewareHandlers<TMiddlewares, TContext> => {
 	return {
 		middlewares,

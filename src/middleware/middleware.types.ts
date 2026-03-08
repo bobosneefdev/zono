@@ -7,10 +7,15 @@ export type MiddlewareResponseSchema = ResponseSchema<"schema">;
 
 export type MiddlewareDefinition = Record<number, MiddlewareResponseSchema>;
 
+export type MiddlewareTree = {
+	MIDDLEWARE?: Record<string, MiddlewareDefinition>;
+	SHAPE?: Record<string, MiddlewareTree>;
+};
+
 export type Middlewares<TShape extends Shape> = {
 	MIDDLEWARE: Record<string, MiddlewareDefinition>;
 	readonly [MIDDLEWARE_SHAPE_BRAND]?: TShape;
-};
+} & MiddlewareTree;
 
 export type MiddlewareName<
 	TMiddlewares extends { MIDDLEWARE: Record<string, MiddlewareDefinition> },

@@ -15,6 +15,7 @@ import type {
 	InferAllMiddlewareResponseUnion,
 	MiddlewareDefinition,
 	Middlewares,
+	MiddlewareTree,
 } from "../middleware/middleware.types.js";
 import type { Shape } from "../shared/shared.types.js";
 
@@ -123,27 +124,59 @@ export type MiddlewareHandler<_TDefinition extends MiddlewareDefinition, TContex
 	ourContext: TContext,
 ) => Promise<void | RuntimeHandlerResponse> | void | RuntimeHandlerResponse;
 
+type MiddlewareHandlersFromShape<TShapeNode, TContext> =
+	TShapeNode extends Record<string, unknown>
+		? {
+				[K in keyof TShapeNode]-?: MiddlewareHandlersFromTree<
+					NonNullable<TShapeNode[K]>,
+					TContext
+				>;
+			}
+		: never;
+
+type MiddlewareHandlersFromTree<TMiddlewaresNode, TContext> = TMiddlewaresNode extends {
+	MIDDLEWARE: infer TMiddlewareMap;
+	SHAPE: infer TShapeNode;
+}
+	? {
+			MIDDLEWARE: TMiddlewareMap extends Record<string, MiddlewareDefinition>
+				? {
+						[TName in keyof TMiddlewareMap]: MiddlewareHandler<
+							TMiddlewareMap[TName],
+							TContext
+						>;
+					}
+				: never;
+			SHAPE: MiddlewareHandlersFromShape<TShapeNode, TContext>;
+		}
+	: TMiddlewaresNode extends { MIDDLEWARE: infer TMiddlewareMap }
+		? {
+				MIDDLEWARE: TMiddlewareMap extends Record<string, MiddlewareDefinition>
+					? {
+							[TName in keyof TMiddlewareMap]: MiddlewareHandler<
+								TMiddlewareMap[TName],
+								TContext
+							>;
+						}
+					: never;
+			}
+		: TMiddlewaresNode extends { SHAPE: infer TShapeNode }
+			? {
+					SHAPE: MiddlewareHandlersFromShape<TShapeNode, TContext>;
+				}
+			: never;
+
 export type MiddlewareHandlers<
-	TMiddlewares extends { MIDDLEWARE: Record<string, MiddlewareDefinition> },
+	TMiddlewares extends MiddlewareTree,
 	TContext,
-> = {
-	MIDDLEWARE: {
-		[TName in keyof TMiddlewares["MIDDLEWARE"]]: MiddlewareHandler<
-			TMiddlewares["MIDDLEWARE"][TName],
-			TContext
-		>;
-	};
-};
+> = MiddlewareHandlersFromTree<TMiddlewares, TContext>;
 
 export type BoundContractHandlers<TContracts extends ContractsTree, TContext> = {
 	contracts: TContracts;
 	handlers: ContractHandlersFromContracts<TContracts, TContext>;
 };
 
-export type BoundMiddlewareHandlers<
-	TMiddlewares extends { MIDDLEWARE: Record<string, MiddlewareDefinition> },
-	TContext,
-> = {
+export type BoundMiddlewareHandlers<TMiddlewares extends MiddlewareTree, TContext> = {
 	middlewares: TMiddlewares;
 	handlers: MiddlewareHandlers<TMiddlewares, TContext>;
 };
@@ -164,6 +197,10 @@ export type ClientResponseUnion<
 	| InferAllMiddlewareResponseUnion<TMiddlewares>
 	| ErrorResponse<TErrorMode>;
 
+export type ClientFetchResponseUnion<T> = T extends unknown
+	? Omit<T, "type"> & { response: Response }
+	: never;
+
 export type ClientFetchMethod<
 	TContracts extends ContractsTree,
 	TMiddlewares extends { MIDDLEWARE: Record<string, MiddlewareDefinition> },
@@ -177,5 +214,11 @@ export type ClientFetchMethod<
 	method: TMethod,
 	data?: InferContractRequestData<ContractMethodAtPath<TContracts, TPath, TMethod>>,
 ) => Promise<
-	ClientResponseUnion<ContractMethodAtPath<TContracts, TPath, TMethod>, TMiddlewares, TErrorMode>
+	ClientFetchResponseUnion<
+		ClientResponseUnion<
+			ContractMethodAtPath<TContracts, TPath, TMethod>,
+			TMiddlewares,
+			TErrorMode
+		>
+	>
 >;

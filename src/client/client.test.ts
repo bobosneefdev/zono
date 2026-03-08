@@ -166,7 +166,8 @@ describe("createClient runtime", () => {
 		});
 
 		expect(response.status).toBe(200);
-		expect(response.type).toBe("JSON");
+		expect(response.response).toBeInstanceOf(Response);
+		expect(response.response.status).toBe(200);
 		expect(response.data).toEqual({
 			userId: "a/b",
 			active: "true",
@@ -205,6 +206,7 @@ describe("createClient runtime", () => {
 			body: new URLSearchParams({ q: "zono docs" }),
 		});
 		expect(urlEncoded.status).toBe(200);
+		expect(urlEncoded.response.status).toBe(200);
 		expect((urlEncoded.data as { contentType: string }).contentType).toContain(
 			"application/x-www-form-urlencoded",
 		);
@@ -214,6 +216,7 @@ describe("createClient runtime", () => {
 		formData.set("fileName", "avatar.png");
 		const uploaded = await client.fetch("/upload", "post", { body: formData });
 		expect(uploaded.status).toBe(200);
+		expect(uploaded.response.status).toBe(200);
 		expect(uploaded.data).toEqual({ fileName: "avatar.png" });
 	});
 
@@ -236,7 +239,8 @@ describe("createClient runtime", () => {
 		>(startServer(failingApp));
 		const failed = await failingClient.fetch("/events", "get");
 		expect(failed.status).toBe(503);
-		expect(failed.type).toBe("JSON");
+		expect(failed.response.status).toBe(503);
+		expect((await failed.response.json()) as { message: string }).toEqual({ message: "down" });
 
 		const healthyApp = new Hono();
 		healthyApp.get("/events", () => {
@@ -256,7 +260,7 @@ describe("createClient runtime", () => {
 		>(startServer(healthyApp));
 		const healthy = await healthyClient.fetch("/events", "get");
 		expect(healthy.status).toBe(200);
-		expect(healthy.type).toBe("SuperJSON");
+		expect(healthy.response.status).toBe(200);
 		expect((healthy.data as { createdAt: Date }).createdAt instanceof Date).toBe(true);
 	});
 });
