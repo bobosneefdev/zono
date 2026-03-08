@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import z from "zod";
-import type { Contracts } from "../contract/contract.types.js";
+import type { ContractTreeFor } from "../contract/contract.js";
+import type { MiddlewareTreeFor } from "../middleware/middleware.js";
 import { createHonoMiddlewareHandlers } from "../middleware/middleware.js";
-import type { Middlewares } from "../middleware/middleware.types.js";
+import type { ApiShape } from "../shared/shared.js";
 import { createSerializedResponse, parseSerializedResponse } from "../shared/shared.js";
-import type { Shape } from "../shared/shared.types.js";
+import type { GatewayShape } from "./gateway.js";
 import {
 	createGatewayClient,
 	createGatewayService,
@@ -13,7 +14,6 @@ import {
 	type GatewayMiddlewares,
 	initGateway,
 } from "./gateway.js";
-import type { GatewayServiceShape } from "./gateway.types.js";
 
 const servers: Array<{ stop: () => void }> = [];
 
@@ -35,7 +35,7 @@ const serviceShape = {
 		plain: { CONTRACT: true },
 		users: { CONTRACT: true },
 	},
-} as const satisfies Shape;
+} as const satisfies ApiShape;
 
 const serviceContracts = {
 	SHAPE: {
@@ -73,11 +73,11 @@ const serviceContracts = {
 			},
 		},
 	},
-} as const satisfies Contracts<typeof serviceShape>;
+} as const satisfies ContractTreeFor<typeof serviceShape>;
 
 const serviceMiddlewares = {
 	MIDDLEWARE: {},
-} as const satisfies Middlewares<typeof serviceShape>;
+} as const satisfies MiddlewareTreeFor<typeof serviceShape>;
 
 describe("gateway runtime", () => {
 	test("proxies GET to upstream and preserves status headers serialized body", async () => {
@@ -100,7 +100,7 @@ describe("gateway runtime", () => {
 			SHAPE: {
 				echo: { CONTRACT: true },
 			},
-		} as const satisfies GatewayServiceShape<typeof serviceShape>;
+		} as const satisfies GatewayShape<typeof serviceShape>;
 		const service = createGatewayService(
 			gatewayShape,
 			serviceContracts,
@@ -365,7 +365,7 @@ const gatewayShapeTyped = {
 		plain: { CONTRACT: true },
 		users: { CONTRACT: true },
 	},
-} as const satisfies GatewayServiceShape<typeof serviceShape>;
+} as const satisfies GatewayShape<typeof serviceShape>;
 void gatewayShapeTyped;
 
 type ExtractStatus<T, TStatus extends number> = Extract<T, { status: TStatus }>;

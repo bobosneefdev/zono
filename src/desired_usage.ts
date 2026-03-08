@@ -1,23 +1,23 @@
 import { Hono } from "hono";
 import z from "zod";
 import { createClient } from "./client/client.js";
-import { Contracts } from "./contract/contract.types.js";
+import { ContractTreeFor } from "./contract/contract.js";
 import {
 	createGatewayClient,
 	createGatewayService,
 	createGatewayServices,
 	GatewayMiddlewares,
+	GatewayShape,
 	initGateway,
 } from "./gateway/gateway.js";
-import { GatewayServiceShape } from "./gateway/gateway.types.js";
-import { Middlewares } from "./middleware/middleware.types.js";
+import { MiddlewareTreeFor } from "./middleware/middleware.js";
 import {
+	ContextFactory,
 	createHonoContractHandlers,
 	createHonoMiddlewareHandlers,
 	initHono,
 } from "./server/server.js";
-import { ServerContextCreator } from "./server/server.types.js";
-import { Shape } from "./shared/shared.types.js";
+import { ApiShape } from "./shared/shared.js";
 
 // DEMO SCHEMAS
 const zUser = z.object({
@@ -37,7 +37,7 @@ const usersServiceShape = {
 			},
 		},
 	},
-} as const satisfies Shape;
+} as const satisfies ApiShape;
 type UsersServiceShape = typeof usersServiceShape;
 
 const usersServiceContracts = {
@@ -70,7 +70,7 @@ const usersServiceContracts = {
 			},
 		},
 	},
-} as const satisfies Contracts<UsersServiceShape>;
+} as const satisfies ContractTreeFor<UsersServiceShape>;
 type UsersServiceContracts = typeof usersServiceContracts;
 
 const usersServiceMiddlewares = {
@@ -85,7 +85,7 @@ const usersServiceMiddlewares = {
 			},
 		},
 	},
-} as const satisfies Middlewares<UsersServiceShape>;
+} as const satisfies MiddlewareTreeFor<UsersServiceShape>;
 type UsersServiceMiddlewares = typeof usersServiceMiddlewares;
 
 const createUsersServiceContext = (async (_ctx) => {
@@ -96,7 +96,7 @@ const createUsersServiceContext = (async (_ctx) => {
 		username: "JohnPorkRox123",
 	};
 	return user;
-}) satisfies ServerContextCreator;
+}) satisfies ContextFactory;
 type UsersServiceContext = Awaited<ReturnType<typeof createUsersServiceContext>>;
 
 const usersServiceContractHandlers = createHonoContractHandlers<
@@ -193,7 +193,7 @@ const usersGatewayServiceShape = {
 			SHAPE: {}, // empty object should be ignored obviously
 		},
 	},
-} as const satisfies GatewayServiceShape<UsersServiceShape>;
+} as const satisfies GatewayShape<UsersServiceShape>;
 
 const usersGatewayService = createGatewayService(
 	usersGatewayServiceShape,
@@ -253,7 +253,7 @@ initGateway(gatewayApp, gatewayServices, {
 Bun.serve({ fetch: gatewayApp.fetch, port: 3001 });
 
 // Note that client no longer gets real run-time schemas, etc. This is to protect leakage of full API details to the client.
-const gatewayClient = createGatewayClient<typeof gatewayServices>("http://localhost:3001");
+const gatewayClient = createGatewayClient<GatewayServices, typeof gatewayMiddlewares>("http://localhost:3001");
 
 (async () => {
 	const users = await gatewayClient.users.fetch("/users", "get");

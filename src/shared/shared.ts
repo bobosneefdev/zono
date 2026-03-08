@@ -1,9 +1,75 @@
 import superjson from "superjson";
-import type { SerializedResponseSource, SerializedResponseType } from "./shared.types.js";
+import type { ZodType } from "zod";
 
 export const ZONO_RESPONSE_TYPE_HEADER = "x-zono-response-type";
 export const ZONO_RESPONSE_SOURCE_HEADER = "x-zono-response-source";
 export const ZONO_SUPERJSON_HEADER = "x-zono-superjson";
+
+export type ApiShape = {
+	CONTRACT?: true;
+	SHAPE?: Record<string, ApiShape>;
+};
+
+export type SerializedResponseType =
+	| "JSON"
+	| "SuperJSON"
+	| "Text"
+	| "Contentless"
+	| "FormData"
+	| "Blob"
+	| "Bytes";
+
+export type SerializedResponseSource = "contract" | "middleware" | "error";
+
+export type DynamicSegmentKey = `$${string}`;
+
+export type IsDynamicSegment<TKey extends string> = TKey extends DynamicSegmentKey ? true : false;
+
+export type EmptyObject = Record<never, never>;
+
+export type Expand<T> = T extends (...args: Array<unknown>) => unknown
+	? T
+	: {
+			[Key in keyof T]: T[Key];
+		};
+
+export type ExpandUnion<T> = T extends unknown ? Expand<T> : never;
+
+export type InferSchemaData<TSpec> = TSpec extends { body: ZodType<infer TOutput, unknown> }
+	? TOutput
+	: TSpec extends { schema: ZodType<infer TOutput, unknown> }
+		? TOutput
+		: undefined;
+
+export type StatusMapToResponseUnion<
+	TStatuses extends Record<number, { type: SerializedResponseType }>,
+> = {
+	[TStatus in keyof TStatuses & number]: {
+		status: TStatus;
+		type: TStatuses[TStatus]["type"];
+		data: InferSchemaData<TStatuses[TStatus]>;
+	};
+}[keyof TStatuses & number];
+
+export type FetchResponse<TResponse> = TResponse extends unknown
+	? Omit<TResponse, "type"> & { response: Response }
+	: never;
+
+export type FetchRoute = {
+	path: string;
+	method: string;
+	request: unknown;
+	response: unknown;
+};
+
+export type TypedFetch<TRoute extends FetchRoute> = <
+	TPath extends TRoute["path"],
+	TMethod extends Extract<TRoute, { path: TPath }>["method"],
+>(
+	path: TPath,
+	method: TMethod,
+	data?: Extract<TRoute, { path: TPath; method: TMethod }>["request"],
+) => Promise<Extract<TRoute, { path: TPath; method: TMethod }>["response"]>;
 
 export const toHonoPath = (pathTemplate: string): string => {
 	if (pathTemplate === "/") {

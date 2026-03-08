@@ -1,55 +1,61 @@
 import type { Context } from "hono";
-import { getRuntimeResponseSchemaParser } from "../contract/contract.js";
+import type { ResponseSchema } from "../contract/contract.js";
 import type {
-	BoundMiddlewareHandlers,
-	MiddlewareHandlers,
+	MiddlewareBindings,
+	MiddlewareHandlerTree,
 	RuntimeHandlerResponse,
-} from "../server/server.types.js";
+} from "../server/server.js";
+import { validateResponseAgainstStatusMap } from "../shared/shared.internal.js";
+import type { ApiShape, InferSchemaData, StatusMapToResponseUnion } from "../shared/shared.js";
 import { createSerializedResponse } from "../shared/shared.js";
-import type {
-	MiddlewareDefinition,
-	MiddlewareResponseSchema,
-	Middlewares,
-	MiddlewareTree,
-} from "./middleware.types.js";
 
-const getMiddlewareSchemaAtStatus = (
-	definition: MiddlewareDefinition,
-	status: number,
-): MiddlewareResponseSchema | undefined => {
-	return definition[status];
+declare const MIDDLEWARE_SHAPE_BRAND: unique symbol;
+
+export type MiddlewareResponseSchema = ResponseSchema<"schema">;
+
+export type MiddlewareSpec = Record<number, MiddlewareResponseSchema>;
+
+export type MiddlewareTree = {
+	MIDDLEWARE?: Record<string, MiddlewareSpec>;
+	SHAPE?: Record<string, MiddlewareTree>;
 };
 
-const validateMiddlewareResponse = (
-	definition: MiddlewareDefinition,
-	response: RuntimeHandlerResponse,
-): void => {
-	const schema = getMiddlewareSchemaAtStatus(definition, response.status);
-	if (!schema) {
-		throw new Error(`Middleware returned undeclared status: ${response.status}`);
-	}
-	if (schema.type !== response.type) {
-		throw new Error(
-			`Middleware returned mismatched response type. Expected ${schema.type}, received ${response.type}`,
-		);
-	}
-	const parser = getRuntimeResponseSchemaParser(schema);
-	if (!parser) {
-		return;
-	}
-	const parseResult = parser.safeParse(response.data);
-	if (!parseResult.success) {
-		throw new Error("Middleware response data validation failed");
-	}
-};
+export type MiddlewareTreeFor<TShape extends ApiShape> = {
+	MIDDLEWARE: Record<string, MiddlewareSpec>;
+	readonly [MIDDLEWARE_SHAPE_BRAND]?: TShape;
+} & MiddlewareTree;
+
+export type MiddlewareName<TMiddlewares extends { MIDDLEWARE: Record<string, MiddlewareSpec> }> =
+	keyof TMiddlewares["MIDDLEWARE"] & string;
+
+export type MiddlewareStatusCodes<TDefinition extends MiddlewareSpec> = keyof TDefinition & number;
+
+export type MiddlewareSchemaAtStatus<
+	TDefinition extends MiddlewareSpec,
+	TStatus extends MiddlewareStatusCodes<TDefinition>,
+> = TDefinition[TStatus];
+
+export type InferMiddlewareResponseData<TSchema extends MiddlewareResponseSchema> =
+	InferSchemaData<TSchema>;
+
+export type InferMiddlewareResponseUnion<TDefinition extends MiddlewareSpec> =
+	StatusMapToResponseUnion<TDefinition>;
+
+export type InferAllMiddlewareResponseUnion<
+	TMiddlewares extends { MIDDLEWARE: Record<string, MiddlewareSpec> },
+> = {
+	[TName in keyof TMiddlewares["MIDDLEWARE"]]: InferMiddlewareResponseUnion<
+		TMiddlewares["MIDDLEWARE"][TName]
+	>;
+}[keyof TMiddlewares["MIDDLEWARE"]];
 
 export const createHonoMiddlewareHandlers = <
 	TMiddlewares extends MiddlewareTree,
 	TContext = unknown,
 >(
 	middlewares: TMiddlewares,
-	handlers: MiddlewareHandlers<TMiddlewares, TContext>,
-): BoundMiddlewareHandlers<TMiddlewares, TContext> => {
+	handlers: MiddlewareHandlerTree<TMiddlewares, TContext>,
+): MiddlewareBindings<TMiddlewares, TContext> => {
 	return {
 		middlewares,
 		handlers,
@@ -57,12 +63,12 @@ export const createHonoMiddlewareHandlers = <
 };
 
 export const runMiddlewareHandlers = async <
-	TMiddlewares extends Middlewares<import("../shared/shared.types.js").Shape>,
+	TMiddlewares extends MiddlewareTreeFor<ApiShape>,
 	TContext,
 >(
 	ctx: Context,
 	ourContext: Awaited<TContext>,
-	boundMiddlewares: BoundMiddlewareHandlers<TMiddlewares, TContext>,
+	boundMiddlewares: MiddlewareBindings<TMiddlewares, TContext>,
 	resolveTerminal: () => Promise<Response>,
 ): Promise<Response> => {
 	const middlewareNames = Object.keys(boundMiddlewares.middlewares.MIDDLEWARE);
@@ -92,7 +98,7 @@ export const runMiddlewareHandlers = async <
 				data: returned.data,
 				headers: undefined,
 			};
-			validateMiddlewareResponse(definition, normalized);
+			validateResponseAgainstStatusMap(definition, normalized, "Middleware");
 			return createSerializedResponse({
 				status: normalized.status,
 				type: normalized.type,

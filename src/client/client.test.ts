@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import z from "zod";
-import type { Contracts } from "../contract/contract.types.js";
-import type { Middlewares } from "../middleware/middleware.types.js";
+import type { ContractTreeFor } from "../contract/contract.js";
+import type { MiddlewareTreeFor } from "../middleware/middleware.js";
+import type { ApiShape } from "../shared/shared.js";
 import { createSerializedResponse } from "../shared/shared.js";
-import type { Shape } from "../shared/shared.types.js";
 import { createClient } from "./client.js";
 
 type HasStatus<TUnion, TStatus extends number> = Extract<TUnion, { status: TStatus }> extends never
@@ -36,7 +36,7 @@ const shape = {
 		upload: { CONTRACT: true },
 		events: { CONTRACT: true },
 	},
-} as const satisfies Shape;
+} as const satisfies ApiShape;
 
 const contracts = {
 	SHAPE: {
@@ -123,7 +123,7 @@ const contracts = {
 			},
 		},
 	},
-} as const satisfies Contracts<typeof shape>;
+} as const satisfies ContractTreeFor<typeof shape>;
 
 const middlewares = {
 	MIDDLEWARE: {
@@ -134,7 +134,7 @@ const middlewares = {
 			},
 		},
 	},
-} as const satisfies Middlewares<typeof shape>;
+} as const satisfies MiddlewareTreeFor<typeof shape>;
 
 describe("createClient runtime", () => {
 	test("encodes path/query/headers/body from request envelope", async () => {

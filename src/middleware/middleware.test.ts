@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import z from "zod";
+import type { ApiShape } from "../shared/shared.js";
 import { createSerializedResponse, parseSerializedResponse } from "../shared/shared.js";
-import type { Shape } from "../shared/shared.types.js";
+import type { MiddlewareTreeFor } from "./middleware.js";
 import { createHonoMiddlewareHandlers, runMiddlewareHandlers } from "./middleware.js";
-import type { Middlewares } from "./middleware.types.js";
 
 const servers: Array<{ stop: () => void }> = [];
 
@@ -24,7 +24,7 @@ const shape = {
 	SHAPE: {
 		users: { CONTRACT: true },
 	},
-} as const satisfies Shape;
+} as const satisfies ApiShape;
 
 describe("middleware runtime", () => {
 	test("middleware short-circuits and emits serialized middleware source", async () => {
@@ -34,7 +34,7 @@ describe("middleware runtime", () => {
 					429: { type: "JSON", schema: z.object({ retryAfter: z.number() }) },
 				},
 			},
-		} as const satisfies Middlewares<typeof shape>;
+		} as const satisfies MiddlewareTreeFor<typeof shape>;
 
 		const bound = createHonoMiddlewareHandlers<typeof middlewares, { requestId: string }>(
 			middlewares,
@@ -79,7 +79,7 @@ describe("middleware runtime", () => {
 					429: { type: "JSON", schema: z.object({ retryAfter: z.number() }) },
 				},
 			},
-		} as const satisfies Middlewares<typeof shape>;
+		} as const satisfies MiddlewareTreeFor<typeof shape>;
 
 		const steps: Array<string> = [];
 		const bound = createHonoMiddlewareHandlers<typeof middlewares, { requestId: string }>(
@@ -133,7 +133,7 @@ describe("middleware runtime", () => {
 					429: { type: "JSON", schema: z.object({ retryAfter: z.number() }) },
 				},
 			},
-		} as const satisfies Middlewares<typeof shape>;
+		} as const satisfies MiddlewareTreeFor<typeof shape>;
 
 		const app = new Hono();
 
@@ -218,7 +218,7 @@ const middlewaresType = {
 			429: { type: "JSON", schema: z.object({ retryAfter: z.number() }) },
 		},
 	},
-} as const satisfies Middlewares<typeof shape>;
+} as const satisfies MiddlewareTreeFor<typeof shape>;
 
 const typedMiddlewares = createHonoMiddlewareHandlers<
 	typeof middlewaresType,

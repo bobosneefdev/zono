@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import z from "zod";
-import type { Contracts } from "../contract/contract.types.js";
-import type { Middlewares } from "../middleware/middleware.types.js";
+import type { ContractTreeFor } from "../contract/contract.js";
+import type { MiddlewareTreeFor } from "../middleware/middleware.js";
+import type { ApiShape } from "../shared/shared.js";
 import { parseSerializedResponse } from "../shared/shared.js";
-import type { Shape } from "../shared/shared.types.js";
+import type { ContractHandlerTree } from "./server.js";
 import { createHonoContractHandlers, createHonoMiddlewareHandlers, initHono } from "./server.js";
-import type { ContractHandlersFromContracts } from "./server.types.js";
 
 const servers: Array<{ stop: () => void }> = [];
 
@@ -34,7 +34,7 @@ const shape = {
 		middleware: { CONTRACT: true },
 		boom: { CONTRACT: true },
 	},
-} as const satisfies Shape;
+} as const satisfies ApiShape;
 
 const contracts = {
 	SHAPE: {
@@ -117,9 +117,9 @@ const contracts = {
 			},
 		},
 	},
-} as const satisfies Contracts<typeof shape>;
+} as const satisfies ContractTreeFor<typeof shape>;
 
-const handlers: ContractHandlersFromContracts<typeof contracts, unknown> = {
+const handlers: ContractHandlerTree<typeof contracts, unknown> = {
 	SHAPE: {
 		json: { HANDLER: { post: () => ({ status: 200, type: "JSON", data: { ok: true } }) } },
 		query: { HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) } },
@@ -268,7 +268,7 @@ describe("server runtime", () => {
 					429: { type: "JSON", schema: z.object({ retryAfter: z.number() }) },
 				},
 			},
-		} as const satisfies Middlewares<typeof shape>;
+		} as const satisfies MiddlewareTreeFor<typeof shape>;
 
 		const publicApp = new Hono();
 		initHono<typeof shape, unknown>(publicApp, {

@@ -1,68 +1,86 @@
 import type {
-	ContractMethodDefinition,
-	Contracts,
-	ContractsTree,
+	ContractCallRoutes,
+	ContractTree,
+	ContractTreeFor,
 	HTTPMethod,
-	InferContractRequestData,
-} from "../contract/contract.types.js";
-import type { Middlewares } from "../middleware/middleware.types.js";
-import type { ErrorMode } from "../server/server.types.js";
+	RequestData,
+} from "../contract/contract.js";
+import type { MiddlewareSpec, MiddlewareTreeFor } from "../middleware/middleware.js";
+import type { ErrorMode } from "../server/server.js";
+import { toPathParamsRecord, toRecordObject, toRequestParts } from "../shared/shared.internal.js";
 import {
+	type ApiShape,
 	appendQueryParams,
+	type ExpandUnion,
+	type FetchResponse,
 	interpolatePathTemplate,
 	normalizeHeaderValues,
 	parseSerializedResponse,
+	type TypedFetch,
 } from "../shared/shared.js";
-import type { Shape } from "../shared/shared.types.js";
-import type { Client, ClientFetchMethod } from "./client.types.js";
 
-type RequestEnvelope = {
-	pathParams?: unknown;
-	query?: unknown;
-	headers?: unknown;
-	body?: unknown;
-};
-
-const isRecord = (value: unknown): value is Record<string, unknown> => {
-	return typeof value === "object" && value !== null;
-};
-
-const toPathParams = (value: unknown): Record<string, string> | undefined => {
-	if (!isRecord(value)) {
-		return undefined;
-	}
-	const output: Record<string, string> = {};
-	for (const [key, item] of Object.entries(value)) {
-		if (typeof item !== "string") {
-			throw new Error(`Path param '${key}' must be a string`);
+type ClientFetchRoutes<
+	TContracts extends ContractTree,
+	TMiddlewares extends { MIDDLEWARE: Record<string, MiddlewareSpec> },
+	TErrorMode extends ErrorMode,
+> = ContractCallRoutes<TContracts> extends infer TRoute
+	? TRoute extends {
+			path: infer TPath extends string;
+			method: infer TMethod extends HTTPMethod;
+			request: infer TRequest;
+			response: infer TResponse;
 		}
-		output[key] = item;
-	}
-	return output;
-};
+		? {
+				path: TPath;
+				method: TMethod;
+				request: TRequest;
+				response: ExpandUnion<
+					FetchResponse<
+						| TResponse
+						| import("../middleware/middleware.js").InferAllMiddlewareResponseUnion<TMiddlewares>
+						| import("../server/server.js").ErrorResponse<TErrorMode>
+					>
+				>;
+			}
+		: never
+	: never;
 
-const toRecord = (value: unknown): Record<string, unknown> | undefined => {
-	return isRecord(value) ? value : undefined;
+export type ClientFetchMethod<
+	TContracts extends ContractTree,
+	TMiddlewares extends { MIDDLEWARE: Record<string, MiddlewareSpec> },
+	TErrorMode extends ErrorMode,
+> = TypedFetch<ClientFetchRoutes<TContracts, TMiddlewares, TErrorMode>>;
+
+export type Client<
+	TContracts extends ContractTree,
+	TMiddlewares extends { MIDDLEWARE: Record<string, MiddlewareSpec> },
+	TErrorMode extends ErrorMode,
+> = {
+	fetch: ClientFetchMethod<TContracts, TMiddlewares, TErrorMode>;
 };
 
 const buildRequest = (
 	baseUrl: string,
 	path: string,
 	method: HTTPMethod,
-	data?: RequestEnvelope,
+	data?: RequestData<import("../contract/contract.js").ContractMethod>,
 ): { url: URL; init: RequestInit } => {
-	const resolvedPath = interpolatePathTemplate(path, toPathParams(data?.pathParams));
+	const requestParts = toRequestParts(data);
+	const resolvedPath = interpolatePathTemplate(
+		path,
+		toPathParamsRecord(requestParts?.pathParams),
+	);
 	const url = new URL(resolvedPath, baseUrl);
-	appendQueryParams(url, toRecord(data?.query));
+	appendQueryParams(url, toRecordObject(requestParts?.query));
 
-	const headers = normalizeHeaderValues(toRecord(data?.headers));
+	const headers = normalizeHeaderValues(toRecordObject(requestParts?.headers));
 	const init: RequestInit = {
 		method: method.toUpperCase(),
 		headers,
 	};
 
-	if (data && "body" in data && data.body !== undefined) {
-		const body = data.body;
+	if (requestParts?.body !== undefined) {
+		const body = requestParts.body;
 		if (body instanceof FormData || body instanceof Blob || typeof body === "string") {
 			init.body = body;
 		} else if (body instanceof URLSearchParams) {
@@ -77,24 +95,10 @@ const buildRequest = (
 	return { url, init };
 };
 
-const toRequestEnvelope = <TMethodDefinition extends ContractMethodDefinition>(
-	data: InferContractRequestData<TMethodDefinition> | undefined,
-): RequestEnvelope | undefined => {
-	if (!data) {
-		return undefined;
-	}
-	return {
-		pathParams: "pathParams" in data ? data.pathParams : undefined,
-		query: "query" in data ? data.query : undefined,
-		headers: "headers" in data ? data.headers : undefined,
-		body: "body" in data ? data.body : undefined,
-	};
-};
-
 export const createClient = <
-	TShape extends Shape,
-	TContracts extends Contracts<TShape> & ContractsTree,
-	TMiddlewares extends Middlewares<TShape>,
+	TShape extends ApiShape,
+	TContracts extends ContractTreeFor<TShape> & ContractTree,
+	TMiddlewares extends MiddlewareTreeFor<TShape>,
 	TErrorMode extends ErrorMode,
 >(
 	baseUrl: string,
@@ -104,7 +108,7 @@ export const createClient = <
 		method,
 		data,
 	) => {
-		const request = buildRequest(baseUrl, path, method, toRequestEnvelope(data));
+		const request = buildRequest(baseUrl, path, method, data);
 		const response = await fetch(request.url, request.init);
 		const responseCopy = response.clone();
 		const parsed = await parseSerializedResponse(response);

@@ -2,23 +2,23 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import z from "zod";
 import { createClient } from "../client/client.js";
+import type { GatewayShape } from "../gateway/gateway.js";
 import {
 	createGatewayClient,
 	createGatewayService,
 	createGatewayServices,
 	initGateway,
 } from "../gateway/gateway.js";
-import type { GatewayServiceShape } from "../gateway/gateway.types.js";
-import type { Middlewares } from "../middleware/middleware.types.js";
+import type { MiddlewareTreeFor } from "../middleware/middleware.js";
 import {
 	createHonoContractHandlers,
 	createHonoMiddlewareHandlers,
 	initHono,
 } from "../server/server.js";
+import type { ApiShape } from "../shared/shared.js";
 import { parseSerializedResponse } from "../shared/shared.js";
-import type { Shape } from "../shared/shared.types.js";
+import type { ContractTreeFor } from "./contract.js";
 import { compileContractRoutes } from "./contract.js";
-import type { Contracts } from "./contract.types.js";
 
 type HasStatus<TUnion, TStatus extends number> = Extract<TUnion, { status: TStatus }> extends never
 	? false
@@ -50,7 +50,7 @@ describe("contract route compilation", () => {
 					},
 				},
 			},
-		} as const satisfies Shape;
+		} as const satisfies ApiShape;
 
 		const contracts = {
 			SHAPE: {
@@ -76,7 +76,7 @@ describe("contract route compilation", () => {
 					},
 				},
 			},
-		} as const satisfies Contracts<typeof shape>;
+		} as const satisfies ContractTreeFor<typeof shape>;
 
 		const routes = compileContractRoutes(contracts).map((route) => ({
 			pathTemplate: route.pathTemplate,
@@ -97,7 +97,7 @@ describe("server middleware + client", () => {
 			SHAPE: {
 				users: { CONTRACT: true },
 			},
-		} as const satisfies Shape;
+		} as const satisfies ApiShape;
 
 		const contracts = {
 			SHAPE: {
@@ -114,7 +114,7 @@ describe("server middleware + client", () => {
 					},
 				},
 			},
-		} as const satisfies Contracts<typeof shape>;
+		} as const satisfies ContractTreeFor<typeof shape>;
 
 		const middlewares = {
 			MIDDLEWARE: {
@@ -125,7 +125,7 @@ describe("server middleware + client", () => {
 					},
 				},
 			},
-		} as const satisfies Middlewares<typeof shape>;
+		} as const satisfies MiddlewareTreeFor<typeof shape>;
 
 		let contractHandlerCalled = false;
 		const app = new Hono();
@@ -184,7 +184,7 @@ describe("server middleware + client", () => {
 			SHAPE: {
 				users: { CONTRACT: true },
 			},
-		} as const satisfies Shape;
+		} as const satisfies ApiShape;
 
 		const contracts = {
 			SHAPE: {
@@ -198,7 +198,7 @@ describe("server middleware + client", () => {
 					},
 				},
 			},
-		} as const satisfies Contracts<typeof shape>;
+		} as const satisfies ContractTreeFor<typeof shape>;
 
 		const middlewares = {
 			MIDDLEWARE: {
@@ -209,7 +209,7 @@ describe("server middleware + client", () => {
 					},
 				},
 			},
-		} as const satisfies Middlewares<typeof shape>;
+		} as const satisfies MiddlewareTreeFor<typeof shape>;
 
 		const app = new Hono();
 		type TestContext = unknown;
@@ -252,7 +252,7 @@ describe("gateway proxy", () => {
 			SHAPE: {
 				users: { CONTRACT: true },
 			},
-		} as const satisfies Shape;
+		} as const satisfies ApiShape;
 
 		const serviceContracts = {
 			SHAPE: {
@@ -271,11 +271,11 @@ describe("gateway proxy", () => {
 					},
 				},
 			},
-		} as const satisfies Contracts<typeof serviceShape>;
+		} as const satisfies ContractTreeFor<typeof serviceShape>;
 
 		const serviceMiddlewares = {
 			MIDDLEWARE: {},
-		} as const satisfies Middlewares<typeof serviceShape>;
+		} as const satisfies MiddlewareTreeFor<typeof serviceShape>;
 
 		const upstreamApp = new Hono();
 		type TestContext = unknown;
@@ -310,7 +310,7 @@ describe("gateway proxy", () => {
 			SHAPE: {
 				users: { CONTRACT: true },
 			},
-		} as const satisfies GatewayServiceShape<typeof serviceShape>;
+		} as const satisfies GatewayShape<typeof serviceShape>;
 
 		const usersGateway = createGatewayService(
 			gatewayShape,
@@ -345,7 +345,7 @@ typeOnly(() => {
 				},
 			},
 		},
-	} as const satisfies Shape;
+	} as const satisfies ApiShape;
 
 	const contracts = {
 		SHAPE: {
@@ -364,7 +364,7 @@ typeOnly(() => {
 				},
 			},
 		},
-	} as const satisfies Contracts<typeof shape>;
+	} as const satisfies ContractTreeFor<typeof shape>;
 	void contracts;
 
 	const gatewayShape = {
@@ -375,7 +375,7 @@ typeOnly(() => {
 				},
 			},
 		},
-	} as const satisfies GatewayServiceShape<typeof shape>;
+	} as const satisfies GatewayShape<typeof shape>;
 	void gatewayShape;
 
 	const invalidContracts = {
@@ -395,6 +395,6 @@ typeOnly(() => {
 				},
 			},
 		},
-	} as const satisfies Contracts<typeof shape>;
+	} as const satisfies ContractTreeFor<typeof shape>;
 	void invalidContracts;
 });
