@@ -12,7 +12,7 @@ import type {
 	ContractHeadersSchema,
 	ContractMethodDefinition,
 	ContractQuerySchema,
-	Contracts,
+	ContractsTree,
 } from "../contract/contract.types.js";
 import { runMiddlewareHandlers } from "../middleware/middleware.js";
 import {
@@ -227,10 +227,10 @@ const getHandlerAtPath = (
 	return handler as (...args: Array<unknown>) => unknown;
 };
 
-export const createHonoContractHandlers = <TShape extends Shape, TContext = unknown>(
-	contracts: Contracts<TShape>,
-	handlers: ContractHandlersFromContracts<typeof contracts, TContext>,
-): BoundContractHandlers<TShape, TContext> => {
+export const createHonoContractHandlers = <TContracts extends ContractsTree, TContext = unknown>(
+	contracts: TContracts,
+	handlers: ContractHandlersFromContracts<TContracts, TContext>,
+): BoundContractHandlers<TContracts, TContext> => {
 	return {
 		contracts,
 		handlers,

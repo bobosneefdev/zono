@@ -17,3 +17,9 @@ export type SerializedResponseSource = "contract" | "middleware" | "error";
 export type DynamicSegmentKey = `$${string}`;
 
 export type IsDynamicSegment<TKey extends string> = TKey extends DynamicSegmentKey ? true : false;
+
+export type Prettify<Type> = Type extends (...args: Array<unknown>) => unknown
+	? Type
+	: {
+			[Key in keyof Type]: Type[Key];
+		};

@@ -135,19 +135,22 @@ export type MiddlewareHandlers<
 	};
 };
 
-export type BoundContractHandlers<TShape extends Shape, TContext> = {
-	contracts: Contracts<TShape>;
-	handlers: ContractHandlersFromContracts<Contracts<TShape>, TContext>;
+export type BoundContractHandlers<TContracts extends ContractsTree, TContext> = {
+	contracts: TContracts;
+	handlers: ContractHandlersFromContracts<TContracts, TContext>;
 };
 
-export type BoundMiddlewareHandlers<TShape extends Shape, TContext> = {
-	middlewares: Middlewares<TShape>;
-	handlers: MiddlewareHandlers<Middlewares<TShape>, TContext>;
+export type BoundMiddlewareHandlers<
+	TMiddlewares extends { MIDDLEWARE: Record<string, MiddlewareDefinition> },
+	TContext,
+> = {
+	middlewares: TMiddlewares;
+	handlers: MiddlewareHandlers<TMiddlewares, TContext>;
 };
 
 export type InitHonoOptions<TShape extends Shape, TContext = unknown> = {
-	contracts: BoundContractHandlers<TShape, TContext>;
-	middlewares?: BoundMiddlewareHandlers<TShape, TContext>;
+	contracts: BoundContractHandlers<Contracts<TShape>, TContext>;
+	middlewares?: BoundMiddlewareHandlers<Middlewares<TShape>, TContext>;
 	errorMode: ErrorMode;
 	createContext: ServerContextCreator<TContext>;
 };

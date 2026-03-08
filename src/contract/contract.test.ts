@@ -131,7 +131,7 @@ describe("server middleware + client", () => {
 		const app = new Hono();
 		type TestContext = { session: string };
 		initHono<typeof shape, TestContext>(app, {
-			contracts: createHonoContractHandlers<typeof shape, TestContext>(contracts, {
+			contracts: createHonoContractHandlers<typeof contracts, TestContext>(contracts, {
 				SHAPE: {
 					users: {
 						HANDLER: {
@@ -147,15 +147,18 @@ describe("server middleware + client", () => {
 					},
 				},
 			}),
-			middlewares: createHonoMiddlewareHandlers<typeof shape, TestContext>(middlewares, {
-				MIDDLEWARE: {
-					rateLimit: () => ({
-						type: "JSON",
-						status: 429,
-						data: { retryAfter: Date.now() + 1000 },
-					}),
+			middlewares: createHonoMiddlewareHandlers<typeof middlewares, TestContext>(
+				middlewares,
+				{
+					MIDDLEWARE: {
+						rateLimit: () => ({
+							type: "JSON",
+							status: 429,
+							data: { retryAfter: Date.now() + 1000 },
+						}),
+					},
 				},
-			}),
+			),
 			errorMode: "public",
 			createContext: () => ({ session: "x" }),
 		});
@@ -211,7 +214,7 @@ describe("server middleware + client", () => {
 		const app = new Hono();
 		type TestContext = unknown;
 		initHono<typeof shape, TestContext>(app, {
-			contracts: createHonoContractHandlers<typeof shape, TestContext>(contracts, {
+			contracts: createHonoContractHandlers<typeof contracts, TestContext>(contracts, {
 				SHAPE: {
 					users: {
 						HANDLER: {
@@ -220,11 +223,14 @@ describe("server middleware + client", () => {
 					},
 				},
 			}),
-			middlewares: createHonoMiddlewareHandlers<typeof shape, TestContext>(middlewares, {
-				MIDDLEWARE: {
-					lockdown: () => ({ type: "JSON", status: 429, data: { retryAfter: 123 } }),
+			middlewares: createHonoMiddlewareHandlers<typeof middlewares, TestContext>(
+				middlewares,
+				{
+					MIDDLEWARE: {
+						lockdown: () => ({ type: "JSON", status: 429, data: { retryAfter: 123 } }),
+					},
 				},
-			}),
+			),
 			errorMode: "public",
 			createContext: () => ({}),
 		});
@@ -274,7 +280,7 @@ describe("gateway proxy", () => {
 		const upstreamApp = new Hono();
 		type TestContext = unknown;
 		initHono<typeof serviceShape, TestContext>(upstreamApp, {
-			contracts: createHonoContractHandlers<typeof serviceShape, TestContext>(
+			contracts: createHonoContractHandlers<typeof serviceContracts, TestContext>(
 				serviceContracts,
 				{
 					SHAPE: {

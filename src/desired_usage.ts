@@ -86,10 +86,6 @@ const usersServiceMiddlewares = {
 	},
 } as const satisfies Middlewares<UsersServiceShape>;
 type UsersServiceMiddlewares = typeof usersServiceMiddlewares;
-type UsersServiceContext = {
-	platformId: `${string}-${string}-${string}-${string}-${string}`;
-	username: string;
-};
 
 const createUsersServiceContext = (async (_ctx) => {
 	// Get session header
@@ -99,65 +95,78 @@ const createUsersServiceContext = (async (_ctx) => {
 		username: "JohnPorkRox123",
 	};
 	return user;
-}) satisfies ServerContextCreator<UsersServiceContext>;
+}) satisfies ServerContextCreator;
+type UsersServiceContext = Awaited<ReturnType<typeof createUsersServiceContext>>;
+
+const usersServiceContractHandlers = createHonoContractHandlers<
+	UsersServiceContracts,
+	UsersServiceContext
+>(usersServiceContracts, {
+	SHAPE: {
+		users: {
+			HANDLER: {
+				get: async () => ({
+					status: 200,
+					type: "SuperJSON",
+					data: [
+						{
+							id: crypto.randomUUID(),
+							first: "John",
+							last: "Pork",
+							email: "johnpork@gmail.com",
+							createdAt: new Date(),
+						},
+					],
+				}),
+			},
+			SHAPE: {
+				$userId: {
+					HANDLER: {
+						get: async (data, _ctx, _ourContext) => ({
+							type: "SuperJSON",
+							status: 200,
+							data: {
+								id: data.pathParams.userId,
+								createdAt: new Date(),
+								email: "johnpork@gmail.com",
+								first: "John",
+								last: "Pork",
+							},
+						}),
+					},
+				},
+			},
+		},
+	},
+});
+
+const usersServiceMiddlewareHandlers = createHonoMiddlewareHandlers<
+	UsersServiceMiddlewares,
+	UsersServiceContext
+>(usersServiceMiddlewares, {
+	MIDDLEWARE: {
+		rateLimit: async (_ctx, next, _ourContext) => {
+			const rand = Math.random();
+			if (rand < 0.5) {
+				return {
+					type: "JSON",
+					status: 429,
+					data: {
+						retryAfter: Date.now() + 1000,
+					},
+				};
+			}
+			await next();
+		},
+	},
+});
 
 const usersServiceApp = new Hono();
 initHono<UsersServiceShape, UsersServiceContext>(usersServiceApp, {
-	contracts: createHonoContractHandlers<UsersServiceShape, UsersServiceContext>(
-		usersServiceContracts,
-		{
-			SHAPE: {
-				users: {
-					HANDLER: {
-						get: async () => ({
-							type: "SuperJSON",
-							status: 200,
-							data: [],
-						}),
-					},
-					SHAPE: {
-						$userId: {
-							HANDLER: {
-								get: async (data, _ctx, _ourContext) => ({
-									type: "SuperJSON",
-									status: 200,
-									data: {
-										id: data.pathParams.userId,
-										createdAt: new Date(),
-										email: "johnpork@gmail.com",
-										first: "John",
-										last: "Pork",
-									},
-								}),
-							},
-						},
-					},
-				},
-			},
-		},
-	),
-	middlewares: createHonoMiddlewareHandlers<UsersServiceShape, UsersServiceContext>(
-		usersServiceMiddlewares,
-		{
-			MIDDLEWARE: {
-				rateLimit: async (_ctx, next, _ourContext) => {
-					const rand = Math.random();
-					if (rand < 0.5) {
-						return {
-							type: "JSON",
-							status: 429,
-							data: {
-								retryAfter: Date.now() + 1000,
-							},
-						};
-					}
-					await next();
-				},
-			},
-		},
-	),
-	errorMode: "public",
+	contracts: usersServiceContractHandlers,
+	middlewares: usersServiceMiddlewareHandlers,
 	createContext: createUsersServiceContext,
+	errorMode: "public",
 });
 Bun.serve({ fetch: usersServiceApp.fetch, port: 3000 });
 

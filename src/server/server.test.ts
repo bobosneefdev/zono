@@ -148,8 +148,8 @@ const handlers: ContractHandlersFromContracts<typeof contracts, unknown> = {
 describe("server runtime", () => {
 	test("accepts valid input parsers and returns serialized output", async () => {
 		const app = new Hono();
-		initHono(app, {
-			contracts: createHonoContractHandlers<typeof shape, unknown>(contracts, handlers),
+		initHono<typeof shape, unknown>(app, {
+			contracts: createHonoContractHandlers<typeof contracts, unknown>(contracts, handlers),
 			errorMode: "public",
 			createContext: () => ({}),
 		});
@@ -197,8 +197,8 @@ describe("server runtime", () => {
 
 	test("rejects invalid query and headers as 400 public errors", async () => {
 		const app = new Hono();
-		initHono(app, {
-			contracts: createHonoContractHandlers<typeof shape, unknown>(contracts, handlers),
+		initHono<typeof shape, unknown>(app, {
+			contracts: createHonoContractHandlers<typeof contracts, unknown>(contracts, handlers),
 			errorMode: "public",
 			createContext: () => ({}),
 		});
@@ -231,8 +231,8 @@ describe("server runtime", () => {
 
 	test("returns 400 private validation payload with issueCount", async () => {
 		const app = new Hono();
-		initHono(app, {
-			contracts: createHonoContractHandlers<typeof shape, unknown>(contracts, handlers),
+		initHono<typeof shape, unknown>(app, {
+			contracts: createHonoContractHandlers<typeof contracts, unknown>(contracts, handlers),
 			errorMode: "private",
 			createContext: () => ({}),
 		});
@@ -247,8 +247,8 @@ describe("server runtime", () => {
 
 	test("returns JSON 404 for unmatched routes", async () => {
 		const app = new Hono();
-		initHono(app, {
-			contracts: createHonoContractHandlers<typeof shape, unknown>(contracts, handlers),
+		initHono<typeof shape, unknown>(app, {
+			contracts: createHonoContractHandlers<typeof contracts, unknown>(contracts, handlers),
 			errorMode: "public",
 			createContext: () => ({}),
 		});
@@ -271,9 +271,9 @@ describe("server runtime", () => {
 		} as const satisfies Middlewares<typeof shape>;
 
 		const publicApp = new Hono();
-		initHono(publicApp, {
-			contracts: createHonoContractHandlers<typeof shape, unknown>(contracts, handlers),
-			middlewares: createHonoMiddlewareHandlers<typeof shape, unknown>(middlewares, {
+		initHono<typeof shape, unknown>(publicApp, {
+			contracts: createHonoContractHandlers<typeof contracts, unknown>(contracts, handlers),
+			middlewares: createHonoMiddlewareHandlers<typeof middlewares, unknown>(middlewares, {
 				MIDDLEWARE: {
 					gate: (ctx, next) => {
 						if (new URL(ctx.req.url).searchParams.get("deny") === "1") {
@@ -298,8 +298,8 @@ describe("server runtime", () => {
 		expect(publicBoomParsed.data).toEqual({ message: "boom" });
 
 		const privateApp = new Hono();
-		initHono(privateApp, {
-			contracts: createHonoContractHandlers<typeof shape, unknown>(contracts, handlers),
+		initHono<typeof shape, unknown>(privateApp, {
+			contracts: createHonoContractHandlers<typeof contracts, unknown>(contracts, handlers),
 			errorMode: "private",
 			createContext: () => ({}),
 		});
@@ -312,7 +312,7 @@ describe("server runtime", () => {
 	});
 });
 
-const typed = createHonoContractHandlers<typeof shape, { requestId: string }>(contracts, {
+const typed = createHonoContractHandlers<typeof contracts, { requestId: string }>(contracts, {
 	SHAPE: {
 		json: {
 			HANDLER: {
@@ -342,7 +342,7 @@ void typed;
 const typeOnly = (_cb: () => void): void => {};
 
 typeOnly(() => {
-	void createHonoContractHandlers<typeof shape, { requestId: string }>(contracts, {
+	void createHonoContractHandlers<typeof contracts, { requestId: string }>(contracts, {
 		SHAPE: {
 			json: {
 				HANDLER: {

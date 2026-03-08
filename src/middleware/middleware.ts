@@ -2,7 +2,11 @@ import type { Context } from "hono";
 import { getRuntimeResponseSchemaParser } from "../contract/contract.js";
 import type { BoundMiddlewareHandlers, RuntimeHandlerResponse } from "../server/server.types.js";
 import { createSerializedResponse } from "../shared/shared.js";
-import type { MiddlewareDefinition, MiddlewareResponseSchema } from "./middleware.types.js";
+import type {
+	MiddlewareDefinition,
+	MiddlewareResponseSchema,
+	Middlewares,
+} from "./middleware.types.js";
 
 const getMiddlewareSchemaAtStatus = (
 	definition: MiddlewareDefinition,
@@ -35,12 +39,12 @@ const validateMiddlewareResponse = (
 };
 
 export const createHonoMiddlewareHandlers = <
-	TShape extends import("../shared/shared.types.js").Shape,
+	TMiddlewares extends { MIDDLEWARE: Record<string, MiddlewareDefinition> },
 	TContext = unknown,
 >(
-	middlewares: BoundMiddlewareHandlers<TShape, TContext>["middlewares"],
-	handlers: BoundMiddlewareHandlers<TShape, TContext>["handlers"],
-): BoundMiddlewareHandlers<TShape, TContext> => {
+	middlewares: TMiddlewares,
+	handlers: BoundMiddlewareHandlers<TMiddlewares, TContext>["handlers"],
+): BoundMiddlewareHandlers<TMiddlewares, TContext> => {
 	return {
 		middlewares,
 		handlers,
@@ -48,12 +52,12 @@ export const createHonoMiddlewareHandlers = <
 };
 
 export const runMiddlewareHandlers = async <
-	TShape extends import("../shared/shared.types.js").Shape,
+	TMiddlewares extends Middlewares<import("../shared/shared.types.js").Shape>,
 	TContext,
 >(
 	ctx: Context,
-	ourContext: TContext,
-	boundMiddlewares: BoundMiddlewareHandlers<TShape, TContext>,
+	ourContext: Awaited<TContext>,
+	boundMiddlewares: BoundMiddlewareHandlers<TMiddlewares, TContext>,
 	resolveTerminal: () => Promise<Response>,
 ): Promise<Response> => {
 	const middlewareNames = Object.keys(boundMiddlewares.middlewares.MIDDLEWARE);

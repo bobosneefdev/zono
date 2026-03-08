@@ -36,7 +36,7 @@ describe("middleware runtime", () => {
 			},
 		} as const satisfies Middlewares<typeof shape>;
 
-		const bound = createHonoMiddlewareHandlers<typeof shape, { requestId: string }>(
+		const bound = createHonoMiddlewareHandlers<typeof middlewares, { requestId: string }>(
 			middlewares,
 			{
 				MIDDLEWARE: {
@@ -82,7 +82,7 @@ describe("middleware runtime", () => {
 		} as const satisfies Middlewares<typeof shape>;
 
 		const steps: Array<string> = [];
-		const bound = createHonoMiddlewareHandlers<typeof shape, { requestId: string }>(
+		const bound = createHonoMiddlewareHandlers<typeof middlewares, { requestId: string }>(
 			middlewares,
 			{
 				MIDDLEWARE: {
@@ -137,11 +137,14 @@ describe("middleware runtime", () => {
 
 		const app = new Hono();
 
-		const undeclaredStatus = createHonoMiddlewareHandlers<typeof shape, unknown>(middlewares, {
-			MIDDLEWARE: {
-				guard: () => ({ status: 418, type: "JSON", data: { retryAfter: 1 } }),
+		const undeclaredStatus = createHonoMiddlewareHandlers<typeof middlewares, unknown>(
+			middlewares,
+			{
+				MIDDLEWARE: {
+					guard: () => ({ status: 418, type: "JSON", data: { retryAfter: 1 } }),
+				},
 			},
-		});
+		);
 		app.get("/status", async (ctx) => {
 			try {
 				return await runMiddlewareHandlers(
@@ -155,11 +158,14 @@ describe("middleware runtime", () => {
 			}
 		});
 
-		const mismatchedType = createHonoMiddlewareHandlers<typeof shape, unknown>(middlewares, {
-			MIDDLEWARE: {
-				guard: () => ({ status: 429, type: "Text", data: "nope" }),
+		const mismatchedType = createHonoMiddlewareHandlers<typeof middlewares, unknown>(
+			middlewares,
+			{
+				MIDDLEWARE: {
+					guard: () => ({ status: 429, type: "Text", data: "nope" }),
+				},
 			},
-		});
+		);
 		app.get("/type", async (ctx) => {
 			try {
 				return await runMiddlewareHandlers(
@@ -173,7 +179,7 @@ describe("middleware runtime", () => {
 			}
 		});
 
-		const invalidData = createHonoMiddlewareHandlers<typeof shape, unknown>(middlewares, {
+		const invalidData = createHonoMiddlewareHandlers<typeof middlewares, unknown>(middlewares, {
 			MIDDLEWARE: {
 				guard: () => ({ status: 429, type: "JSON", data: { retryAfter: "bad" } }),
 			},
@@ -214,31 +220,34 @@ const middlewaresType = {
 	},
 } as const satisfies Middlewares<typeof shape>;
 
-const typedMiddlewares = createHonoMiddlewareHandlers<typeof shape, { requestId: string }>(
-	middlewaresType,
-	{
-		MIDDLEWARE: {
-			rateLimit: (_ctx, _next, ourContext) => {
-				const requestId: string = ourContext.requestId;
-				void requestId;
-				return { status: 429, type: "JSON", data: { retryAfter: 1 } };
-			},
+const typedMiddlewares = createHonoMiddlewareHandlers<
+	typeof middlewaresType,
+	{ requestId: string }
+>(middlewaresType, {
+	MIDDLEWARE: {
+		rateLimit: (_ctx, _next, ourContext) => {
+			const requestId: string = ourContext.requestId;
+			void requestId;
+			return { status: 429, type: "JSON", data: { retryAfter: 1 } };
 		},
 	},
-);
+});
 void typedMiddlewares;
 
 const typeOnly = (_cb: () => void): void => {};
 
 typeOnly(() => {
-	void createHonoMiddlewareHandlers<typeof shape, { requestId: string }>(middlewaresType, {
-		MIDDLEWARE: {
-			rateLimit: (_ctx, _next, ourContext) => {
-				// @ts-expect-error requestId is string, not number
-				const invalid: number = ourContext.requestId;
-				void invalid;
-				return { status: 429, type: "JSON", data: { retryAfter: 1 } };
+	void createHonoMiddlewareHandlers<typeof middlewaresType, { requestId: string }>(
+		middlewaresType,
+		{
+			MIDDLEWARE: {
+				rateLimit: (_ctx, _next, ourContext) => {
+					// @ts-expect-error requestId is string, not number
+					const invalid: number = ourContext.requestId;
+					void invalid;
+					return { status: 429, type: "JSON", data: { retryAfter: 1 } };
+				},
 			},
 		},
-	});
+	);
 });
