@@ -1,434 +1,131 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import z from "zod";
-import { createClient } from "~/client/client.js";
-import { createContracts } from "~/contract/contract.js";
-import type { RouterShape } from "~/contract/contract.types.js";
-import { initHono } from "~/hono/hono.js";
-import { createMiddlewares } from "~/middleware/middleware.js";
+import type { Contracts } from "../contract/contract.types.js";
+import type { Middlewares } from "../middleware/middleware.types.js";
+import { createSerializedResponse } from "../shared/shared.js";
+import type { Shape } from "../shared/shared.types.js";
+import { createClient } from "./client.js";
+
+type HasStatus<TUnion, TStatus extends number> = Extract<TUnion, { status: TStatus }> extends never
+	? false
+	: true;
+
+const servers: Array<{ stop: () => void }> = [];
+
+const startServer = (app: Hono): string => {
+	const server = Bun.serve({ fetch: app.fetch, port: 0 });
+	servers.push(server);
+	return `http://localhost:${server.port}`;
+};
+
+afterEach(() => {
+	while (servers.length > 0) {
+		servers.pop()?.stop();
+	}
+});
 
 const shape = {
-	ROUTER: {
+	SHAPE: {
 		users: {
-			ROUTER: {
-				register: { CONTRACT: true },
+			SHAPE: {
 				$userId: { CONTRACT: true },
 			},
 		},
-		health: { CONTRACT: true },
-		verbs: {
-			ROUTER: {
-				get: { CONTRACT: true },
-				post: { CONTRACT: true },
-			},
-		},
-		responses: {
-			ROUTER: {
-				json: { CONTRACT: true },
-				superjson: { CONTRACT: true },
-				superjsonQuery: { CONTRACT: true },
-				text: { CONTRACT: true },
-				blob: { CONTRACT: true },
-				arrayBuffer: { CONTRACT: true },
-				formData: { CONTRACT: true },
-				readableStream: { CONTRACT: true },
-				voidResponse: { CONTRACT: true },
-				standardHeaders: { CONTRACT: true },
-				superjsonHeaders: { CONTRACT: true },
-			},
-		},
-		bodies: {
-			ROUTER: {
-				json: { CONTRACT: true },
-				superjson: { CONTRACT: true },
-				string: { CONTRACT: true },
-				urlSearchParams: { CONTRACT: true },
-				formData: { CONTRACT: true },
-				blob: { CONTRACT: true },
-				uint8Array: { CONTRACT: true },
-				standardHeaders: { CONTRACT: true },
-				superjsonHeaders: { CONTRACT: true },
-			},
-		},
+		search: { CONTRACT: true },
+		upload: { CONTRACT: true },
+		events: { CONTRACT: true },
 	},
-} as const satisfies RouterShape;
+} as const satisfies Shape;
 
-const zUser = z.object({
-	id: z.string(),
-	name: z.string(),
-	email: z.string(),
-});
-
-const contracts = createContracts(shape, {
-	ROUTER: {
+const contracts = {
+	SHAPE: {
 		users: {
-			ROUTER: {
-				register: {
-					CONTRACT: {
-						post: {
-							body: {
-								type: "JSON",
-								schema: z.object({ name: z.string(), email: z.string().email() }),
-							},
-							responses: {
-								201: { type: "JSON", schema: zUser },
-							},
-						},
-					},
-				},
+			SHAPE: {
 				$userId: {
 					CONTRACT: {
-						get: {
+						post: {
 							pathParams: z.object({ userId: z.string() }),
+							query: {
+								type: "JSON",
+								query: z.object({ active: z.boolean() }),
+							},
+							headers: {
+								type: "JSON",
+								headers: z.object({ "x-custom": z.object({ source: z.string() }) }),
+							},
+							body: {
+								type: "JSON",
+								body: z.object({ name: z.string() }),
+							},
 							responses: {
-								200: { type: "JSON", schema: zUser },
+								200: {
+									type: "JSON",
+									body: z.object({
+										userId: z.string(),
+										active: z.string(),
+										header: z.string(),
+										name: z.string(),
+									}),
+								},
 							},
 						},
 					},
 				},
 			},
 		},
-		health: {
+		search: {
+			CONTRACT: {
+				post: {
+					body: {
+						type: "URLSearchParams",
+						body: z.instanceof(URLSearchParams),
+					},
+					responses: {
+						200: {
+							type: "JSON",
+							body: z.object({ contentType: z.string(), payload: z.string() }),
+						},
+					},
+				},
+			},
+		},
+		upload: {
+			CONTRACT: {
+				post: {
+					body: {
+						type: "FormData",
+						body: z.instanceof(FormData),
+					},
+					responses: {
+						200: {
+							type: "JSON",
+							body: z.object({ fileName: z.string() }),
+						},
+					},
+				},
+			},
+		},
+		events: {
 			CONTRACT: {
 				get: {
 					responses: {
-						200: { type: "JSON", schema: z.object({ status: z.string() }) },
-					},
-				},
-			},
-		},
-		verbs: {
-			ROUTER: {
-				get: {
-					CONTRACT: {
-						get: {
-							responses: {
-								200: {
-									type: "JSON",
-									schema: z.object({ route: z.literal("get") }),
-								},
-							},
+						200: {
+							type: "SuperJSON",
+							body: z.object({ createdAt: z.date() }),
 						},
-					},
-				},
-				post: {
-					CONTRACT: {
-						get: {
-							responses: {
-								200: {
-									type: "JSON",
-									schema: z.object({ route: z.literal("post") }),
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-		responses: {
-			ROUTER: {
-				json: {
-					CONTRACT: {
-						get: {
-							responses: {
-								200: {
-									type: "JSON",
-									schema: z.object({ kind: z.literal("json") }),
-								},
-							},
-						},
-					},
-				},
-				superjson: {
-					CONTRACT: {
-						get: {
-							responses: {
-								200: {
-									type: "SuperJSON",
-									schema: z.object({
-										kind: z.literal("superjson"),
-										createdAt: z.date(),
-										counters: z.map(z.string(), z.number()),
-										tags: z.set(z.string()),
-									}),
-								},
-							},
-						},
-					},
-				},
-				superjsonQuery: {
-					CONTRACT: {
-						get: {
-							query: {
-								type: "SuperJSON",
-								schema: z.object({
-									filters: z.array(
-										z.object({
-											label: z.string(),
-											at: z.date(),
-										}),
-									),
-									metadata: z.map(z.string(), z.number()),
-								}),
-							},
-							responses: {
-								200: {
-									type: "JSON",
-									schema: z.object({
-										filterCount: z.number(),
-										firstAtIso: z.string(),
-										metadataTotal: z.number(),
-									}),
-								},
-							},
-						},
-					},
-				},
-				text: {
-					CONTRACT: {
-						get: {
-							responses: {
-								200: { type: "Text", schema: z.string() },
-							},
-						},
-					},
-				},
-				blob: {
-					CONTRACT: {
-						get: {
-							responses: {
-								200: { type: "Blob", schema: z.instanceof(Blob) },
-							},
-						},
-					},
-				},
-				arrayBuffer: {
-					CONTRACT: {
-						get: {
-							responses: {
-								200: { type: "ArrayBuffer", schema: z.instanceof(ArrayBuffer) },
-							},
-						},
-					},
-				},
-				formData: {
-					CONTRACT: {
-						get: {
-							responses: {
-								200: { type: "FormData", schema: z.instanceof(FormData) },
-							},
-						},
-					},
-				},
-				readableStream: {
-					CONTRACT: {
-						get: {
-							responses: {
-								200: {
-									type: "ReadableStream",
-									schema: z.instanceof(ReadableStream),
-								},
-							},
-						},
-					},
-				},
-				voidResponse: {
-					CONTRACT: {
-						get: {
-							responses: {
-								204: { type: "Void" },
-							},
-						},
-					},
-				},
-				standardHeaders: {
-					CONTRACT: {
-						get: {
-							responses: {
-								200: {
-									type: "JSON",
-									schema: z.object({ ok: z.literal(true) }),
-									headers: {
-										type: "Standard",
-										schema: z.object({ "x-from-server": z.string() }),
-									},
-								},
-							},
-						},
-					},
-				},
-				superjsonHeaders: {
-					CONTRACT: {
-						get: {
-							responses: {
-								200: {
-									type: "JSON",
-									schema: z.object({ ok: z.literal(true) }),
-									headers: {
-										type: "SuperJSON",
-										schema: z.object({
-											meta: z.object({
-												source: z.string(),
-												attempt: z.number(),
-												generatedAt: z.date(),
-											}),
-											quotas: z.map(z.string(), z.number()),
-											scopes: z.set(z.string()),
-										}),
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-		bodies: {
-			ROUTER: {
-				json: {
-					CONTRACT: {
-						post: {
-							body: { type: "JSON", schema: z.object({ message: z.string() }) },
-							responses: {
-								200: { type: "JSON", schema: z.object({ echoed: z.string() }) },
-							},
-						},
-					},
-				},
-				superjson: {
-					CONTRACT: {
-						post: {
-							body: {
-								type: "SuperJSON",
-								schema: z.object({
-									payload: z.object({
-										createdAt: z.date(),
-										scores: z.map(z.string(), z.number()),
-										flags: z.set(z.string()),
-									}),
-								}),
-							},
-							responses: {
-								200: {
-									type: "JSON",
-									schema: z.object({
-										isoDate: z.string(),
-										scoreTotal: z.number(),
-										hasPriority: z.boolean(),
-									}),
-								},
-							},
-						},
-					},
-				},
-				string: {
-					CONTRACT: {
-						post: {
-							body: { type: "String", schema: z.string().min(1) },
-							responses: {
-								200: { type: "Text", schema: z.string() },
-							},
-						},
-					},
-				},
-				urlSearchParams: {
-					CONTRACT: {
-						post: {
-							body: {
-								type: "URLSearchParams",
-								schema: z.instanceof(URLSearchParams),
-							},
-							responses: {
-								200: { type: "JSON", schema: z.object({ query: z.string() }) },
-							},
-						},
-					},
-				},
-				formData: {
-					CONTRACT: {
-						post: {
-							body: { type: "FormData", schema: z.instanceof(FormData) },
-							responses: {
-								200: { type: "JSON", schema: z.object({ field: z.string() }) },
-							},
-						},
-					},
-				},
-				blob: {
-					CONTRACT: {
-						post: {
-							body: { type: "Blob", schema: z.instanceof(Blob) },
-							responses: {
-								200: { type: "JSON", schema: z.object({ size: z.number() }) },
-							},
-						},
-					},
-				},
-				uint8Array: {
-					CONTRACT: {
-						post: {
-							body: { type: "Uint8Array", schema: z.instanceof(Uint8Array) },
-							responses: {
-								200: { type: "JSON", schema: z.object({ length: z.number() }) },
-							},
-						},
-					},
-				},
-				standardHeaders: {
-					CONTRACT: {
-						post: {
-							body: {
-								type: "JSON",
-								schema: z.object({ ok: z.boolean().optional() }),
-							},
-							headers: {
-								type: "Standard",
-								schema: z.object({ "x-trace-id": z.string() }),
-							},
-							responses: {
-								200: { type: "JSON", schema: z.object({ traceId: z.string() }) },
-							},
-						},
-					},
-				},
-				superjsonHeaders: {
-					CONTRACT: {
-						post: {
-							body: {
-								type: "JSON",
-								schema: z.object({ ok: z.boolean().optional() }),
-							},
-							headers: {
-								type: "SuperJSON",
-								schema: z.object({
-									auth: z.object({
-										token: z.string(),
-										issuedAt: z.date(),
-										scopes: z.set(z.string()),
-										quotas: z.map(z.string(), z.number()),
-									}),
-								}),
-							},
-							responses: {
-								200: {
-									type: "JSON",
-									schema: z.object({
-										token: z.string(),
-										issuedAt: z.string(),
-										scopeCount: z.number(),
-										quotaTotal: z.number(),
-									}),
-								},
-							},
+						503: {
+							type: "JSON",
+							body: z.object({ message: z.string() }),
 						},
 					},
 				},
 			},
 		},
 	},
-});
+} as const satisfies Contracts<typeof shape>;
 
-const middleware = createMiddlewares(contracts, {
+const middlewares = {
 	MIDDLEWARE: {
 		rateLimit: {
 			429: {
@@ -437,763 +134,172 @@ const middleware = createMiddlewares(contracts, {
 			},
 		},
 	},
-});
+} as const satisfies Middlewares<typeof shape>;
 
-const typeClient = createClient(contracts, {
-	baseUrl: "http://localhost:0",
-	middleware: [middleware],
-});
-const healthGetFn: (method: "get") => Promise<unknown> = typeClient.health;
-const healthConfigGetFn: (method: "config_get") => Promise<[url: string, init: RequestInit]> =
-	typeClient.health;
-const healthValidateGetFn: (
-	method: "validate_get",
-	response: Response,
-) => ReturnType<typeof healthGetFn> = typeClient.health;
-
-const stringPostFn: (method: "post", input: { body: string }) => Promise<unknown> =
-	typeClient.bodies.string;
-const stringConfigPostFn: (
-	method: "config_post",
-	input: { body: string },
-) => Promise<[url: string, init: RequestInit]> = typeClient.bodies.string;
-const stringValidatePostFn: (
-	method: "validate_post",
-	response: Response,
-) => ReturnType<typeof stringPostFn> = typeClient.bodies.string;
-
-const standardHeadersPostFn: (
-	method: "post",
-	input: { body: Record<string, never>; headers: { "x-trace-id": string } },
-) => Promise<unknown> = typeClient.bodies.standardHeaders;
-
-const superjsonHeadersPostFn: (
-	method: "post",
-	input: {
-		body: Record<string, never>;
-		headers: {
-			auth: {
-				token: string;
-				issuedAt: Date;
-				scopes: Set<string>;
-				quotas: Map<string, number>;
-			};
-		};
-	},
-) => Promise<unknown> = typeClient.bodies.superjsonHeaders;
-
-void healthGetFn;
-void healthConfigGetFn;
-void healthValidateGetFn;
-void stringPostFn;
-void stringConfigPostFn;
-void stringValidatePostFn;
-void standardHeadersPostFn;
-void superjsonHeadersPostFn;
-
-// @ts-expect-error string body route does not accept numbers
-const invalidStringPostInput: Parameters<typeof stringPostFn>[1] = { body: 123 };
-void invalidStringPostInput;
-const validHealthWithSecondArgFn: (method: "get", input: unknown) => Promise<unknown> =
-	typeClient.health;
-void validHealthWithSecondArgFn;
-
-let server: ReturnType<typeof Bun.serve>;
-const PORT = 19876;
-
-beforeAll(() => {
-	const app = new Hono();
-	initHono(
-		app,
-		contracts,
-		{
-			ROUTER: {
-				users: {
-					ROUTER: {
-						register: {
-							HANDLER: {
-								post: (input) => ({
-									type: "JSON" as const,
-									status: 201 as const,
-									data: { id: "new-id", ...input.body },
-								}),
-							},
-						},
-						$userId: {
-							HANDLER: {
-								get: (input) => {
-									if (input.pathParams.userId === "explode") {
-										throw new Error("forced failure");
-									}
-									return {
-										type: "JSON" as const,
-										status: 200 as const,
-										data: {
-											id: input.pathParams.userId,
-											name: "User",
-											email: "user@test.com",
-										},
-									};
-								},
-							},
-						},
-					},
+describe("createClient runtime", () => {
+	test("encodes path/query/headers/body from request envelope", async () => {
+		const app = new Hono();
+		app.post("/users/:userId", async (ctx) => {
+			const payload = await ctx.req.json();
+			return createSerializedResponse({
+				status: 200,
+				type: "JSON",
+				source: "contract",
+				data: {
+					userId: ctx.req.param("userId"),
+					active: ctx.req.query("active") ?? "",
+					header: ctx.req.header("x-custom") ?? "",
+					name: payload.name,
 				},
-				health: {
-					HANDLER: {
-						get: () => ({
-							type: "JSON" as const,
-							status: 200 as const,
-							data: { status: "ok" },
-						}),
-					},
-				},
-				verbs: {
-					ROUTER: {
-						get: {
-							HANDLER: {
-								get: () => ({
-									type: "JSON" as const,
-									status: 200 as const,
-									data: { route: "get" as const },
-								}),
-							},
-						},
-						post: {
-							HANDLER: {
-								get: () => ({
-									type: "JSON" as const,
-									status: 200 as const,
-									data: { route: "post" as const },
-								}),
-							},
-						},
-					},
-				},
-				responses: {
-					ROUTER: {
-						json: {
-							HANDLER: {
-								get: () => ({
-									type: "JSON" as const,
-									status: 200 as const,
-									data: { kind: "json" as const },
-								}),
-							},
-						},
-						superjson: {
-							HANDLER: {
-								get: () => ({
-									type: "SuperJSON" as const,
-									status: 200 as const,
-									data: {
-										kind: "superjson" as const,
-										createdAt: new Date("2025-01-01T00:00:00.000Z"),
-										counters: new Map([
-											["success", 2],
-											["failure", 1],
-										]),
-										tags: new Set(["alpha", "beta"]),
-									},
-								}),
-							},
-						},
-						superjsonQuery: {
-							HANDLER: {
-								get: (input) => {
-									const metadataTotal = [...input.query.metadata.values()].reduce(
-										(total, value) => total + value,
-										0,
-									);
-
-									return {
-										type: "JSON" as const,
-										status: 200 as const,
-										data: {
-											filterCount: input.query.filters.length,
-											firstAtIso:
-												input.query.filters[0]?.at.toISOString() ?? "",
-											metadataTotal,
-										},
-									};
-								},
-							},
-						},
-						text: {
-							HANDLER: {
-								get: () => ({
-									type: "Text" as const,
-									status: 200 as const,
-									data: "plain-text",
-								}),
-							},
-						},
-						blob: {
-							HANDLER: {
-								get: () => ({
-									type: "Blob" as const,
-									status: 200 as const,
-									data: new Blob(["blob-data"], { type: "text/plain" }),
-								}),
-							},
-						},
-						arrayBuffer: {
-							HANDLER: {
-								get: () => ({
-									type: "ArrayBuffer" as const,
-									status: 200 as const,
-									data: new TextEncoder().encode("array-buffer").buffer,
-								}),
-							},
-						},
-						formData: {
-							HANDLER: {
-								get: () => {
-									const fd = new FormData();
-									fd.set("field", "form-value");
-									return {
-										type: "FormData" as const,
-										status: 200 as const,
-										data: fd,
-									};
-								},
-							},
-						},
-						readableStream: {
-							HANDLER: {
-								get: () => ({
-									type: "ReadableStream" as const,
-									status: 200 as const,
-									data: new ReadableStream({
-										start(controller) {
-											controller.enqueue(
-												new TextEncoder().encode("stream-body"),
-											);
-											controller.close();
-										},
-									}),
-								}),
-							},
-						},
-						voidResponse: {
-							HANDLER: {
-								get: () => ({
-									type: "Void" as const,
-									status: 204 as const,
-								}),
-							},
-						},
-						standardHeaders: {
-							HANDLER: {
-								get: () => ({
-									type: "JSON" as const,
-									status: 200 as const,
-									data: { ok: true as const },
-									headers: { "x-from-server": "hono" },
-								}),
-							},
-						},
-						superjsonHeaders: {
-							HANDLER: {
-								get: () => ({
-									type: "JSON" as const,
-									status: 200 as const,
-									data: { ok: true as const },
-									headers: {
-										meta: {
-											source: "hono",
-											attempt: 1,
-											generatedAt: new Date("2025-01-02T00:00:00.000Z"),
-										},
-										quotas: new Map([
-											["read", 5],
-											["write", 2],
-										]),
-										scopes: new Set(["read", "write"]),
-									},
-								}),
-							},
-						},
-					},
-				},
-				bodies: {
-					ROUTER: {
-						json: {
-							HANDLER: {
-								post: (input) => ({
-									type: "JSON" as const,
-									status: 200 as const,
-									data: { echoed: input.body.message },
-								}),
-							},
-						},
-						superjson: {
-							HANDLER: {
-								post: (input) => {
-									const scoreTotal = [
-										...input.body.payload.scores.values(),
-									].reduce((total, score) => total + score, 0);
-
-									return {
-										type: "JSON" as const,
-										status: 200 as const,
-										data: {
-											isoDate: input.body.payload.createdAt.toISOString(),
-											scoreTotal,
-											hasPriority: input.body.payload.flags.has("priority"),
-										},
-									};
-								},
-							},
-						},
-						string: {
-							HANDLER: {
-								post: (input) => ({
-									type: "Text" as const,
-									status: 200 as const,
-									data: input.body.toUpperCase(),
-								}),
-							},
-						},
-						urlSearchParams: {
-							HANDLER: {
-								post: (input) => ({
-									type: "JSON" as const,
-									status: 200 as const,
-									data: { query: input.body.get("q") ?? "" },
-								}),
-							},
-						},
-						formData: {
-							HANDLER: {
-								post: (input) => ({
-									type: "JSON" as const,
-									status: 200 as const,
-									data: { field: String(input.body.get("field") ?? "") },
-								}),
-							},
-						},
-						blob: {
-							HANDLER: {
-								post: (input) => ({
-									type: "JSON" as const,
-									status: 200 as const,
-									data: { size: input.body.size },
-								}),
-							},
-						},
-						uint8Array: {
-							HANDLER: {
-								post: (input) => ({
-									type: "JSON" as const,
-									status: 200 as const,
-									data: { length: input.body.byteLength },
-								}),
-							},
-						},
-						standardHeaders: {
-							HANDLER: {
-								post: (input) => ({
-									type: "JSON" as const,
-									status: 200 as const,
-									data: { traceId: input.headers["x-trace-id"] },
-								}),
-							},
-						},
-						superjsonHeaders: {
-							HANDLER: {
-								post: (input) => {
-									const quotaTotal = [
-										...input.headers.auth.quotas.values(),
-									].reduce((total, value) => total + value, 0);
-
-									return {
-										type: "JSON" as const,
-										status: 200 as const,
-										data: {
-											token: input.headers.auth.token,
-											issuedAt: input.headers.auth.issuedAt.toISOString(),
-											scopeCount: input.headers.auth.scopes.size,
-											quotaTotal,
-										},
-									};
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-		undefined,
-		undefined,
-		{ errorMode: "public" },
-	);
-	server = Bun.serve({ fetch: app.fetch, port: PORT });
-});
-
-afterAll(() => {
-	server.stop();
-});
-
-describe("createClient", () => {
-	const client = createClient(contracts, {
-		baseUrl: `http://localhost:${PORT}`,
-		middleware: [middleware],
-		serverErrorMode: "public",
-	});
-
-	test("keeps existing JSON route behavior and error branches", async () => {
-		const health = await client.health("get");
-		expect(health.status).toBe(200);
-		expect(health.body).toEqual({ status: "ok" });
-
-		const createUser = await client.users.register("post", {
-			body: { name: "John", email: "john@example.com" },
-		});
-		expect(createUser.status).toBe(201);
-
-		const user = await client.users.$userId("get", {
-			pathParams: { userId: "user-123" },
-		});
-		expect(user.status).toBe(200);
-
-		const missingBaseClient = createClient(contracts, {
-			baseUrl: `http://localhost:${PORT}/missing-base`,
-			middleware: [middleware],
-			serverErrorMode: "public",
-		});
-		const notFound = await missingBaseClient.health("get");
-		expect(notFound.status).toBe(404);
-		if (notFound.status === 404) {
-			expect(notFound.body).toEqual({ type: "notFound" });
-		}
-
-		const internal = await client.users.$userId("get", {
-			pathParams: { userId: "explode" },
-		});
-		expect(internal.status).toBe(500);
-		if (internal.status === 500) {
-			expect(internal.body).toEqual({ type: "internalError" });
-		}
-	});
-
-	test("supports path segments that match HTTP verb names", async () => {
-		const getSegment = await client.verbs.get("get");
-		expect(getSegment.status).toBe(200);
-		if (getSegment.status === 200) {
-			expect(getSegment.body.route).toBe("get");
-		}
-
-		const postSegment = await client.verbs.post("get");
-		expect(postSegment.status).toBe(200);
-		if (postSegment.status === 200) {
-			expect(postSegment.body.route).toBe("post");
-		}
-	});
-
-	test("builds spread-safe fetch config and validates fetched response", async () => {
-		const [url, init] = await client.health("config_get");
-		expect(typeof url).toBe("string");
-		expect(url).toBe(`http://localhost:${PORT}/health`);
-		expect(init.method).toBe("GET");
-
-		const response = await fetch(...[url, init]);
-		const validated = await client.health("validate_get", response);
-		expect(validated.status).toBe(200);
-		if (validated.status === 200) {
-			expect(validated.body).toEqual({ status: "ok" });
-		}
-	});
-
-	test("supports config and validate prefixed verbs on input routes", async () => {
-		const [url, init] = await client.users.register("config_post", {
-			body: { name: "Ada", email: "ada@example.com" },
-		});
-		expect(url).toBe(`http://localhost:${PORT}/users/register`);
-		expect(init.method).toBe("POST");
-
-		const response = await fetch(...[url, init]);
-		const validated = await client.users.register("validate_post", response);
-		expect(validated.status).toBe(201);
-		if (validated.status === 201) {
-			expect(validated.body.email).toBe("ada@example.com");
-		}
-	});
-
-	test("fails fast on invalid client body input", async () => {
-		expect(
-			client.users.register("post", {
-				body: { name: "John", email: "not-an-email" },
-			}),
-		).rejects.toThrow("Contract validation failed");
-	});
-
-	test("fails fast on invalid prefixed method and invalid validate arg", async () => {
-		const unsafeHealth = client.health as unknown as (
-			method: string,
-			secondArg?: unknown,
-		) => Promise<unknown>;
-		expect(
-			unsafeHealth("config_put", {
-				pathParams: {},
-			}),
-		).rejects.toThrow("No contract for PUT /health");
-
-		expect(() =>
-			client.health("validate_get", {
-				not: "a-response",
-			} as unknown as Response),
-		).toThrow("validate_<method> route call requires method and Response as second argument");
-	});
-
-	test("parses all response body types", async () => {
-		const json = await client.responses.json("get");
-		expect(json.status).toBe(200);
-		if (json.status === 200) {
-			expect(json.body).toEqual({ kind: "json" });
-		}
-
-		const superjson = await client.responses.superjson("get");
-		expect(superjson.status).toBe(200);
-		if (superjson.status === 200) {
-			expect(superjson.body.kind).toBe("superjson");
-			expect(superjson.body.createdAt).toBeInstanceOf(Date);
-			expect(superjson.body.createdAt.toISOString()).toBe("2025-01-01T00:00:00.000Z");
-			expect(superjson.body.counters).toEqual(
-				new Map([
-					["success", 2],
-					["failure", 1],
-				]),
-			);
-			expect(superjson.body.tags).toEqual(new Set(["alpha", "beta"]));
-		}
-
-		const superjsonQuery = await client.responses.superjsonQuery("get", {
-			query: {
-				filters: [
-					{
-						label: "one",
-						at: new Date("2025-05-01T00:00:00.000Z"),
-					},
-				],
-				metadata: new Map([
-					["a", 1],
-					["b", 2],
-				]),
-			},
-		});
-		expect(superjsonQuery.status).toBe(200);
-		if (superjsonQuery.status === 200) {
-			expect(superjsonQuery.body).toEqual({
-				filterCount: 1,
-				firstAtIso: "2025-05-01T00:00:00.000Z",
-				metadataTotal: 3,
 			});
-		}
-
-		const text = await client.responses.text("get");
-		expect(text.status).toBe(200);
-		if (text.status === 200) {
-			expect(text.body).toBe("plain-text");
-		}
-
-		const blob = await client.responses.blob("get");
-		expect(blob.status).toBe(200);
-		if (blob.status === 200) {
-			expect(blob.body).toBeInstanceOf(Blob);
-			expect(await blob.body.text()).toBe("blob-data");
-		}
-
-		const arrayBuffer = await client.responses.arrayBuffer("get");
-		expect(arrayBuffer.status).toBe(200);
-		if (arrayBuffer.status === 200) {
-			expect(arrayBuffer.body).toBeInstanceOf(ArrayBuffer);
-			expect(new TextDecoder().decode(arrayBuffer.body)).toBe("array-buffer");
-		}
-
-		const formData = await client.responses.formData("get");
-		expect(formData.status).toBe(200);
-		if (formData.status === 200) {
-			expect(formData.body).toBeInstanceOf(FormData);
-			expect(formData.body.get("field")).toBe("form-value");
-		}
-
-		const readableStream = await client.responses.readableStream("get");
-		expect(readableStream.status).toBe(200);
-		if (readableStream.status === 200) {
-			expect(readableStream.body).toBeInstanceOf(ReadableStream);
-			expect(await new Response(readableStream.body).text()).toBe("stream-body");
-		}
-
-		const voidResponse = await client.responses.voidResponse("get");
-		expect(voidResponse.status).toBe(204);
-		if (voidResponse.status === 204) {
-			expect(voidResponse.body).toBeUndefined();
-		}
-	});
-
-	test("parses standard and superjson response headers", async () => {
-		const standard = await client.responses.standardHeaders("get");
-		expect(standard.status).toBe(200);
-		if (standard.status === 200) {
-			expect(standard.headers).toEqual({ "x-from-server": "hono" });
-		}
-
-		const superjson = await client.responses.superjsonHeaders("get");
-		expect(superjson.status).toBe(200);
-		if (superjson.status === 200) {
-			expect(superjson.headers).toEqual({
-				meta: {
-					source: "hono",
-					attempt: 1,
-					generatedAt: new Date("2025-01-02T00:00:00.000Z"),
-				},
-				quotas: new Map([
-					["read", 5],
-					["write", 2],
-				]),
-				scopes: new Set(["read", "write"]),
-			});
-		}
-	});
-
-	test("encodes and parses all request body types", async () => {
-		const json = await client.bodies.json("post", { body: { message: "hello" } });
-		expect(json.status).toBe(200);
-		if (json.status === 200) {
-			expect(json.body.echoed).toBe("hello");
-		}
-
-		const superjson = await client.bodies.superjson("post", {
-			body: {
-				payload: {
-					createdAt: new Date("2025-03-01T00:00:00.000Z"),
-					scores: new Map([
-						["math", 4],
-						["science", 8],
-					]),
-					flags: new Set(["priority", "gift"]),
-				},
-			},
 		});
-		expect(superjson.status).toBe(200);
-		if (superjson.status === 200) {
-			expect(superjson.body).toEqual({
-				isoDate: "2025-03-01T00:00:00.000Z",
-				scoreTotal: 12,
-				hasPriority: true,
+
+		const client = createClient<typeof shape, typeof contracts, typeof middlewares, "public">(
+			startServer(app),
+		);
+
+		const response = await client.fetch("/users/$userId", "post", {
+			pathParams: { userId: "a/b" },
+			query: { active: true },
+			headers: { "x-custom": { source: "test" } },
+			body: { name: "alice" },
+		});
+
+		expect(response.status).toBe(200);
+		expect(response.type).toBe("JSON");
+		expect(response.data).toEqual({
+			userId: "a/b",
+			active: "true",
+			header: '{"source":"test"}',
+			name: "alice",
+		});
+	});
+
+	test("supports URLSearchParams and FormData body modes", async () => {
+		const app = new Hono();
+		app.post("/search", async (ctx) => {
+			const contentType = ctx.req.header("content-type") ?? "";
+			const payload = await ctx.req.text();
+			return createSerializedResponse({
+				status: 200,
+				type: "JSON",
+				source: "contract",
+				data: { contentType, payload },
 			});
-		}
+		});
+		app.post("/upload", async (ctx) => {
+			const formData = await ctx.req.formData();
+			return createSerializedResponse({
+				status: 200,
+				type: "JSON",
+				source: "contract",
+				data: { fileName: String(formData.get("fileName")) },
+			});
+		});
 
-		const text = await client.bodies.string("post", { body: "hello" });
-		expect(text.status).toBe(200);
-		if (text.status === 200) {
-			expect(text.body).toBe("HELLO");
-		}
+		const client = createClient<typeof shape, typeof contracts, typeof middlewares, "public">(
+			startServer(app),
+		);
 
-		const params = new URLSearchParams();
-		params.set("q", "zono");
-		const urlSearchParams = await client.bodies.urlSearchParams("post", { body: params });
-		expect(urlSearchParams.status).toBe(200);
-		if (urlSearchParams.status === 200) {
-			expect(urlSearchParams.body.query).toBe("zono");
-		}
+		const urlEncoded = await client.fetch("/search", "post", {
+			body: new URLSearchParams({ q: "zono docs" }),
+		});
+		expect(urlEncoded.status).toBe(200);
+		expect((urlEncoded.data as { contentType: string }).contentType).toContain(
+			"application/x-www-form-urlencoded",
+		);
+		expect((urlEncoded.data as { payload: string }).payload).toContain("q=zono+docs");
 
 		const formData = new FormData();
-		formData.set("field", "field-value");
-		const formDataRes = await client.bodies.formData("post", { body: formData });
-		expect(formDataRes.status).toBe(200);
-		if (formDataRes.status === 200) {
-			expect(formDataRes.body.field).toBe("field-value");
-		}
-
-		const blobRes = await client.bodies.blob("post", {
-			body: new Blob(["blob-body"], { type: "text/plain" }),
-		});
-		expect(blobRes.status).toBe(200);
-		if (blobRes.status === 200) {
-			expect(blobRes.body.size).toBe(9);
-		}
-
-		const uint8ArrayRes = await client.bodies.uint8Array("post", {
-			body: new Uint8Array([1, 2, 3, 4]),
-		});
-		expect(uint8ArrayRes.status).toBe(200);
-		if (uint8ArrayRes.status === 200) {
-			expect(uint8ArrayRes.body.length).toBe(4);
-		}
+		formData.set("fileName", "avatar.png");
+		const uploaded = await client.fetch("/upload", "post", { body: formData });
+		expect(uploaded.status).toBe(200);
+		expect(uploaded.data).toEqual({ fileName: "avatar.png" });
 	});
 
-	test("encodes standard and superjson request headers", async () => {
-		const standard = await client.bodies.standardHeaders("post", {
-			body: {},
-			headers: { "x-trace-id": "trace-123" },
-		});
-		expect(standard.status).toBe(200);
-		if (standard.status === 200) {
-			expect(standard.body.traceId).toBe("trace-123");
-		}
-
-		const superjson = await client.bodies.superjsonHeaders("post", {
-			body: {},
-			headers: {
-				auth: {
-					token: "token-abc",
-					issuedAt: new Date("2025-03-02T00:00:00.000Z"),
-					scopes: new Set(["read", "write"]),
-					quotas: new Map([
-						["read", 5],
-						["write", 2],
-					]),
-				},
-			},
-		});
-		expect(superjson.status).toBe(200);
-		if (superjson.status === 200) {
-			expect(superjson.body).toEqual({
-				token: "token-abc",
-				issuedAt: "2025-03-02T00:00:00.000Z",
-				scopeCount: 2,
-				quotaTotal: 7,
+	test("parses serialized responses including SuperJSON", async () => {
+		const failingApp = new Hono();
+		failingApp.get("/events", () => {
+			return createSerializedResponse({
+				status: 503,
+				type: "JSON",
+				source: "error",
+				data: { message: "down" },
 			});
-		}
-
-		expect(superjson.response.headers.get("x-zono-superjson-headers")).toBeNull();
-	});
-
-	test("keeps behavior stable across repeated and mixed route calls", async () => {
-		const firstHealth = await client.health("get");
-		expect(firstHealth.status).toBe(200);
-		if (firstHealth.status === 200) {
-			expect(firstHealth.body).toEqual({ status: "ok" });
-		}
-
-		const user = await client.users.$userId("get", {
-			pathParams: { userId: "cache-check" },
 		});
-		expect(user.status).toBe(200);
-		if (user.status === 200) {
-			expect(user.body.id).toBe("cache-check");
-		}
 
-		const secondHealth = await client.health("get");
-		expect(secondHealth.status).toBe(200);
-		if (secondHealth.status === 200) {
-			expect(secondHealth.body).toEqual({ status: "ok" });
-		}
+		const failingClient = createClient<
+			typeof shape,
+			typeof contracts,
+			typeof middlewares,
+			"public"
+		>(startServer(failingApp));
+		const failed = await failingClient.fetch("/events", "get");
+		expect(failed.status).toBe(503);
+		expect(failed.type).toBe("JSON");
+
+		const healthyApp = new Hono();
+		healthyApp.get("/events", () => {
+			return createSerializedResponse({
+				status: 200,
+				type: "SuperJSON",
+				source: "contract",
+				data: { createdAt: new Date("2024-02-02T00:00:00.000Z") },
+			});
+		});
+
+		const healthyClient = createClient<
+			typeof shape,
+			typeof contracts,
+			typeof middlewares,
+			"public"
+		>(startServer(healthyApp));
+		const healthy = await healthyClient.fetch("/events", "get");
+		expect(healthy.status).toBe(200);
+		expect(healthy.type).toBe("SuperJSON");
+		expect((healthy.data as { createdAt: Date }).createdAt instanceof Date).toBe(true);
+	});
+});
+
+type TypedClient = ReturnType<
+	typeof createClient<typeof shape, typeof contracts, typeof middlewares, "public">
+>;
+type ClientResponse = Awaited<ReturnType<TypedClient["fetch"]>>;
+const has200: HasStatus<ClientResponse, 200> = true;
+const has429: HasStatus<ClientResponse, 429> = true;
+const has400: HasStatus<ClientResponse, 400> = true;
+const has404: HasStatus<ClientResponse, 404> = true;
+const has500: HasStatus<ClientResponse, 500> = true;
+void has200;
+void has429;
+void has400;
+void has404;
+void has500;
+
+const typedClient = createClient<typeof shape, typeof contracts, typeof middlewares, "public">(
+	"http://localhost",
+);
+
+const runTypeOnly = (_cb: () => void): void => {};
+
+runTypeOnly(() => {
+	void typedClient.fetch("/users/$userId", "post", {
+		pathParams: { userId: "u1" },
+		query: { active: true },
+		headers: { "x-custom": { source: "dev" } },
+		body: { name: "alice" },
 	});
 
-	test("keeps validation errors stable across repeated calls", async () => {
-		expect(
-			client.users.register("post", {
-				body: { name: "John", email: "not-an-email" },
-			}),
-		).rejects.toThrow("Contract validation failed");
+	// @ts-expect-error unknown path should fail
+	void typedClient.fetch("/unknown", "get");
 
-		expect(
-			client.users.register("post", {
-				body: { name: "Jane", email: "not-an-email" },
-			}),
-		).rejects.toThrow("Contract validation failed");
+	// @ts-expect-error method not declared on /events should fail
+	void typedClient.fetch("/events", "post");
+
+	// @ts-expect-error pathParams required for dynamic route
+	void typedClient.fetch("/users/$userId", "post", {
+		query: { active: true },
+		headers: { "x-custom": { source: "dev" } },
+		body: { name: "alice" },
 	});
 });

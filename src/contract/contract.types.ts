@@ -1,181 +1,325 @@
-import type { SuperJSONValue } from "superjson";
 import z from "zod";
-import type { JsonValue, RecordNotArray } from "~/internal/util.types.js";
+import { Shape } from "../shared/shared.types.js";
 
-/** Controls how much validation error detail is exposed to clients */
-export type ErrorMode = "public" | "hidden";
-
-/** Full validation error details with Zod issues - used when errorMode is "public" */
-export type ValidationErrorBodyPublic = {
-	type: "invalidInput";
-	issues: Array<z.core.$ZodIssue>;
+export type CompiledContractRoute = {
+	pathTemplate: string;
+	honoPath: string;
+	method: HTTPMethod;
+	methodDefinition: ContractMethodDefinition;
 };
 
-/** Minimal validation error with only issue count - used when errorMode is "hidden" */
-export type ValidationErrorBodyHidden = {
-	type: "invalidInput";
-	issues: number;
+export type JSONPrimitive = string | number | boolean | null;
+
+export type JSONValue = JSONPrimitive | { [key: string]: JSONValue } | Array<JSONValue>;
+
+export type SuperJSONPrimitive = JSONPrimitive | undefined | bigint | Date;
+
+export type SuperJSONValue =
+	| SuperJSONPrimitive
+	| { [key: string]: SuperJSONValue }
+	| Array<SuperJSONValue>
+	| Map<SuperJSONValue, SuperJSONValue>
+	| Set<SuperJSONValue>
+	| RegExp;
+
+export type Contract = Partial<Record<HTTPMethod, ContractMethodDefinition>>;
+
+export type HTTPMethod = "get" | "post" | "put" | "delete" | "patch" | "options" | "head";
+
+export type ContractMethodDefinition = {
+	responses: Record<number, ContractResponseSchema>;
+	query?: ContractQuerySchema;
+	body?: ContractBodySchema;
+	headers?: ContractHeadersSchema;
+	pathParams?: z.ZodType<Record<string, string>, Record<string, string>>;
 };
 
-/** Error body for 404 Not Found responses */
-export type NotFoundErrorBody = {
-	type: "notFound";
+export type ContractPathParamsGivenDynamicPaths<TDynamicPaths extends string> = z.ZodType<
+	Record<TDynamicPaths, string>,
+	Record<TDynamicPaths, string>
+>;
+
+export type ContractHeadersSchema =
+	| ContractStandardHeadersSchema
+	| ContractJSONHeadersSchema
+	| ContractSuperJSONHeadersSchema;
+
+export type ResponseSchemaFieldKey = "body" | "schema";
+
+type SchemaContainerByField<TField extends ResponseSchemaFieldKey, TOutput> = TField extends "body"
+	? { body: z.ZodType<TOutput, unknown> }
+	: { schema: z.ZodType<TOutput, unknown> };
+
+export type ContractStandardHeadersSchema = {
+	type: "Standard";
+	headers: z.ZodType<Record<string, string | undefined>, Record<string, string | undefined>>;
 };
 
-/** Error body for 500 Internal Server Error responses */
-export type InternalErrorBody = {
-	type: "internalError";
+export type ContractJSONHeadersSchema = {
+	type: "JSON";
+	headers: z.ZodType<
+		Record<string, JSONValue | undefined>,
+		Record<string, JSONValue | undefined>
+	>;
 };
 
-/**
- * Validation error body type based on error mode.
- * @template TMode - The error mode, "public" includes full issues, "hidden" includes count only
- */
-export type ValidationErrorBody<TMode extends ErrorMode> = TMode extends "public"
-	? ValidationErrorBodyPublic
-	: ValidationErrorBodyHidden;
-
-/**
- * Defines the contract for a single HTTP endpoint including request/response schemas.
- */
-export type Contract = {
-	responses: ContractResponses;
-	body?: ContractBody;
-	query?: ContractQuery;
-	headers?: ContractHeaders;
-	pathParams?: ContractPathParams;
+export type ContractSuperJSONHeadersSchema = {
+	type: "SuperJSON";
+	headers: z.ZodType<
+		Record<string, SuperJSONValue | undefined>,
+		Record<string, SuperJSONValue | undefined>
+	>;
 };
 
-/** Map of HTTP status codes to their response definitions */
-export type ContractResponses = Record<number, ContractResponse>;
-
-/** A single response definition with optional headers */
-export type ContractResponse = { headers?: ContractHeaders } & (
-	| { type: "JSON"; schema: z.ZodType<JsonValue, JsonValue> }
-	| { type: "SuperJSON"; schema: z.ZodType<SuperJSONValue, SuperJSONValue> }
-	| { type: "Text"; schema: z.ZodType<string, string> }
-	| { type: "Blob"; schema: z.ZodType<Blob, Blob> }
-	| { type: "ArrayBuffer"; schema: z.ZodType<ArrayBuffer, ArrayBuffer> }
-	| { type: "FormData"; schema: z.ZodType<FormData, FormData> }
-	| { type: "ReadableStream"; schema: z.ZodType<ReadableStream, ReadableStream> }
-	| { type: "Void"; schema?: undefined }
+export type ResponseSchema<TField extends ResponseSchemaFieldKey = "body"> = {
+	headers?: ContractHeadersSchema;
+} & (
+	| ContractJSONResponseSchema<TField>
+	| ContractSuperJSONResponseSchema<TField>
+	| ContractTextResponseSchema<TField>
+	| ContractContentlessResponseSchema
+	| ContractFormDataResponseSchema<TField>
+	| ContractBlobResponseSchema<TField>
+	| ContractBytesResponseSchema<TField>
 );
 
-/** JSON request body definition */
-export type ContractBodyJSON = {
+export type ContractResponseSchema = ResponseSchema<"body">;
+
+export type ContractJSONResponseSchema<TField extends ResponseSchemaFieldKey = "body"> = {
 	type: "JSON";
-	schema: z.ZodType<JsonValue, JsonValue>;
-};
+} & SchemaContainerByField<TField, JSONValue>;
 
-/** SuperJSON request body definition */
-export type ContractBodySuperJSON = {
+export type ContractSuperJSONResponseSchema<TField extends ResponseSchemaFieldKey = "body"> = {
 	type: "SuperJSON";
-	schema: z.ZodType<SuperJSONValue, SuperJSONValue>;
+} & SchemaContainerByField<TField, SuperJSONValue>;
+
+export type ContractTextResponseSchema<TField extends ResponseSchemaFieldKey = "body"> = {
+	type: "Text";
+} & SchemaContainerByField<TField, string>;
+
+export type ContractContentlessResponseSchema = {
+	type: "Contentless";
+	body?: undefined;
 };
 
-/** String (text/plain) request body definition */
-export type ContractBodyString = {
-	type: "String";
-	schema: z.ZodType<string, string>;
-};
-
-/** URLSearchParams request body definition */
-export type ContractBodyURLSearchParams = {
-	type: "URLSearchParams";
-	schema: z.ZodType<URLSearchParams, URLSearchParams>;
-};
-
-/** FormData request body definition */
-export type ContractBodyFormData = {
+export type ContractFormDataResponseSchema<TField extends ResponseSchemaFieldKey = "body"> = {
 	type: "FormData";
-	schema: z.ZodType<FormData, FormData>;
-};
+} & SchemaContainerByField<TField, FormData>;
 
-/** Blob request body definition */
-export type ContractBodyBlob = {
+export type ContractBlobResponseSchema<TField extends ResponseSchemaFieldKey = "body"> = {
 	type: "Blob";
-	schema: z.ZodType<Blob, Blob>;
+} & SchemaContainerByField<TField, Blob>;
+
+export type ContractBytesResponseSchema<TField extends ResponseSchemaFieldKey = "body"> = {
+	type: "Bytes";
+} & SchemaContainerByField<TField, Uint8Array>;
+
+export type RuntimeResponseSchema = ResponseSchema<ResponseSchemaFieldKey>;
+
+export type ContractQuerySchema =
+	| ContractStandardQuerySchema
+	| ContractJSONQuerySchema
+	| ContractSuperJSONQuerySchema;
+
+export type ContractStandardQuerySchema = {
+	type: "Standard";
+	query: z.ZodType<Record<string, string | undefined>, Record<string, string | undefined>>;
 };
 
-/** Uint8Array (binary) request body definition */
-export type ContractBodyUint8Array = {
-	type: "Uint8Array";
-	schema: z.ZodType<Uint8Array, Uint8Array>;
+export type ContractJSONQuerySchema = {
+	type: "JSON";
+	query: z.ZodType<Record<string, JSONValue | undefined>, Record<string, JSONValue | undefined>>;
 };
 
-/** Union of all possible request body types */
-export type ContractBody =
-	| ContractBodyJSON
-	| ContractBodySuperJSON
-	| ContractBodyString
-	| ContractBodyURLSearchParams
-	| ContractBodyFormData
-	| ContractBodyBlob
-	| ContractBodyUint8Array;
+export type ContractSuperJSONQuerySchema = {
+	type: "SuperJSON";
+	query: z.ZodType<
+		Record<string, SuperJSONValue | undefined>,
+		Record<string, SuperJSONValue | undefined>
+	>;
+};
 
-/** Supported HTTP methods */
-export type ContractMethod = "get" | "post" | "put" | "delete" | "patch" | "options" | "head";
+export type ContractBodySchema =
+	| ContractJSONBodySchema
+	| ContractSuperJSONBodySchema
+	| ContractFormDataBodySchema
+	| ContractURLSearchParamsBodySchema
+	| ContractTextBodySchema
+	| ContractBlobBodySchema;
 
-/** Map of HTTP methods to their contract definitions */
-export type ContractMethodMap<TContract extends Contract = Contract> = Partial<
-	Record<ContractMethod, TContract>
+export type ContractJSONBodySchema = {
+	type: "JSON";
+	body: z.ZodType<JSONValue, JSONValue>;
+};
+
+export type ContractSuperJSONBodySchema = {
+	type: "SuperJSON";
+	body: z.ZodType<SuperJSONValue, SuperJSONValue>;
+};
+
+export type ContractFormDataBodySchema = {
+	type: "FormData";
+	body: z.ZodType<FormData, FormData>;
+};
+
+export type ContractURLSearchParamsBodySchema = {
+	type: "URLSearchParams";
+	body: z.ZodType<URLSearchParams, URLSearchParams>;
+};
+
+export type ContractTextBodySchema = {
+	type: "Text";
+	body: z.ZodType<string, string>;
+};
+
+export type ContractBlobBodySchema = {
+	type: "Blob";
+	body: z.ZodType<Blob, Blob>;
+};
+
+type ExtractPathParamName<TKey extends string> = TKey extends `$${infer TPathParamName}`
+	? TPathParamName
+	: never;
+
+type ContractMethodDefinitionWithPathParams<TPathParams extends string> = Omit<
+	ContractMethodDefinition,
+	"pathParams"
+> &
+	([TPathParams] extends [never]
+		? { pathParams?: undefined }
+		: { pathParams: ContractPathParamsGivenDynamicPaths<TPathParams> });
+
+type ContractForPathParams<TPathParams extends string> = Partial<
+	Record<HTTPMethod, ContractMethodDefinitionWithPathParams<TPathParams>>
 >;
 
-/** Standard URL query parameters (string or string array values) */
-export type ContractQueryStandard = {
-	type: "Standard";
-	schema: z.ZodType<
-		RecordNotArray<string, string | Array<string> | undefined>,
-		RecordNotArray<string, string | Array<string> | undefined>
-	>;
+type ContractsFromShape<TShape extends Shape, TPathParams extends string = never> = {
+	[K in keyof TShape]: K extends "CONTRACT"
+		? TShape[K] extends true
+			? ContractForPathParams<TPathParams>
+			: never
+		: K extends "SHAPE"
+			? TShape[K] extends Record<string, Shape>
+				? {
+						[ChildKey in keyof TShape[K]]: TShape[K][ChildKey] extends Shape
+							? ContractsFromShape<
+									TShape[K][ChildKey],
+									| TPathParams
+									| (ChildKey extends string
+											? ExtractPathParamName<ChildKey>
+											: never)
+								>
+							: never;
+					}
+				: never
+			: never;
 };
 
-/** SuperJSON-encoded query parameters using declared query keys (supports Dates, Maps, Sets, etc.) */
-export type ContractQuerySuperJSON = {
-	type: "SuperJSON";
-	schema: z.ZodType<
-		RecordNotArray<string, SuperJSONValue>,
-		RecordNotArray<string, SuperJSONValue>
-	>;
+export type Contracts<TShape extends Shape> = ContractsFromShape<TShape>;
+
+export type ContractsTree = {
+	CONTRACT?: Contract;
+	SHAPE?: Record<string, ContractsTree>;
 };
 
-/** Union of query parameter types */
-export type ContractQuery = ContractQueryStandard | ContractQuerySuperJSON;
+export type InferRuntimeResponseData<TResponseSchema extends RuntimeResponseSchema> =
+	TResponseSchema extends { body: z.ZodType<infer TOutput, unknown> }
+		? TOutput
+		: TResponseSchema extends { schema: z.ZodType<infer TOutput, unknown> }
+			? TOutput
+			: undefined;
 
-/** Standard HTTP headers (string values only) */
-export type ContractHeadersStandard = {
-	type: "Standard";
-	schema: z.ZodType<RecordNotArray<string, string>, RecordNotArray<string, string>>;
+export type InferContractResponseData<TResponseSchema extends ContractResponseSchema> =
+	InferRuntimeResponseData<TResponseSchema>;
+
+type EmptyRecord = Record<never, never>;
+
+export type InferContractRequestData<TMethodDefinition extends ContractMethodDefinition> =
+	(TMethodDefinition extends { pathParams: z.ZodType<infer TPathParams, unknown> }
+		? { pathParams: TPathParams }
+		: EmptyRecord) &
+		(TMethodDefinition extends {
+			query: { query: z.ZodType<infer TQuery, unknown> };
+		}
+			? { query: TQuery }
+			: EmptyRecord) &
+		(TMethodDefinition extends { body: { body: z.ZodType<infer TBody, unknown> } }
+			? { body: TBody }
+			: EmptyRecord) &
+		(TMethodDefinition extends {
+			headers: { headers: z.ZodType<infer THeaders, unknown> };
+		}
+			? { headers: THeaders }
+			: EmptyRecord);
+
+type JoinPath<TPrefix extends string, TSegment extends string> = TPrefix extends ""
+	? `/${TSegment}`
+	: `${TPrefix}/${TSegment}`;
+
+type NormalizePath<TPath extends string> = TPath extends "" ? "/" : TPath;
+
+export type ContractRouteEntry<TPath extends string, TContract extends Contract> = {
+	path: NormalizePath<TPath>;
+	contract: TContract;
 };
 
-/** SuperJSON-encoded headers using declared header keys (supports complex values) */
-export type ContractHeadersSuperJSON = {
-	type: "SuperJSON";
-	schema: z.ZodType<
-		RecordNotArray<string, SuperJSONValue>,
-		RecordNotArray<string, SuperJSONValue>
-	>;
-};
+export type ContractRouteEntries<
+	TContracts extends ContractsTree,
+	TPrefix extends string = "",
+> = TContracts extends {
+	CONTRACT: infer TContract;
+}
+	? TContract extends Contract
+		?
+				| ContractRouteEntry<TPrefix, TContract>
+				| (TContracts extends { SHAPE: infer TShape }
+						? TShape extends Record<string, ContractsTree>
+							? {
+									[K in keyof TShape & string]: ContractRouteEntries<
+										TShape[K],
+										JoinPath<TPrefix, K>
+									>;
+								}[keyof TShape & string]
+							: never
+						: never)
+		: never
+	: TContracts extends { SHAPE: infer TShape }
+		? TShape extends Record<string, ContractsTree>
+			? {
+					[K in keyof TShape & string]: ContractRouteEntries<
+						TShape[K],
+						JoinPath<TPrefix, K>
+					>;
+				}[keyof TShape & string]
+			: never
+		: never;
 
-/** Union of header types */
-export type ContractHeaders = ContractHeadersStandard | ContractHeadersSuperJSON;
+export type ContractPath<TContracts extends ContractsTree> =
+	ContractRouteEntries<TContracts>["path"];
 
-/** URL path parameters schema */
-export type ContractPathParams = z.ZodType<Record<string, string>, Record<string, string>>;
+export type ContractAtPath<
+	TContracts extends ContractsTree,
+	TPath extends ContractPath<TContracts>,
+> = Extract<ContractRouteEntries<TContracts>, { path: TPath }>["contract"];
 
-/** Extracts valid response status codes from a contract */
-export type ContractResponseStatuses<TContract extends Contract> = Extract<
-	keyof TContract["responses"],
-	number
->;
+export type ContractMethodAtPath<
+	TContracts extends ContractsTree,
+	TPath extends ContractPath<TContracts>,
+	TMethod extends keyof ContractAtPath<TContracts, TPath> & HTTPMethod,
+> = NonNullable<ContractAtPath<TContracts, TPath>[TMethod]>;
 
-/** A node in the router shape tree - either a contract endpoint or nested router */
-export type ShapeNode = {
-	CONTRACT?: true;
-	ROUTER?: Record<string, ShapeNode>;
-};
+type InferContractResponseUnionInternal<TResponses extends Record<number, ContractResponseSchema>> =
+	{
+		[TStatus in keyof TResponses & number]: {
+			status: TStatus;
+			type: TResponses[TStatus]["type"];
+			data: InferContractResponseData<TResponses[TStatus]>;
+		};
+	}[keyof TResponses & number];
 
-/** Root router shape defining the structure of route contracts */
-export type RouterShape = {
-	ROUTER: Record<string, ShapeNode>;
-};
+export type InferContractResponseUnion<TMethodDefinition extends ContractMethodDefinition> =
+	TMethodDefinition extends { responses: infer TResponses }
+		? TResponses extends Record<number, ContractResponseSchema>
+			? InferContractResponseUnionInternal<TResponses>
+			: never
+		: never;

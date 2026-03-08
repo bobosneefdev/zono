@@ -1,114 +1,74 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { Hono } from "hono";
 import z from "zod";
-import { createContracts } from "~/contract/contract.js";
-import type { RouterShape } from "~/contract/contract.types.js";
-import { createMiddlewares } from "~/middleware/middleware.js";
+import { createClient } from "../client/client.js";
+import {
+	createGatewayClient,
+	createGatewayService,
+	createGatewayServices,
+	initGateway,
+} from "../gateway/gateway.js";
+import type { GatewayServiceShape } from "../gateway/gateway.types.js";
+import type { Middlewares } from "../middleware/middleware.types.js";
+import {
+	createHonoContractHandlers,
+	createHonoMiddlewareHandlers,
+	initHono,
+} from "../server/server.js";
+import { parseSerializedResponse } from "../shared/shared.js";
+import type { Shape } from "../shared/shared.types.js";
+import { compileContractRoutes } from "./contract.js";
+import type { Contracts } from "./contract.types.js";
 
-const shape = {
-	ROUTER: {
-		users: {
-			ROUTER: {
-				register: {
+type HasStatus<TUnion, TStatus extends number> = Extract<TUnion, { status: TStatus }> extends never
+	? false
+	: true;
+
+const servers: Array<{ stop: () => void }> = [];
+
+const startServer = (app: Hono): string => {
+	const server = Bun.serve({ fetch: app.fetch, port: 0 });
+	servers.push(server);
+	return `http://localhost:${server.port}`;
+};
+
+afterEach(() => {
+	while (servers.length > 0) {
+		const server = servers.pop();
+		server?.stop();
+	}
+});
+
+describe("contract route compilation", () => {
+	test("compiles nested routes with dynamic segments", () => {
+		const shape = {
+			SHAPE: {
+				users: {
 					CONTRACT: true,
-				},
-				$userId: {
-					CONTRACT: true,
-					ROUTER: {
-						posts: {
-							CONTRACT: true,
-							ROUTER: {
-								$postId: {
-									CONTRACT: true,
-								},
-							},
-						},
+					SHAPE: {
+						$userId: { CONTRACT: true },
 					},
 				},
 			},
-		},
-		health: {
-			CONTRACT: true,
-		},
-	},
-} as const satisfies RouterShape;
+		} as const satisfies Shape;
 
-const zId = z.string().uuid();
-
-const zUser = z.object({
-	id: zId,
-	name: z.string(),
-	email: z.string().email(),
-});
-
-const zPost = z.object({
-	id: zId,
-	userId: zId,
-	text: z.string(),
-});
-
-const contracts = createContracts(shape, {
-	ROUTER: {
-		users: {
-			ROUTER: {
-				register: {
-					CONTRACT: {
-						post: {
-							body: {
-								type: "JSON",
-								schema: z.object({
-									name: z.string(),
-									email: z.string().email(),
-								}),
-							},
-							responses: {
-								201: {
-									type: "JSON",
-									schema: zUser,
-								},
-							},
-						},
-					},
-				},
-				$userId: {
+		const contracts = {
+			SHAPE: {
+				users: {
 					CONTRACT: {
 						get: {
-							pathParams: z.object({ userId: z.string() }),
 							responses: {
-								200: {
-									type: "JSON",
-									schema: zUser,
-								},
+								200: { type: "JSON", body: z.object({ ok: z.boolean() }) },
 							},
 						},
 					},
-					ROUTER: {
-						posts: {
+					SHAPE: {
+						$userId: {
 							CONTRACT: {
 								get: {
-									pathParams: z.object({ userId: z.string() }),
+									pathParams: z.object({ userId: z.uuid() }),
 									responses: {
-										200: {
-											type: "JSON",
-											schema: z.array(zPost),
-										},
-									},
-								},
-							},
-							ROUTER: {
-								$postId: {
-									CONTRACT: {
-										get: {
-											pathParams: z.object({
-												userId: z.string(),
-												postId: z.string(),
-											}),
-											responses: {
-												200: {
-													type: "JSON",
-													schema: zPost,
-												},
-											},
-										},
+										200: { type: "JSON", body: z.object({ id: z.string() }) },
 									},
 								},
 							},
@@ -116,312 +76,281 @@ const contracts = createContracts(shape, {
 					},
 				},
 			},
-		},
-		health: {
-			CONTRACT: {
-				get: {
-					responses: {
-						200: {
-							type: "JSON",
-							schema: z.object({ status: z.string() }),
-						},
-					},
-				},
-			},
-		},
-	},
+		} as const satisfies Contracts<typeof shape>;
+
+		const routes = compileContractRoutes(contracts).map((route) => ({
+			pathTemplate: route.pathTemplate,
+			honoPath: route.honoPath,
+			method: route.method,
+		}));
+
+		expect(routes).toEqual([
+			{ pathTemplate: "/users", honoPath: "/users", method: "get" },
+			{ pathTemplate: "/users/$userId", honoPath: "/users/:userId", method: "get" },
+		]);
+	});
 });
 
-const dynamicPathParamShape = {
-	ROUTER: {
-		users: {
-			ROUTER: {
-				$userId: {
-					CONTRACT: true,
-				},
+describe("server middleware + client", () => {
+	test("middleware short-circuits contract handler and client parses response", async () => {
+		const shape = {
+			SHAPE: {
+				users: { CONTRACT: true },
 			},
-		},
-	},
-} as const satisfies RouterShape;
+		} as const satisfies Shape;
 
-const nestedPathParamShape = {
-	ROUTER: {
-		users: {
-			ROUTER: {
-				$userId: {
-					ROUTER: {
-						posts: {
-							ROUTER: {
-								$postId: {
-									CONTRACT: true,
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	},
-} as const satisfies RouterShape;
-
-const staticPathParamShape = {
-	ROUTER: {
-		users: {
-			ROUTER: {
-				register: {
-					CONTRACT: true,
-				},
-			},
-		},
-	},
-} as const satisfies RouterShape;
-
-createContracts(dynamicPathParamShape, {
-	ROUTER: {
-		users: {
-			ROUTER: {
-				$userId: {
+		const contracts = {
+			SHAPE: {
+				users: {
 					CONTRACT: {
-						get: {
-							pathParams: z.object({ userId: z.string() }),
-							responses: {
-								200: {
-									type: "JSON",
-									schema: z.object({ ok: z.boolean() }),
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	},
-});
-
-createContracts(dynamicPathParamShape, {
-	ROUTER: {
-		users: {
-			ROUTER: {
-				$userId: {
-					CONTRACT: {
-						// @ts-expect-error dynamic route must define pathParams for $userId
 						get: {
 							responses: {
 								200: {
 									type: "JSON",
-									schema: z.object({ ok: z.boolean() }),
+									body: z.array(z.object({ id: z.string() })),
 								},
 							},
 						},
 					},
 				},
 			},
-		},
-	},
-});
+		} as const satisfies Contracts<typeof shape>;
 
-createContracts(dynamicPathParamShape, {
-	ROUTER: {
-		users: {
-			ROUTER: {
-				$userId: {
-					CONTRACT: {
-						// @ts-expect-error dynamic route pathParams must not include extra keys
-						get: {
-							pathParams: z.object({
-								userId: z.string(),
-								extra: z.string(),
-							}),
-							responses: {
-								200: {
+		const middlewares = {
+			MIDDLEWARE: {
+				rateLimit: {
+					429: {
+						type: "JSON",
+						schema: z.object({ retryAfter: z.number().int() }),
+					},
+				},
+			},
+		} as const satisfies Middlewares<typeof shape>;
+
+		let contractHandlerCalled = false;
+		const app = new Hono();
+		type TestContext = { session: string };
+		initHono<typeof shape, TestContext>(app, {
+			contracts: createHonoContractHandlers<typeof shape, TestContext>(contracts, {
+				SHAPE: {
+					users: {
+						HANDLER: {
+							get: async () => {
+								contractHandlerCalled = true;
+								return {
 									type: "JSON",
-									schema: z.object({ ok: z.boolean() }),
-								},
+									status: 200,
+									data: [{ id: "never" }],
+								};
 							},
 						},
 					},
 				},
-			},
-		},
-	},
-});
-
-createContracts(nestedPathParamShape, {
-	ROUTER: {
-		users: {
-			ROUTER: {
-				$userId: {
-					ROUTER: {
-						posts: {
-							ROUTER: {
-								$postId: {
-									CONTRACT: {
-										get: {
-											pathParams: z.object({
-												userId: z.string(),
-												postId: z.string(),
-											}),
-											responses: {
-												200: {
-													type: "JSON",
-													schema: z.object({ ok: z.boolean() }),
-												},
-											},
-										},
-									},
-								},
-							},
-						},
-					},
+			}),
+			middlewares: createHonoMiddlewareHandlers<typeof shape, TestContext>(middlewares, {
+				MIDDLEWARE: {
+					rateLimit: () => ({
+						type: "JSON",
+						status: 429,
+						data: { retryAfter: Date.now() + 1000 },
+					}),
 				},
-			},
-		},
-	},
-});
-
-createContracts(nestedPathParamShape, {
-	ROUTER: {
-		users: {
-			ROUTER: {
-				$userId: {
-					ROUTER: {
-						posts: {
-							ROUTER: {
-								$postId: {
-									CONTRACT: {
-										get: {
-											// @ts-expect-error nested dynamic route must include ancestor and current path params
-											pathParams: z.object({ postId: z.string() }),
-											responses: {
-												200: {
-													type: "JSON",
-													schema: z.object({ ok: z.boolean() }),
-												},
-											},
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	},
-});
-
-createContracts(staticPathParamShape, {
-	ROUTER: {
-		users: {
-			ROUTER: {
-				register: {
-					CONTRACT: {
-						post: {
-							// @ts-expect-error static route must not define pathParams
-							pathParams: z.object({ anything: z.string() }),
-							responses: {
-								201: {
-									type: "JSON",
-									schema: z.object({ created: z.boolean() }),
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	},
-});
-
-describe("createContracts", () => {
-	test("returns the definition as-is (identity)", () => {
-		expect(contracts.ROUTER).toBeDefined();
-		expect(contracts.ROUTER.users).toBeDefined();
-		expect(contracts.ROUTER.users.ROUTER.register.CONTRACT.post).toBeDefined();
-		expect(contracts.ROUTER.health.CONTRACT.get).toBeDefined();
-	});
-
-	test("preserves contract schemas", () => {
-		const postContract = contracts.ROUTER.users.ROUTER.register.CONTRACT.post!;
-		expect(postContract.body).toBeDefined();
-		expect(postContract.responses[201]).toBeDefined();
-		expect(postContract.responses[201].type).toBe("JSON");
-	});
-
-	test("preserves nested route structure", () => {
-		const userId = contracts.ROUTER.users.ROUTER.$userId;
-		expect(userId.CONTRACT.get).toBeDefined();
-		expect(userId.ROUTER).toBeDefined();
-		expect(userId.ROUTER.posts.CONTRACT.get).toBeDefined();
-		expect(userId.ROUTER.posts.ROUTER.$postId.CONTRACT.get).toBeDefined();
-	});
-
-	test("validates contract body schemas at runtime", async () => {
-		const bodySchema = contracts.ROUTER.users.ROUTER.register.CONTRACT.post!.body!.schema;
-		const validResult = bodySchema.safeParse({
-			name: "John",
-			email: "john@example.com",
-		});
-		expect(validResult.success).toBe(true);
-
-		const invalidResult = bodySchema.safeParse({ name: 123 });
-		expect(invalidResult.success).toBe(false);
-	});
-
-	test("supports non-JSON body and response definitions", () => {
-		const multiTypeShape = {
-			ROUTER: {
-				files: {
-					CONTRACT: true,
-				},
-			},
-		} as const satisfies RouterShape;
-
-		const multiTypeContracts = createContracts(multiTypeShape, {
-			ROUTER: {
-				files: {
-					CONTRACT: {
-						post: {
-							body: {
-								type: "FormData",
-								schema: z.instanceof(FormData),
-							},
-							responses: {
-								201: {
-									type: "Blob",
-									schema: z.instanceof(Blob),
-								},
-							},
-						},
-					},
-				},
-			},
+			}),
+			errorMode: "public",
+			createContext: () => ({ session: "x" }),
 		});
 
-		expect(multiTypeContracts.ROUTER.files.CONTRACT.post?.body?.type).toBe("FormData");
-		expect(multiTypeContracts.ROUTER.files.CONTRACT.post?.responses[201].type).toBe("Blob");
+		const baseUrl = startServer(app);
+		const client = createClient<typeof shape, typeof contracts, typeof middlewares, "public">(
+			baseUrl,
+		);
+
+		type ClientResponse = Awaited<ReturnType<typeof client.fetch<"/users", "get">>>;
+		const has429Status: HasStatus<ClientResponse, 429> = true;
+		const has200Status: HasStatus<ClientResponse, 200> = true;
+		void has429Status;
+		void has200Status;
+
+		const result = await client.fetch("/users", "get");
+		expect(result.status).toBe(429);
+		expect(contractHandlerCalled).toBe(false);
+	});
+
+	test("raw fetch sees middleware serialized payload", async () => {
+		const shape = {
+			SHAPE: {
+				users: { CONTRACT: true },
+			},
+		} as const satisfies Shape;
+
+		const contracts = {
+			SHAPE: {
+				users: {
+					CONTRACT: {
+						get: {
+							responses: {
+								200: { type: "JSON", body: z.array(z.object({ id: z.string() })) },
+							},
+						},
+					},
+				},
+			},
+		} as const satisfies Contracts<typeof shape>;
+
+		const middlewares = {
+			MIDDLEWARE: {
+				lockdown: {
+					429: {
+						type: "JSON",
+						schema: z.object({ retryAfter: z.number() }),
+					},
+				},
+			},
+		} as const satisfies Middlewares<typeof shape>;
+
+		const app = new Hono();
+		type TestContext = unknown;
+		initHono<typeof shape, TestContext>(app, {
+			contracts: createHonoContractHandlers<typeof shape, TestContext>(contracts, {
+				SHAPE: {
+					users: {
+						HANDLER: {
+							get: async () => ({ type: "JSON", status: 200, data: [{ id: "1" }] }),
+						},
+					},
+				},
+			}),
+			middlewares: createHonoMiddlewareHandlers<typeof shape, TestContext>(middlewares, {
+				MIDDLEWARE: {
+					lockdown: () => ({ type: "JSON", status: 429, data: { retryAfter: 123 } }),
+				},
+			}),
+			errorMode: "public",
+			createContext: () => ({}),
+		});
+
+		const baseUrl = startServer(app);
+		const response = await fetch(`${baseUrl}/users`);
+		const parsed = await parseSerializedResponse(response);
+
+		expect(response.status).toBe(429);
+		expect(parsed.type).toBe("JSON");
+		expect(parsed.source).toBe("middleware");
+		expect(parsed.data).toEqual({ retryAfter: 123 });
 	});
 });
 
-describe("createMiddlewares", () => {
-	const middleware = createMiddlewares(contracts, {
-		MIDDLEWARE: {
-			rateLimit: {
-				429: {
-					type: "JSON",
-					schema: z.object({ retryAfter: z.number() }),
+describe("gateway proxy", () => {
+	test("gateway client proxies to upstream service", async () => {
+		const serviceShape = {
+			SHAPE: {
+				users: { CONTRACT: true },
+			},
+		} as const satisfies Shape;
+
+		const serviceContracts = {
+			SHAPE: {
+				users: {
+					CONTRACT: {
+						get: {
+							responses: {
+								200: {
+									type: "SuperJSON",
+									body: z.array(
+										z.object({ id: z.string(), createdAt: z.date() }),
+									),
+								},
+							},
+						},
+					},
 				},
 			},
-		},
-		ROUTER: {
+		} as const satisfies Contracts<typeof serviceShape>;
+
+		const serviceMiddlewares = {
+			MIDDLEWARE: {},
+		} as const satisfies Middlewares<typeof serviceShape>;
+
+		const upstreamApp = new Hono();
+		type TestContext = unknown;
+		initHono<typeof serviceShape, TestContext>(upstreamApp, {
+			contracts: createHonoContractHandlers<typeof serviceShape, TestContext>(
+				serviceContracts,
+				{
+					SHAPE: {
+						users: {
+							HANDLER: {
+								get: async () => ({
+									type: "SuperJSON",
+									status: 200,
+									data: [
+										{
+											id: "u1",
+											createdAt: new Date("2024-01-01T00:00:00.000Z"),
+										},
+									],
+								}),
+							},
+						},
+					},
+				},
+			),
+			errorMode: "public",
+			createContext: () => ({}),
+		});
+		const upstreamUrl = startServer(upstreamApp);
+
+		const gatewayShape = {
+			SHAPE: {
+				users: { CONTRACT: true },
+			},
+		} as const satisfies GatewayServiceShape<typeof serviceShape>;
+
+		const usersGateway = createGatewayService(
+			gatewayShape,
+			serviceContracts,
+			serviceMiddlewares,
+			"public",
+			upstreamUrl,
+		);
+		const services = createGatewayServices({ users: usersGateway });
+
+		const gatewayApp = new Hono();
+		initGateway(gatewayApp, services);
+		const gatewayUrl = startServer(gatewayApp);
+
+		const gatewayClient = createGatewayClient<typeof services>(gatewayUrl);
+		const users = await gatewayClient.users.fetch("/users", "get");
+
+		expect(users.status).toBe(200);
+		expect(users.type).toBe("SuperJSON");
+		expect(users.data).toEqual([{ id: "u1", createdAt: new Date("2024-01-01T00:00:00.000Z") }]);
+	});
+});
+
+const typeOnly = (_cb: () => void): void => {};
+
+typeOnly(() => {
+	const shape = {
+		SHAPE: {
 			users: {
-				ROUTER: {
-					register: {
-						MIDDLEWARE: {
-							antiBot: {
-								403: {
-									type: "JSON",
-									schema: z.object({ error: z.string() }),
+				SHAPE: {
+					$userId: { CONTRACT: true },
+				},
+			},
+		},
+	} as const satisfies Shape;
+
+	const contracts = {
+		SHAPE: {
+			users: {
+				SHAPE: {
+					$userId: {
+						CONTRACT: {
+							get: {
+								pathParams: z.object({ userId: z.string() }),
+								responses: {
+									200: { type: "JSON", body: z.object({ id: z.string() }) },
 								},
 							},
 						},
@@ -429,37 +358,37 @@ describe("createMiddlewares", () => {
 				},
 			},
 		},
-	});
+	} as const satisfies Contracts<typeof shape>;
+	void contracts;
 
-	test("returns the definition as-is (identity)", () => {
-		expect(middleware.MIDDLEWARE).toBeDefined();
-		expect(middleware.MIDDLEWARE!.rateLimit).toBeDefined();
-		expect(middleware.MIDDLEWARE!.rateLimit[429]).toBeDefined();
-	});
+	const gatewayShape = {
+		SHAPE: {
+			users: {
+				SHAPE: {
+					$userId: { CONTRACT: true },
+				},
+			},
+		},
+	} as const satisfies GatewayServiceShape<typeof shape>;
+	void gatewayShape;
 
-	test("preserves nested middleware definitions", () => {
-		const registerMw = (
-			middleware.ROUTER as Record<
-				string,
-				{ ROUTER: Record<string, { MIDDLEWARE: Record<string, unknown> }> }
-			>
-		).users.ROUTER.register.MIDDLEWARE;
-		expect(registerMw.antiBot).toBeDefined();
-	});
-
-	test("supports empty middleware (side-effect only)", () => {
-		const sideEffectMiddleware = createMiddlewares(contracts, {
-			ROUTER: {
-				health: {
-					MIDDLEWARE: {
-						analytics: {},
+	const invalidContracts = {
+		SHAPE: {
+			users: {
+				SHAPE: {
+					$userId: {
+						CONTRACT: {
+							// @ts-expect-error dynamic segment contracts require pathParams schema
+							get: {
+								responses: {
+									200: { type: "JSON", body: z.object({ id: z.string() }) },
+								},
+							},
+						},
 					},
 				},
 			},
-		});
-		expect(
-			(sideEffectMiddleware.ROUTER as Record<string, Record<string, unknown>>).health
-				.MIDDLEWARE,
-		).toBeDefined();
-	});
+		},
+	} as const satisfies Contracts<typeof shape>;
+	void invalidContracts;
 });

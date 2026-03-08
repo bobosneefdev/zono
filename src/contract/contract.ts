@@ -1,68 +1,144 @@
 import type {
+	CompiledContractRoute,
 	Contract,
-	ContractMethodMap,
-	ContractResponses,
-	RouterShape,
-} from "~/contract/contract.types.js";
-import type {
-	ContractDefinition,
-	MergeContractResponsesMany,
-	ValidateContractDefinition,
-} from "~/contract/contract.util.js";
-import { getContractMethods, isContractNode, isRecord, isRouterNode } from "~/internal/util.js";
+	ContractBodySchema,
+	ContractHeadersSchema,
+	ContractMethodDefinition,
+	ContractQuerySchema,
+	ContractsTree,
+	HTTPMethod,
+	RuntimeResponseSchema,
+} from "./contract.types.js";
 
-function validateContractNode(node: unknown): void {
-	if (!isRecord(node)) {
-		return;
+const ensureSlashPath = (path: string): string => {
+	if (path.length === 0) {
+		return "/";
 	}
+	return path.startsWith("/") ? path : `/${path}`;
+};
 
-	if (isContractNode(node)) {
-		const contractMap = node.CONTRACT as ContractMethodMap;
-		for (const method of getContractMethods(contractMap)) {
-			const contract = contractMap[method] as Contract | undefined;
-			if (!contract) continue;
+const joinPath = (prefix: string, segment: string): string => {
+	const normalizedPrefix = prefix === "/" ? "" : prefix;
+	return ensureSlashPath(`${normalizedPrefix}/${segment}`.replace(/\/+/g, "/"));
+};
 
-			for (const response of Object.values(contract.responses)) {
-				void response;
+const toHonoPath = (pathTemplate: string): string => {
+	return pathTemplate.replace(/\$([a-zA-Z0-9_]+)/g, (_raw: string, paramName: string) => {
+		return `:${paramName}`;
+	});
+};
+
+const isHTTPMethod = (value: string): value is HTTPMethod => {
+	return (
+		value === "get" ||
+		value === "post" ||
+		value === "put" ||
+		value === "delete" ||
+		value === "patch" ||
+		value === "options" ||
+		value === "head"
+	);
+};
+
+export const compileContractRoutes = <TContracts extends ContractsTree>(
+	contracts: TContracts,
+): Array<CompiledContractRoute> => {
+	const routes: Array<CompiledContractRoute> = [];
+
+	const walk = (node: unknown, pathPrefix: string): void => {
+		if (!node || typeof node !== "object") {
+			return;
+		}
+		const nodeRecord = node as Record<string, unknown>;
+		const contractNode = nodeRecord.CONTRACT;
+		if (contractNode && typeof contractNode === "object") {
+			for (const [candidateMethod, candidateMethodDefinition] of Object.entries(
+				contractNode,
+			)) {
+				if (!isHTTPMethod(candidateMethod)) {
+					continue;
+				}
+				if (!candidateMethodDefinition || typeof candidateMethodDefinition !== "object") {
+					continue;
+				}
+				routes.push({
+					pathTemplate: ensureSlashPath(pathPrefix),
+					honoPath: toHonoPath(ensureSlashPath(pathPrefix)),
+					method: candidateMethod,
+					methodDefinition: candidateMethodDefinition as ContractMethodDefinition,
+				});
 			}
 		}
-	}
 
-	if (isRouterNode(node)) {
-		for (const child of Object.values(node.ROUTER)) {
-			validateContractNode(child);
+		const shapeNode = nodeRecord.SHAPE;
+		if (!shapeNode || typeof shapeNode !== "object") {
+			return;
+		}
+		for (const [segment, childNode] of Object.entries(shapeNode)) {
+			walk(childNode, joinPath(pathPrefix, segment));
+		}
+	};
+
+	walk(contracts, "");
+	return routes;
+};
+
+export const getContractRequestParsers = (
+	methodDefinition: ContractMethodDefinition,
+): {
+	pathParams?: ContractMethodDefinition["pathParams"];
+	query?: ContractQuerySchema;
+	body?: ContractBodySchema;
+	headers?: ContractHeadersSchema;
+} => {
+	return {
+		pathParams: methodDefinition.pathParams,
+		query: methodDefinition.query,
+		body: methodDefinition.body,
+		headers: methodDefinition.headers,
+	};
+};
+
+export const getContractResponseSchema = (
+	methodDefinition: ContractMethodDefinition,
+	status: number,
+): RuntimeResponseSchema | undefined => {
+	return methodDefinition.responses[status];
+};
+
+export const validateContractResponseType = (
+	responseSchema: RuntimeResponseSchema,
+	type: string,
+): boolean => {
+	return responseSchema.type === type;
+};
+
+export const getRuntimeResponseSchemaParser = (
+	responseSchema: RuntimeResponseSchema,
+): import("zod").ZodTypeAny | undefined => {
+	if ("schema" in responseSchema) {
+		return responseSchema.schema;
+	}
+	if ("body" in responseSchema) {
+		return responseSchema.body;
+	}
+	return undefined;
+};
+
+export const isContractLike = (value: unknown): value is Contract => {
+	if (!value || typeof value !== "object") {
+		return false;
+	}
+	for (const [key, methodDefinition] of Object.entries(value as Record<string, unknown>)) {
+		if (!isHTTPMethod(key)) {
+			return false;
+		}
+		if (
+			methodDefinition !== undefined &&
+			(typeof methodDefinition !== "object" || methodDefinition === null)
+		) {
+			return false;
 		}
 	}
-}
-
-/**
- * Creates a type-safe contract definition matching the given router shape.
- * @param _shape - The router shape used for type inference only
- * @param definition - The contract definition
- * @returns The validated contract definition
- */
-export function createContracts<
-	const TShape extends RouterShape,
-	const TDef extends ContractDefinition<TShape>,
->(_shape: TShape, definition: TDef & ValidateContractDefinition<TShape, TDef>): TDef {
-	validateContractNode(definition);
-	return definition;
-}
-
-/**
- * Merges multiple contract response maps into a single map.
- * Responses for the same status code are combined into a union type.
- * @param responses - Array of response maps to merge
- * @returns Merged response map
- */
-export function mergeContractResponses<const TResponses extends ReadonlyArray<ContractResponses>>(
-	...responses: TResponses
-): MergeContractResponsesMany<TResponses> {
-	const merged: ContractResponses = {};
-
-	for (const responseMap of responses) {
-		Object.assign(merged, responseMap);
-	}
-
-	return merged as MergeContractResponsesMany<TResponses>;
-}
+	return true;
+};

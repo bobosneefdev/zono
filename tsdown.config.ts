@@ -4,11 +4,12 @@ export default defineConfig({
 	format: "esm",
 	dts: true,
 	entry: {
-		contract: "src/contract/index.ts",
-		middleware: "src/middleware/index.ts",
 		client: "src/client/index.ts",
-		hono: "src/hono/index.ts",
-		"hono-gateway": "src/hono_gateway/index.ts",
+		contract: "src/contract/index.ts",
+		gateway: "src/gateway/index.ts",
+		middleware: "src/middleware/index.ts",
+		server: "src/server/index.ts",
+		shared: "src/shared/index.ts",
 	},
 	deps: {
 		skipNodeModulesBundle: true,

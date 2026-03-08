@@ -1,18 +1,104 @@
-import type { StrictBuilderInput } from "~/internal/util.types.js";
-import type { MiddlewaresDefinition } from "~/middleware/middleware.types.js";
+import type { Context } from "hono";
+import { getRuntimeResponseSchemaParser } from "../contract/contract.js";
+import type { BoundMiddlewareHandlers, RuntimeHandlerResponse } from "../server/server.types.js";
+import { createSerializedResponse } from "../shared/shared.js";
+import type { MiddlewareDefinition, MiddlewareResponseSchema } from "./middleware.types.js";
 
-/**
- * Creates a type-safe middlewares definition matching a contract definition.
- * @param _contracts - Contract definition (used for type inference only)
- * @param definition - Middlewares definition with response contracts
- * @returns The middlewares definition with type validation
- */
-export function createMiddlewares<
-	const TContracts,
-	const TDef extends MiddlewaresDefinition<TContracts>,
+const getMiddlewareSchemaAtStatus = (
+	definition: MiddlewareDefinition,
+	status: number,
+): MiddlewareResponseSchema | undefined => {
+	return definition[status];
+};
+
+const validateMiddlewareResponse = (
+	definition: MiddlewareDefinition,
+	response: RuntimeHandlerResponse,
+): void => {
+	const schema = getMiddlewareSchemaAtStatus(definition, response.status);
+	if (!schema) {
+		throw new Error(`Middleware returned undeclared status: ${response.status}`);
+	}
+	if (schema.type !== response.type) {
+		throw new Error(
+			`Middleware returned mismatched response type. Expected ${schema.type}, received ${response.type}`,
+		);
+	}
+	const parser = getRuntimeResponseSchemaParser(schema);
+	if (!parser) {
+		return;
+	}
+	const parseResult = parser.safeParse(response.data);
+	if (!parseResult.success) {
+		throw new Error("Middleware response data validation failed");
+	}
+};
+
+export const createHonoMiddlewareHandlers = <
+	TShape extends import("../shared/shared.types.js").Shape,
+	TContext = unknown,
 >(
-	_contracts: TContracts,
-	definition: StrictBuilderInput<MiddlewaresDefinition<TContracts>, TDef>,
-): TDef {
-	return definition;
-}
+	middlewares: BoundMiddlewareHandlers<TShape, TContext>["middlewares"],
+	handlers: BoundMiddlewareHandlers<TShape, TContext>["handlers"],
+): BoundMiddlewareHandlers<TShape, TContext> => {
+	return {
+		middlewares,
+		handlers,
+	};
+};
+
+export const runMiddlewareHandlers = async <
+	TShape extends import("../shared/shared.types.js").Shape,
+	TContext,
+>(
+	ctx: Context,
+	ourContext: TContext,
+	boundMiddlewares: BoundMiddlewareHandlers<TShape, TContext>,
+	resolveTerminal: () => Promise<Response>,
+): Promise<Response> => {
+	const middlewareNames = Object.keys(boundMiddlewares.middlewares.MIDDLEWARE);
+
+	const dispatch = async (index: number): Promise<Response> => {
+		if (index >= middlewareNames.length) {
+			return resolveTerminal();
+		}
+
+		const middlewareName = middlewareNames[index];
+		const definition = boundMiddlewares.middlewares.MIDDLEWARE[middlewareName];
+		const handler = boundMiddlewares.handlers.MIDDLEWARE[middlewareName];
+
+		let nextResult: Response | undefined;
+		const returned = await handler(
+			ctx,
+			async () => {
+				nextResult = await dispatch(index + 1);
+			},
+			ourContext,
+		);
+
+		if (returned !== undefined) {
+			const normalized: RuntimeHandlerResponse = {
+				status: returned.status,
+				type: returned.type,
+				data: returned.data,
+				headers: undefined,
+			};
+			validateMiddlewareResponse(definition, normalized);
+			return createSerializedResponse({
+				status: normalized.status,
+				type: normalized.type,
+				data: normalized.data,
+				headers: normalized.headers,
+				source: "middleware",
+			});
+		}
+
+		if (nextResult) {
+			return nextResult;
+		}
+
+		return resolveTerminal();
+	};
+
+	return dispatch(0);
+};
