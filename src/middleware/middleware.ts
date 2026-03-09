@@ -2,12 +2,12 @@ import type { Context } from "hono";
 import type { ResponseSpec } from "../contract/contract.js";
 import type {
 	MiddlewareBindings,
+	MiddlewareHandler,
 	MiddlewareHandlerTree,
 	RuntimeHandlerResponse,
 } from "../server/server.js";
-import { validateResponseAgainstStatusMap } from "../shared/shared.internal.js";
+import { validateAndSerializeResponse } from "../shared/shared.internal.js";
 import type { ApiShape, InferSchemaData, StatusMapToResponseUnion } from "../shared/shared.js";
-import { createSerializedResponse } from "../shared/shared.js";
 
 declare const MIDDLEWARE_SHAPE_BRAND: unique symbol;
 
@@ -62,6 +62,38 @@ export const createHonoMiddlewareHandlers = <
 	};
 };
 
+type PreparedMiddlewareEntry<TContext> = {
+	definition: MiddlewareSpec;
+	handler: MiddlewareHandler<MiddlewareSpec, TContext>;
+};
+
+const middlewareEntryCache = new WeakMap<object, Array<PreparedMiddlewareEntry<unknown>>>();
+
+const getPreparedMiddlewareEntries = <TMiddlewares extends MiddlewareTreeFor<ApiShape>, TContext>(
+	boundMiddlewares: MiddlewareBindings<TMiddlewares, TContext>,
+): Array<PreparedMiddlewareEntry<TContext>> => {
+	const cachedEntries = middlewareEntryCache.get(boundMiddlewares as object);
+	if (cachedEntries) {
+		return cachedEntries as Array<PreparedMiddlewareEntry<TContext>>;
+	}
+
+	const entries: Array<PreparedMiddlewareEntry<TContext>> = [];
+	for (const middlewareName of Object.keys(boundMiddlewares.middlewares.MIDDLEWARE)) {
+		const definition = boundMiddlewares.middlewares.MIDDLEWARE[middlewareName];
+		const handler = boundMiddlewares.handlers.MIDDLEWARE[middlewareName];
+		entries.push({
+			definition,
+			handler: handler as MiddlewareHandler<MiddlewareSpec, TContext>,
+		});
+	}
+
+	middlewareEntryCache.set(
+		boundMiddlewares as object,
+		entries as Array<PreparedMiddlewareEntry<unknown>>,
+	);
+	return entries;
+};
+
 export const runMiddlewareHandlers = async <
 	TMiddlewares extends MiddlewareTreeFor<ApiShape>,
 	TContext,
@@ -71,16 +103,14 @@ export const runMiddlewareHandlers = async <
 	boundMiddlewares: MiddlewareBindings<TMiddlewares, TContext>,
 	resolveTerminal: () => Promise<Response>,
 ): Promise<Response> => {
-	const middlewareNames = Object.keys(boundMiddlewares.middlewares.MIDDLEWARE);
+	const middlewareEntries = getPreparedMiddlewareEntries(boundMiddlewares);
 
 	const dispatch = async (index: number): Promise<Response> => {
-		if (index >= middlewareNames.length) {
+		if (index >= middlewareEntries.length) {
 			return resolveTerminal();
 		}
 
-		const middlewareName = middlewareNames[index];
-		const definition = boundMiddlewares.middlewares.MIDDLEWARE[middlewareName];
-		const handler = boundMiddlewares.handlers.MIDDLEWARE[middlewareName];
+		const { definition, handler } = middlewareEntries[index];
 
 		let nextResult: Response | undefined;
 		const returned = await handler(
@@ -98,14 +128,7 @@ export const runMiddlewareHandlers = async <
 				data: returned.data,
 				headers: undefined,
 			};
-			validateResponseAgainstStatusMap(definition, normalized, "Middleware");
-			return createSerializedResponse({
-				status: normalized.status,
-				type: normalized.type,
-				data: normalized.data,
-				headers: normalized.headers,
-				source: "middleware",
-			});
+			return validateAndSerializeResponse(definition, normalized, "Middleware", "middleware");
 		}
 
 		if (nextResult) {

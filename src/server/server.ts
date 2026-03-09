@@ -26,9 +26,10 @@ import {
 	parseQueryInput,
 	type RuntimeResponseLike,
 	registerHonoRoute,
-	validateResponseAgainstStatusMap,
+	toSerializedRuntimeResponse,
+	validateAndSerializeResponse,
 } from "../shared/shared.internal.js";
-import { type ApiShape, createSerializedResponse } from "../shared/shared.js";
+import { type ApiShape } from "../shared/shared.js";
 
 export type ContextFactory<T = unknown> = (ctx: Context) => Promise<T> | T;
 
@@ -282,11 +283,10 @@ const makeErrorResponse = (error: unknown, errorMode: ErrorMode): RuntimeHandler
 	};
 };
 
-const getHandlerAtPath = (
+const getHandlerNodeAtPath = (
 	handlersRoot: unknown,
 	pathTemplate: string,
-	method: string,
-): ((...args: Array<unknown>) => unknown) => {
+): Record<string, unknown> => {
 	const current = findExactShapePathNode(
 		handlersRoot,
 		pathTemplate,
@@ -298,11 +298,24 @@ const getHandlerAtPath = (
 		throw new Error(`Missing HANDLER node at ${pathTemplate}`);
 	}
 
-	const handler = current.HANDLER[method];
-	if (typeof handler !== "function") {
-		throw new Error(`Missing ${method} handler at ${pathTemplate}`);
-	}
+	return current.HANDLER;
+};
 
+type PreparedContractRoute = {
+	pathTemplate: string;
+	method: HTTPMethod;
+	methodDefinition: ContractMethod;
+	handlerNode: Record<string, unknown>;
+	requestParsers: ReturnType<typeof getContractRequestParsers>;
+};
+
+const getPreparedHandler = (
+	route: PreparedContractRoute,
+): ((...args: Array<unknown>) => unknown) => {
+	const handler = route.handlerNode[route.method];
+	if (typeof handler !== "function") {
+		throw new Error(`Missing ${route.method} handler at ${route.pathTemplate}`);
+	}
 	return handler as (...args: Array<unknown>) => unknown;
 };
 
@@ -319,125 +332,116 @@ export const createHonoContractHandlers = <
 	};
 };
 
+const EMPTY_REQUEST_DATA: Record<string, never> = {};
+
+const parseRequestData = async (
+	ctx: Context,
+	requestParsers: ReturnType<typeof getContractRequestParsers>,
+): Promise<Record<string, unknown>> => {
+	if (
+		!requestParsers.pathParams &&
+		!requestParsers.query &&
+		!requestParsers.headers &&
+		!requestParsers.body
+	) {
+		return EMPTY_REQUEST_DATA;
+	}
+
+	const inputData: Record<string, unknown> = {};
+
+	if (requestParsers.pathParams) {
+		const pathParseResult = await requestParsers.pathParams.safeParseAsync(ctx.req.param());
+		if (!pathParseResult.success) {
+			throw createRequestValidationError("Path params", pathParseResult.error.issues);
+		}
+		inputData.pathParams = pathParseResult.data;
+	}
+
+	if (requestParsers.query) {
+		let queryInput: unknown;
+		try {
+			queryInput = parseQueryInput(requestParsers.query, new URL(ctx.req.url));
+		} catch (error) {
+			throw createRequestValidationError("Query", [createParseFailureIssue(error)]);
+		}
+		const queryParseResult = await requestParsers.query.query.safeParseAsync(queryInput);
+		if (!queryParseResult.success) {
+			throw createRequestValidationError("Query", queryParseResult.error.issues);
+		}
+		inputData.query = queryParseResult.data;
+	}
+
+	if (requestParsers.headers) {
+		let headersInput: unknown;
+		try {
+			headersInput = parseHeadersInput(requestParsers.headers, ctx.req.raw.headers);
+		} catch (error) {
+			throw createRequestValidationError("Headers", [createParseFailureIssue(error)]);
+		}
+		const headersParseResult =
+			await requestParsers.headers.headers.safeParseAsync(headersInput);
+		if (!headersParseResult.success) {
+			throw createRequestValidationError("Headers", headersParseResult.error.issues);
+		}
+		inputData.headers = headersParseResult.data;
+	}
+
+	if (requestParsers.body) {
+		let bodyInput: unknown;
+		try {
+			bodyInput = await parseBodyInput(requestParsers.body, ctx.req.raw);
+		} catch (error) {
+			throw createRequestValidationError("Body", [createParseFailureIssue(error)]);
+		}
+		const bodyParseResult = await requestParsers.body.body.safeParseAsync(bodyInput);
+		if (!bodyParseResult.success) {
+			throw createRequestValidationError("Body", bodyParseResult.error.issues);
+		}
+		inputData.body = bodyParseResult.data;
+	}
+
+	return inputData;
+};
+
 export const initHono = <TShape extends ApiShape, TContext = unknown>(
 	app: Hono,
 	options: ServerOptions<TShape, TContext>,
 ): void => {
 	app.notFound(() => {
-		const notFoundResponse = makeNotFoundResponse();
-		return createSerializedResponse({
-			status: notFoundResponse.status,
-			type: notFoundResponse.type,
-			data: notFoundResponse.data,
-			source: "error",
-		});
+		return toSerializedRuntimeResponse(makeNotFoundResponse(), "error");
 	});
 
-	const compiledRoutes = compileContractRoutes(options.contracts.contracts);
+	const preparedRoutes: Array<PreparedContractRoute> = compileContractRoutes(
+		options.contracts.contracts,
+	).map((route) => {
+		return {
+			pathTemplate: route.pathTemplate,
+			method: route.method,
+			methodDefinition: route.methodDefinition,
+			handlerNode: getHandlerNodeAtPath(options.contracts.handlers, route.pathTemplate),
+			requestParsers: getContractRequestParsers(route.methodDefinition),
+		};
+	});
 
-	for (const route of compiledRoutes) {
+	for (const route of preparedRoutes) {
 		registerHonoRoute(app, route.method, route.pathTemplate, async (ctx): Promise<Response> => {
 			const ourContext = await options.createContext(ctx);
 
 			const executeHandler = async (): Promise<Response> => {
-				const handler = getHandlerAtPath(
-					options.contracts.handlers,
-					route.pathTemplate,
-					route.method,
-				);
-				const requestParsers = getContractRequestParsers(route.methodDefinition);
-				const inputData: Record<string, unknown> = {};
-
-				if (requestParsers.pathParams) {
-					const pathParseResult = await requestParsers.pathParams.safeParseAsync(
-						ctx.req.param(),
-					);
-					if (!pathParseResult.success) {
-						throw createRequestValidationError(
-							"Path params",
-							pathParseResult.error.issues,
-						);
-					}
-					inputData.pathParams = pathParseResult.data;
-				}
-
-				if (requestParsers.query) {
-					let queryInput: unknown;
-					try {
-						queryInput = parseQueryInput(requestParsers.query, new URL(ctx.req.url));
-					} catch (error) {
-						throw createRequestValidationError("Query", [
-							createParseFailureIssue(error),
-						]);
-					}
-					const queryParseResult =
-						await requestParsers.query.query.safeParseAsync(queryInput);
-					if (!queryParseResult.success) {
-						throw createRequestValidationError("Query", queryParseResult.error.issues);
-					}
-					inputData.query = queryParseResult.data;
-				}
-
-				if (requestParsers.headers) {
-					let headersInput: unknown;
-					try {
-						headersInput = parseHeadersInput(
-							requestParsers.headers,
-							ctx.req.raw.headers,
-						);
-					} catch (error) {
-						throw createRequestValidationError("Headers", [
-							createParseFailureIssue(error),
-						]);
-					}
-					const headersParseResult =
-						await requestParsers.headers.headers.safeParseAsync(headersInput);
-					if (!headersParseResult.success) {
-						throw createRequestValidationError(
-							"Headers",
-							headersParseResult.error.issues,
-						);
-					}
-					inputData.headers = headersParseResult.data;
-				}
-
-				if (requestParsers.body) {
-					let bodyInput: unknown;
-					try {
-						bodyInput = await parseBodyInput(requestParsers.body, ctx.req.raw);
-					} catch (error) {
-						throw createRequestValidationError("Body", [
-							createParseFailureIssue(error),
-						]);
-					}
-					const bodyParseResult =
-						await requestParsers.body.body.safeParseAsync(bodyInput);
-					if (!bodyParseResult.success) {
-						throw createRequestValidationError("Body", bodyParseResult.error.issues);
-					}
-					inputData.body = bodyParseResult.data;
-				}
-
+				const handler = getPreparedHandler(route);
+				const inputData = await parseRequestData(ctx, route.requestParsers);
 				const rawResponse = await handler(inputData, ctx, ourContext);
 				const normalizedResponse: RuntimeHandlerResponse = {
 					status: (rawResponse as { status: number }).status,
 					type: (rawResponse as { type: RuntimeHandlerResponse["type"] }).type,
 					data: (rawResponse as { data: unknown }).data,
 				};
-
-				validateResponseAgainstStatusMap(
+				return validateAndSerializeResponse(
 					route.methodDefinition.responses,
 					normalizedResponse,
 					"Handler",
+					"contract",
 				);
-
-				return createSerializedResponse({
-					status: normalizedResponse.status,
-					type: normalizedResponse.type,
-					data: normalizedResponse.data,
-					headers: normalizedResponse.headers,
-					source: "contract",
-				});
 			};
 
 			try {
@@ -451,13 +455,10 @@ export const initHono = <TShape extends ApiShape, TContext = unknown>(
 				}
 				return await executeHandler();
 			} catch (error) {
-				const errorResponse = makeErrorResponse(error, options.errorMode);
-				return createSerializedResponse({
-					status: errorResponse.status,
-					type: errorResponse.type,
-					data: errorResponse.data,
-					source: "error",
-				});
+				return toSerializedRuntimeResponse(
+					makeErrorResponse(error, options.errorMode),
+					"error",
+				);
 			}
 		});
 	}

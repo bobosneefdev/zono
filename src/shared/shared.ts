@@ -27,11 +27,13 @@ export type IsDynamicSegment<TKey extends string> = TKey extends DynamicSegmentK
 
 export type EmptyObject = Record<never, never>;
 
-export type Expand<T> = T extends (...args: Array<unknown>) => unknown
+export type Prettify<T> = T extends (...args: Array<unknown>) => unknown
 	? T
 	: {
 			[Key in keyof T]: T[Key];
 		};
+
+export type Expand<T> = Prettify<T>;
 
 export type ExpandUnion<T> = T extends unknown ? Expand<T> : never;
 
@@ -94,31 +96,32 @@ export const interpolatePathTemplate = (
 	});
 };
 
-export const appendQueryParams = (url: URL, query?: Record<string, unknown>): void => {
-	if (!query) {
+const encodeStructuredValue = (value: unknown): string => {
+	return typeof value === "string" ? value : JSON.stringify(value);
+};
+
+const appendEncodedEntries = (
+	target: { set: (key: string, value: string) => void },
+	values?: Record<string, unknown>,
+): void => {
+	if (!values) {
 		return;
 	}
-	for (const [key, value] of Object.entries(query)) {
+	for (const [key, value] of Object.entries(values)) {
 		if (value === undefined) {
 			continue;
 		}
-		const encoded = typeof value === "string" ? value : JSON.stringify(value);
-		url.searchParams.set(key, encoded);
+		target.set(key, encodeStructuredValue(value));
 	}
+};
+
+export const appendQueryParams = (url: URL, query?: Record<string, unknown>): void => {
+	appendEncodedEntries(url.searchParams, query);
 };
 
 export const normalizeHeaderValues = (headers?: Record<string, unknown>): Headers => {
 	const output = new Headers();
-	if (!headers) {
-		return output;
-	}
-	for (const [key, value] of Object.entries(headers)) {
-		if (value === undefined) {
-			continue;
-		}
-		const encoded = typeof value === "string" ? value : JSON.stringify(value);
-		output.set(key, encoded);
-	}
+	appendEncodedEntries(output, headers);
 	return output;
 };
 
@@ -199,10 +202,7 @@ export const createSerializedResponse = (args: {
 			if (!(args.data instanceof Uint8Array)) {
 				throw new Error("Bytes response type requires Uint8Array instance");
 			}
-			return new Response(new Blob([new Uint8Array(Array.from(args.data))]), {
-				status: args.status,
-				headers,
-			});
+			return new Response(args.data.slice(), { status: args.status, headers });
 		}
 	}
 };

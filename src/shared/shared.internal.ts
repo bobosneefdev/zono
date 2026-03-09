@@ -1,8 +1,11 @@
 import superjson from "superjson";
 import type { ZodTypeAny } from "zod";
 import {
+	createSerializedResponse,
 	getRequestHeadersObject,
 	getRequestQueryObject,
+	type Prettify,
+	type SerializedResponseSource,
 	type SerializedResponseType,
 	toHonoPath,
 } from "./shared.js";
@@ -25,12 +28,6 @@ type ResponseSpecLike = {
 	type: SerializedResponseType;
 	schema?: ZodTypeAny;
 };
-
-export type Prettify<Type> = Type extends (...args: Array<unknown>) => unknown
-	? Type
-	: {
-			[Key in keyof Type]: Type[Key];
-		};
 
 export type HumanReadableFetchResponse<TResponse> = TResponse extends {
 	status: infer TStatus;
@@ -193,23 +190,28 @@ const parseStructuredDataValue = (spec: StructuredDataSpec, value: string): unkn
 	return JSON.parse(value);
 };
 
+const parseStructuredRecordInput = (
+	spec: StructuredDataSpec,
+	rawRecord: Record<string, string | undefined>,
+): Record<string, unknown> | Record<string, string | undefined> => {
+	if (spec.type === "Standard") {
+		return rawRecord;
+	}
+
+	const parsedRecord: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(rawRecord)) {
+		parsedRecord[key] = value === undefined ? undefined : parseStructuredDataValue(spec, value);
+	}
+	return parsedRecord;
+};
+
 export const parseQueryInput = (
 	querySpec: {
 		type: "Standard" | "JSON" | "SuperJSON";
 	},
 	requestUrl: URL,
 ): unknown => {
-	const baseQuery = getRequestQueryObject(requestUrl);
-	if (querySpec.type === "Standard") {
-		return baseQuery;
-	}
-
-	const parsedQuery: Record<string, unknown> = {};
-	for (const [key, value] of Object.entries(baseQuery)) {
-		parsedQuery[key] =
-			value === undefined ? undefined : parseStructuredDataValue(querySpec, value);
-	}
-	return parsedQuery;
+	return parseStructuredRecordInput(querySpec, getRequestQueryObject(requestUrl));
 };
 
 export const parseHeadersInput = (
@@ -218,17 +220,7 @@ export const parseHeadersInput = (
 	},
 	headers: Headers,
 ): unknown => {
-	const rawHeaders = getRequestHeadersObject(headers);
-	if (headersSpec.type === "Standard") {
-		return rawHeaders;
-	}
-
-	const parsedHeaders: Record<string, unknown> = {};
-	for (const [key, value] of Object.entries(rawHeaders)) {
-		parsedHeaders[key] =
-			value === undefined ? undefined : parseStructuredDataValue(headersSpec, value);
-	}
-	return parsedHeaders;
+	return parseStructuredRecordInput(headersSpec, getRequestHeadersObject(headers));
 };
 
 export const parseBodyInput = async (
@@ -263,4 +255,27 @@ export const registerHonoRoute = (
 	handler: (ctx: import("hono").Context) => Promise<Response>,
 ): void => {
 	app.on(method.toUpperCase(), toHonoPath(pathTemplate), handler);
+};
+
+export const toSerializedRuntimeResponse = (
+	response: RuntimeResponseLike,
+	source: SerializedResponseSource,
+): Response => {
+	return createSerializedResponse({
+		status: response.status,
+		type: response.type,
+		data: response.data,
+		headers: response.headers,
+		source,
+	});
+};
+
+export const validateAndSerializeResponse = (
+	statusMap: Record<number, ResponseSpecLike>,
+	response: RuntimeResponseLike,
+	label: string,
+	source: SerializedResponseSource,
+): Response => {
+	validateResponseAgainstStatusMap(statusMap, response, label);
+	return toSerializedRuntimeResponse(response, source);
 };

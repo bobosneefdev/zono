@@ -138,6 +138,20 @@ describe("shared serialized response", () => {
 		expect((parsedFormData.data as FormData).get("name")).toBe("zono");
 	});
 
+	test("Bytes response roundtrip preserves subarray boundaries", async () => {
+		const fullBytes = new Uint8Array([0, 1, 2, 3]);
+		const response = createSerializedResponse({
+			status: 200,
+			type: "Bytes",
+			data: fullBytes.subarray(1, 3),
+			source: "contract",
+		});
+		const parsed = await parseSerializedResponse(response);
+
+		expect(parsed.type).toBe("Bytes");
+		expect(Array.from(parsed.data as Uint8Array)).toEqual([1, 2]);
+	});
+
 	test("parseSerializedResponse infers source/type fallbacks", async () => {
 		const plainText = new Response("hello", {
 			headers: { "content-type": "text/plain" },

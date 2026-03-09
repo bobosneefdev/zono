@@ -310,6 +310,72 @@ describe("server runtime", () => {
 		expect((privateBoomParsed.data as { message: string }).message).toBe("boom");
 		expect(privateBoomParsed.data).toHaveProperty("stack");
 	});
+
+	test("prepared routes still read the current handler from the resolved handler node", async () => {
+		const app = new Hono();
+		const mutableHandlers: ContractHandlerTree<typeof contracts, unknown> = {
+			SHAPE: {
+				json: {
+					HANDLER: {
+						post: () => ({ status: 200, type: "JSON", data: { ok: true } }),
+					},
+				},
+				query: {
+					HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
+				},
+				headers: {
+					HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
+				},
+				text: { HANDLER: { post: () => ({ status: 200, type: "Text", data: "ok" }) } },
+				blob: {
+					HANDLER: {
+						post: () => ({
+							status: 200,
+							type: "Bytes",
+							data: new Uint8Array([1, 2, 3]),
+						}),
+					},
+				},
+				form: {
+					HANDLER: { post: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
+				},
+				urlencoded: {
+					HANDLER: { post: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
+				},
+				middleware: {
+					HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
+				},
+				boom: {
+					HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
+				},
+			},
+		};
+
+		initHono<typeof shape, unknown>(app, {
+			contracts: createHonoContractHandlers<typeof contracts, unknown>(
+				contracts,
+				mutableHandlers,
+			),
+			errorMode: "public",
+			createContext: () => ({}),
+		});
+
+		mutableHandlers.SHAPE.json.HANDLER.post = () => ({
+			status: 200,
+			type: "JSON",
+			data: { ok: false },
+		});
+
+		const response = await fetch(`${startServer(app)}/json`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ name: "alice" }),
+		});
+		const parsed = await parseSerializedResponse(response);
+
+		expect(response.status).toBe(200);
+		expect(parsed.data).toEqual({ ok: false });
+	});
 });
 
 const typed = createHonoContractHandlers<typeof contracts, { requestId: string }>(contracts, {

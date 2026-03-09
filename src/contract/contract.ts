@@ -47,28 +47,31 @@ export type PathParamsFor<TDynamicPaths extends string> = z.ZodType<
 	Record<TDynamicPaths, string>
 >;
 
+type SchemaCarrier<TType extends string, TKey extends string, TOutput, TInput = TOutput> = {
+	type: TType;
+} & {
+	[K in TKey]: z.ZodType<TOutput, TInput>;
+};
+
 export type HeadersSpec = StandardHeadersSpec | JSONHeadersSpec | SuperJSONHeadersSpec;
 
-export type StandardHeadersSpec = {
-	type: "Standard";
-	headers: z.ZodType<Record<string, string | undefined>, Record<string, string | undefined>>;
-};
+export type StandardHeadersSpec = SchemaCarrier<
+	"Standard",
+	"headers",
+	Record<string, string | undefined>
+>;
 
-export type JSONHeadersSpec = {
-	type: "JSON";
-	headers: z.ZodType<
-		Record<string, JSONValue | undefined>,
-		Record<string, JSONValue | undefined>
-	>;
-};
+export type JSONHeadersSpec = SchemaCarrier<
+	"JSON",
+	"headers",
+	Record<string, JSONValue | undefined>
+>;
 
-export type SuperJSONHeadersSpec = {
-	type: "SuperJSON";
-	headers: z.ZodType<
-		Record<string, SuperJSONValue | undefined>,
-		Record<string, SuperJSONValue | undefined>
-	>;
-};
+export type SuperJSONHeadersSpec = SchemaCarrier<
+	"SuperJSON",
+	"headers",
+	Record<string, SuperJSONValue | undefined>
+>;
 
 export type ResponseSchema = {
 	headers?: HeadersSpec;
@@ -84,60 +87,38 @@ export type ResponseSchema = {
 
 export type ResponseSpec = ResponseSchema;
 
-export type JSONResponseSpec = {
-	type: "JSON";
-	schema: z.ZodType<JSONValue, unknown>;
-};
+export type JSONResponseSpec = SchemaCarrier<"JSON", "schema", JSONValue, unknown>;
 
-export type SuperJSONResponseSpec = {
-	type: "SuperJSON";
-	schema: z.ZodType<SuperJSONValue, unknown>;
-};
+export type SuperJSONResponseSpec = SchemaCarrier<"SuperJSON", "schema", SuperJSONValue, unknown>;
 
-export type TextResponseSpec = {
-	type: "Text";
-	schema: z.ZodType<string, unknown>;
-};
+export type TextResponseSpec = SchemaCarrier<"Text", "schema", string, unknown>;
 
 export type ContentlessResponseSpec = {
 	type: "Contentless";
 	schema?: undefined;
 };
 
-export type FormDataResponseSpec = {
-	type: "FormData";
-	schema: z.ZodType<FormData, unknown>;
-};
+export type FormDataResponseSpec = SchemaCarrier<"FormData", "schema", FormData, unknown>;
 
-export type BlobResponseSpec = {
-	type: "Blob";
-	schema: z.ZodType<Blob, unknown>;
-};
+export type BlobResponseSpec = SchemaCarrier<"Blob", "schema", Blob, unknown>;
 
-export type BytesResponseSpec = {
-	type: "Bytes";
-	schema: z.ZodType<Uint8Array, unknown>;
-};
+export type BytesResponseSpec = SchemaCarrier<"Bytes", "schema", Uint8Array, unknown>;
 
 export type QuerySpec = StandardQuerySpec | JSONQuerySpec | SuperJSONQuerySpec;
 
-export type StandardQuerySpec = {
-	type: "Standard";
-	query: z.ZodType<Record<string, string | undefined>, Record<string, string | undefined>>;
-};
+export type StandardQuerySpec = SchemaCarrier<
+	"Standard",
+	"query",
+	Record<string, string | undefined>
+>;
 
-export type JSONQuerySpec = {
-	type: "JSON";
-	query: z.ZodType<Record<string, JSONValue | undefined>, Record<string, JSONValue | undefined>>;
-};
+export type JSONQuerySpec = SchemaCarrier<"JSON", "query", Record<string, JSONValue | undefined>>;
 
-export type SuperJSONQuerySpec = {
-	type: "SuperJSON";
-	query: z.ZodType<
-		Record<string, SuperJSONValue | undefined>,
-		Record<string, SuperJSONValue | undefined>
-	>;
-};
+export type SuperJSONQuerySpec = SchemaCarrier<
+	"SuperJSON",
+	"query",
+	Record<string, SuperJSONValue | undefined>
+>;
 
 export type BodySpec =
 	| JSONBodySpec
@@ -147,35 +128,17 @@ export type BodySpec =
 	| TextBodySpec
 	| BlobBodySpec;
 
-export type JSONBodySpec = {
-	type: "JSON";
-	body: z.ZodType<JSONValue, JSONValue>;
-};
+export type JSONBodySpec = SchemaCarrier<"JSON", "body", JSONValue>;
 
-export type SuperJSONBodySpec = {
-	type: "SuperJSON";
-	body: z.ZodType<SuperJSONValue, SuperJSONValue>;
-};
+export type SuperJSONBodySpec = SchemaCarrier<"SuperJSON", "body", SuperJSONValue>;
 
-export type FormDataBodySpec = {
-	type: "FormData";
-	body: z.ZodType<FormData, FormData>;
-};
+export type FormDataBodySpec = SchemaCarrier<"FormData", "body", FormData>;
 
-export type URLSearchParamsBodySpec = {
-	type: "URLSearchParams";
-	body: z.ZodType<URLSearchParams, URLSearchParams>;
-};
+export type URLSearchParamsBodySpec = SchemaCarrier<"URLSearchParams", "body", URLSearchParams>;
 
-export type TextBodySpec = {
-	type: "Text";
-	body: z.ZodType<string, string>;
-};
+export type TextBodySpec = SchemaCarrier<"Text", "body", string>;
 
-export type BlobBodySpec = {
-	type: "Blob";
-	body: z.ZodType<Blob, Blob>;
-};
+export type BlobBodySpec = SchemaCarrier<"Blob", "body", Blob>;
 
 type ExtractPathParamName<TKey extends string> = TKey extends `$${infer TPathParamName}`
 	? TPathParamName

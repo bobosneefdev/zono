@@ -614,6 +614,87 @@ describe("gateway runtime", () => {
 		expect(parsed.data).toEqual({ message: "Scoped" });
 	});
 
+	test("prepared gateway middleware bindings still read current handlers", async () => {
+		const upstreamApp = new Hono();
+		upstreamApp.get("/users", () => {
+			return createSerializedResponse({
+				status: 200,
+				type: "JSON",
+				source: "contract",
+				data: { users: ["u1"] },
+			});
+		});
+
+		const services = createGatewayServices({
+			usersService: createGatewayService(
+				{ SHAPE: { users: { CONTRACT: true } } },
+				serviceContracts,
+				serviceMiddlewares,
+				"public",
+				startServer(upstreamApp),
+			),
+		});
+
+		const gatewayMiddlewares = {
+			SHAPE: {
+				usersService: {
+					SHAPE: {
+						users: {
+							MIDDLEWARE: {
+								auth: {
+									403: {
+										type: "JSON",
+										schema: z.object({ message: z.string() }),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		} as const satisfies GatewayMiddlewares<typeof services>;
+
+		const boundGatewayMiddlewares = createHonoMiddlewareHandlers(gatewayMiddlewares, {
+			SHAPE: {
+				usersService: {
+					SHAPE: {
+						users: {
+							MIDDLEWARE: {
+								auth: () => ({
+									status: 403,
+									type: "JSON",
+									data: { message: "before" },
+								}),
+							},
+						},
+					},
+				},
+			},
+		});
+
+		const gatewayApp = new Hono();
+		initGateway(gatewayApp, services, {
+			middlewares: boundGatewayMiddlewares,
+		});
+
+		const scopedMiddlewareHandlers = boundGatewayMiddlewares.handlers.SHAPE.usersService.SHAPE
+			.users.MIDDLEWARE as unknown as {
+			auth: typeof boundGatewayMiddlewares.handlers.SHAPE.usersService.SHAPE.users.MIDDLEWARE.auth;
+		};
+		scopedMiddlewareHandlers.auth = () => ({
+			status: 403,
+			type: "JSON",
+			data: { message: "after" },
+		});
+
+		const response = await fetch(`${startServer(gatewayApp)}/users`);
+		const parsed = await parseSerializedResponse(response);
+
+		expect(response.status).toBe(403);
+		expect(parsed.source).toBe("middleware");
+		expect(parsed.data).toEqual({ message: "after" });
+	});
+
 	test("createGatewayClient caches service clients", () => {
 		const gatewayClient =
 			createGatewayClient<

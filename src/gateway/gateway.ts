@@ -290,16 +290,16 @@ const applyGatewayServiceMask = (mask: unknown, contracts: unknown): ContractTre
 	return maskedContracts;
 };
 
-const resolveRouteMiddlewares = (
+const resolveRouteMiddlewares = <TContext>(
 	middlewareNodes: Array<unknown>,
 	handlerNodes: Array<unknown>,
-): MiddlewareBindings<{ MIDDLEWARE: Record<string, MiddlewareSpec> }, unknown> | undefined => {
+): MiddlewareBindings<{ MIDDLEWARE: Record<string, MiddlewareSpec> }, TContext> | undefined => {
 	if (middlewareNodes.length === 0) {
 		return undefined;
 	}
 
 	const mergedDefinitions: Record<string, MiddlewareSpec> = {};
-	const mergedHandlers: Record<string, MiddlewareHandler<MiddlewareSpec, unknown>> = {};
+	const mergedHandlers: Record<string, MiddlewareHandler<MiddlewareSpec, TContext>> = {};
 
 	for (let index = 0; index < middlewareNodes.length; index += 1) {
 		const middlewareNode = middlewareNodes[index];
@@ -310,13 +310,37 @@ const resolveRouteMiddlewares = (
 		if (!isRecordObject(handlersNode) || !isRecordObject(handlersNode.MIDDLEWARE)) {
 			throw new Error("Missing MIDDLEWARE handlers node for gateway middleware layer");
 		}
-		for (const [middlewareName, definition] of Object.entries(middlewareNode.MIDDLEWARE)) {
-			const handler = handlersNode.MIDDLEWARE[middlewareName];
+		const middlewareMap = middlewareNode.MIDDLEWARE as Record<string, unknown>;
+		const handlerMap = handlersNode.MIDDLEWARE as Record<string, unknown>;
+		for (const [middlewareName, _definition] of Object.entries(middlewareMap)) {
+			const handler = handlerMap[middlewareName];
 			if (typeof handler !== "function") {
 				throw new Error(`Missing gateway middleware handler '${middlewareName}'`);
 			}
-			mergedDefinitions[middlewareName] = definition as MiddlewareSpec;
-			mergedHandlers[middlewareName] = handler as MiddlewareHandler<MiddlewareSpec, unknown>;
+			Object.defineProperty(mergedDefinitions, middlewareName, {
+				configurable: true,
+				enumerable: true,
+				get: () => {
+					const currentDefinition = middlewareMap[middlewareName];
+					if (!isRecordObject(currentDefinition)) {
+						throw new Error(
+							`Missing gateway middleware definition '${middlewareName}'`,
+						);
+					}
+					return currentDefinition as MiddlewareSpec;
+				},
+			});
+			Object.defineProperty(mergedHandlers, middlewareName, {
+				configurable: true,
+				enumerable: true,
+				get: () => {
+					const currentHandler = handlerMap[middlewareName];
+					if (typeof currentHandler !== "function") {
+						throw new Error(`Missing gateway middleware handler '${middlewareName}'`);
+					}
+					return currentHandler as MiddlewareHandler<MiddlewareSpec, TContext>;
+				},
+			});
 		}
 	}
 
@@ -330,6 +354,15 @@ const resolveRouteMiddlewares = (
 			MIDDLEWARE: mergedHandlers,
 		},
 	};
+};
+
+type PreparedGatewayRoute<TContext> = {
+	pathTemplate: string;
+	method: HTTPMethod;
+	serializedMethod: string;
+	shouldSendBody: boolean;
+	baseUrl: string;
+	middlewares?: MiddlewareBindings<{ MIDDLEWARE: Record<string, MiddlewareSpec> }, TContext>;
 };
 
 const collectGatewayRouteMiddlewareNodes = (
@@ -373,10 +406,33 @@ export const initGateway = <
 	options?: GatewayOptions<TServices, TGatewayMiddlewares, TContext>,
 ): void => {
 	for (const [serviceName, service] of Object.entries(services)) {
-		const routes = compileContractRoutes(
-			applyGatewayServiceMask(service.mask, service.contracts),
-		);
-		for (const route of routes) {
+		const maskedContracts = applyGatewayServiceMask(service.mask, service.contracts);
+		const preparedRoutes: Array<PreparedGatewayRoute<TContext>> = compileContractRoutes(
+			maskedContracts,
+		).map((route) => {
+			const mergedMiddlewares = options?.middlewares
+				? (() => {
+						const { middlewareNodes, handlerNodes } =
+							collectGatewayRouteMiddlewareNodes(
+								options.middlewares.middlewares,
+								options.middlewares.handlers,
+								serviceName,
+								route.pathTemplate,
+							);
+						return resolveRouteMiddlewares<TContext>(middlewareNodes, handlerNodes);
+					})()
+				: undefined;
+
+			return {
+				pathTemplate: route.pathTemplate,
+				method: route.method,
+				serializedMethod: route.method.toUpperCase(),
+				shouldSendBody: route.method !== "get" && route.method !== "head",
+				baseUrl: service.baseUrl,
+				middlewares: mergedMiddlewares,
+			};
+		});
+		for (const route of preparedRoutes) {
 			registerHonoRoute(
 				app,
 				route.method,
@@ -390,42 +446,24 @@ export const initGateway = <
 						const incomingUrl = new URL(ctx.req.url);
 						const upstreamUrl = new URL(
 							incomingUrl.pathname + incomingUrl.search,
-							service.baseUrl,
+							route.baseUrl,
 						);
+						const body = route.shouldSendBody
+							? await ctx.req.raw.arrayBuffer()
+							: undefined;
 
-						const method = ctx.req.method.toUpperCase();
-						const shouldSendBody = method !== "GET" && method !== "HEAD";
-						const body = shouldSendBody ? await ctx.req.raw.arrayBuffer() : undefined;
-
-						const upstreamResponse = await fetch(upstreamUrl, {
-							method,
+						return fetch(upstreamUrl, {
+							method: route.serializedMethod,
 							headers: ctx.req.raw.headers,
 							body,
 						});
-
-						return new Response(upstreamResponse.body, {
-							status: upstreamResponse.status,
-							headers: upstreamResponse.headers,
-						});
 					};
 
-					const boundGatewayMiddlewares = options?.middlewares;
-					if (!boundGatewayMiddlewares) {
+					if (!route.middlewares) {
 						return executeProxy();
 					}
 
-					const { middlewareNodes, handlerNodes } = collectGatewayRouteMiddlewareNodes(
-						boundGatewayMiddlewares.middlewares,
-						boundGatewayMiddlewares.handlers,
-						serviceName,
-						route.pathTemplate,
-					);
-					const merged = resolveRouteMiddlewares(middlewareNodes, handlerNodes);
-					if (!merged) {
-						return executeProxy();
-					}
-
-					return runMiddlewareHandlers(ctx, ourContext, merged, executeProxy);
+					return runMiddlewareHandlers(ctx, ourContext, route.middlewares, executeProxy);
 				},
 			);
 		}
