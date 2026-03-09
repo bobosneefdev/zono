@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import z from "zod";
 import { createClient } from "../client/client.js";
-import type { GatewayShape } from "../gateway/gateway.js";
+import type { GatewayServiceMask } from "../gateway/gateway.js";
 import {
 	createGatewayClient,
 	createGatewayService,
@@ -309,14 +309,14 @@ describe("gateway proxy", () => {
 		});
 		const upstreamUrl = startServer(upstreamApp);
 
-		const gatewayShape = {
+		const gatewayMask = {
 			SHAPE: {
 				users: { CONTRACT: true },
 			},
-		} as const satisfies GatewayShape<typeof serviceShape>;
+		} as const satisfies GatewayServiceMask<typeof serviceShape>;
 
 		const usersGateway = createGatewayService(
-			gatewayShape,
+			gatewayMask,
 			serviceContracts,
 			serviceMiddlewares,
 			"public",
@@ -370,7 +370,7 @@ typeOnly(() => {
 	} as const satisfies ContractTreeFor<typeof shape>;
 	void contracts;
 
-	const gatewayShape = {
+	const gatewayMask = {
 		SHAPE: {
 			users: {
 				SHAPE: {
@@ -378,8 +378,8 @@ typeOnly(() => {
 				},
 			},
 		},
-	} as const satisfies GatewayShape<typeof shape>;
-	void gatewayShape;
+	} as const satisfies GatewayServiceMask<typeof shape>;
+	void gatewayMask;
 
 	const invalidContracts = {
 		SHAPE: {

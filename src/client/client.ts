@@ -7,12 +7,11 @@ import type {
 } from "../contract/contract.js";
 import type { MiddlewareSpec, MiddlewareTreeFor } from "../middleware/middleware.js";
 import type { ErrorMode } from "../server/server.js";
+import type { MapFetchRouteResponse } from "../shared/shared.internal.js";
 import { toPathParamsRecord, toRecordObject, toRequestParts } from "../shared/shared.internal.js";
 import {
 	type ApiShape,
 	appendQueryParams,
-	type ExpandUnion,
-	type FetchResponse,
 	interpolatePathTemplate,
 	normalizeHeaderValues,
 	parseSerializedResponse,
@@ -25,23 +24,16 @@ type ClientFetchRoutes<
 	TErrorMode extends ErrorMode,
 > = ContractCallRoutes<TContracts> extends infer TRoute
 	? TRoute extends {
-			path: infer TPath extends string;
-			method: infer TMethod extends HTTPMethod;
-			request: infer TRequest;
-			response: infer TResponse;
+			path: infer _TPath extends string;
+			method: infer _TMethod extends HTTPMethod;
+			request: infer _TRequest;
+			response: infer _TResponse;
 		}
-		? {
-				path: TPath;
-				method: TMethod;
-				request: TRequest;
-				response: ExpandUnion<
-					FetchResponse<
-						| TResponse
-						| import("../middleware/middleware.js").InferAllMiddlewareResponseUnion<TMiddlewares>
-						| import("../server/server.js").ErrorResponse<TErrorMode>
-					>
-				>;
-			}
+		? MapFetchRouteResponse<
+				TRoute,
+				| import("../middleware/middleware.js").InferAllMiddlewareResponseUnion<TMiddlewares>
+				| import("../server/server.js").ErrorResponse<TErrorMode>
+			>
 		: never
 	: never;
 

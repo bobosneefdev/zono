@@ -1,11 +1,17 @@
 import type { Hono } from "hono";
 import { createClient } from "../client/client.js";
-import type { ContractCallRoutes, ContractTree, HTTPMethod } from "../contract/contract.js";
+import type {
+	ContractCallRoutes,
+	ContractMethods,
+	ContractTree,
+	HTTPMethod,
+} from "../contract/contract.js";
 import { compileContractRoutes } from "../contract/contract.js";
 import type {
 	InferAllMiddlewareResponseUnion,
 	MiddlewareSpec,
 	MiddlewareTree,
+	MiddlewareTreeFor,
 } from "../middleware/middleware.js";
 import { runMiddlewareHandlers } from "../middleware/middleware.js";
 import type {
@@ -18,39 +24,82 @@ import type {
 import {
 	collectShapePathNodes,
 	isRecordObject,
+	type MapFetchRouteResponse,
 	registerHonoRoute,
 } from "../shared/shared.internal.js";
-import type {
-	ApiShape,
-	EmptyObject,
-	ExpandUnion,
-	FetchResponse,
-	TypedFetch,
-} from "../shared/shared.js";
+import type { ApiShape, EmptyObject, TypedFetch } from "../shared/shared.js";
 
-export type GatewayShape<TShape extends ApiShape> = {} & (TShape extends { CONTRACT: true }
+export type GatewayServiceMask<TShape extends ApiShape> = {} & (TShape extends { CONTRACT: true }
 	? { CONTRACT?: true }
 	: EmptyObject) &
 	(TShape extends { SHAPE: infer TChildShape extends Record<string, ApiShape> }
 		? {
 				SHAPE?: {
-					[TKey in keyof TChildShape]?: GatewayShape<TChildShape[TKey]>;
+					[TKey in keyof TChildShape]?: GatewayServiceMask<TChildShape[TKey]>;
+				};
+			}
+		: EmptyObject);
+
+type ApplyGatewayServiceMaskToContractTree<
+	TContracts extends ContractTree,
+	TMask,
+> = {} & (TMask extends { CONTRACT: true }
+	? TContracts extends { CONTRACT: infer TContract extends NonNullable<ContractTree["CONTRACT"]> }
+		? { CONTRACT: TContract }
+		: EmptyObject
+	: EmptyObject) &
+	(TMask extends { SHAPE: infer TMaskShape extends Record<string, unknown> }
+		? TContracts extends { SHAPE: infer TContractShape extends Record<string, ContractTree> }
+			? {
+					SHAPE: {
+						[TKey in keyof TMaskShape &
+							keyof TContractShape]: ApplyGatewayServiceMaskToContractTree<
+							TContractShape[TKey],
+							TMaskShape[TKey]
+						>;
+					};
+				}
+			: EmptyObject
+		: EmptyObject);
+
+type ApiShapeFromContractTree<TContracts extends ContractTree> = {} & (TContracts extends {
+	CONTRACT: infer TContract;
+}
+	? TContract extends ContractMethods
+		? { CONTRACT: true }
+		: EmptyObject
+	: EmptyObject) &
+	(TContracts extends { SHAPE: infer TShape extends Record<string, ContractTree> }
+		? {
+				SHAPE: {
+					[TKey in keyof TShape]: ApiShapeFromContractTree<TShape[TKey]>;
 				};
 			}
 		: EmptyObject);
 
 export type GatewayService<
-	TShape extends ApiShape,
 	TContracts extends ContractTree,
-	TMiddlewares extends { MIDDLEWARE: Record<string, MiddlewareSpec> },
+	TMask extends GatewayServiceMask<ApiShapeFromContractTree<TContracts>>,
+	TMiddlewares extends MiddlewareTreeFor<ApiShapeFromContractTree<TContracts>>,
 	TErrorMode extends ErrorMode,
 > = {
-	shape: GatewayShape<TShape>;
+	mask: TMask;
 	contracts: TContracts;
 	middlewares: TMiddlewares;
 	errorMode: TErrorMode;
 	baseUrl: string;
 };
+
+type AnyGatewayService = {
+	mask: GatewayServiceMask<ApiShape>;
+	contracts: ContractTree;
+	middlewares: { MIDDLEWARE: Record<string, MiddlewareSpec> };
+	errorMode: ErrorMode;
+	baseUrl: string;
+};
+
+type MaskedGatewayServiceContracts<TService extends AnyGatewayService> =
+	ApplyGatewayServiceMaskToContractTree<TService["contracts"], TService["mask"]>;
 
 type GatewayMiddlewareTreeFromContracts<TContracts extends ContractTree> = {
 	MIDDLEWARE?: Record<string, MiddlewareSpec>;
@@ -62,21 +111,13 @@ type GatewayMiddlewareTreeFromContracts<TContracts extends ContractTree> = {
 		}
 	: EmptyObject);
 
-export type GatewayServices = Record<
-	string,
-	GatewayService<
-		ApiShape,
-		ContractTree,
-		{ MIDDLEWARE: Record<string, MiddlewareSpec> },
-		ErrorMode
-	>
->;
+export type GatewayServices = Record<string, AnyGatewayService>;
 
 export type GatewayMiddlewares<TServices extends GatewayServices> = {
 	MIDDLEWARE?: Record<string, MiddlewareSpec>;
 	SHAPE?: Record<string, MiddlewareTree> & {
 		[TService in keyof TServices]?: GatewayMiddlewareTreeFromContracts<
-			TServices[TService]["contracts"]
+			MaskedGatewayServiceContracts<TServices[TService]>
 		>;
 	};
 };
@@ -144,48 +185,27 @@ type InferGatewayMiddlewareResponseUnionAtPath<
 }>;
 
 type GatewayClientRoutes<
-	TService extends GatewayService<
-		ApiShape,
-		ContractTree,
-		{ MIDDLEWARE: Record<string, MiddlewareSpec> },
-		ErrorMode
-	>,
+	TService extends AnyGatewayService,
 	TGatewayMiddlewares,
 	TServiceKey extends PropertyKey,
-> = ContractCallRoutes<TService["contracts"]> extends infer TRoute
+> = ContractCallRoutes<MaskedGatewayServiceContracts<TService>> extends infer TRoute
 	? TRoute extends {
 			path: infer TPath extends string;
-			method: infer TMethod extends HTTPMethod;
-			request: infer TRequest;
-			response: infer TResponse;
+			method: infer _TMethod extends HTTPMethod;
+			request: infer _TRequest;
+			response: infer _TResponse;
 		}
-		? {
-				path: TPath;
-				method: TMethod;
-				request: TRequest;
-				response: ExpandUnion<
-					FetchResponse<
-						| TResponse
-						| InferAllMiddlewareResponseUnion<TService["middlewares"]>
-						| InferGatewayMiddlewareResponseUnionAtPath<
-								TGatewayMiddlewares,
-								TServiceKey,
-								TPath
-						  >
-						| ErrorResponse<TService["errorMode"]>
-					>
-				>;
-			}
+		? MapFetchRouteResponse<
+				TRoute,
+				| InferAllMiddlewareResponseUnion<TService["middlewares"]>
+				| InferGatewayMiddlewareResponseUnionAtPath<TGatewayMiddlewares, TServiceKey, TPath>
+				| ErrorResponse<TService["errorMode"]>
+			>
 		: never
 	: never;
 
 type GatewayServiceClientFetchMethod<
-	TService extends GatewayService<
-		ApiShape,
-		ContractTree,
-		{ MIDDLEWARE: Record<string, MiddlewareSpec> },
-		ErrorMode
-	>,
+	TService extends AnyGatewayService,
 	TGatewayMiddlewares,
 	TServiceKey extends PropertyKey,
 > = TypedFetch<GatewayClientRoutes<TService, TGatewayMiddlewares, TServiceKey>>;
@@ -206,19 +226,19 @@ export type GatewayOptions<
 };
 
 export const createGatewayService = <
-	TShape extends ApiShape,
 	TContracts extends ContractTree,
-	TMiddlewares extends { MIDDLEWARE: Record<string, MiddlewareSpec> },
+	const TMask extends GatewayServiceMask<ApiShapeFromContractTree<TContracts>>,
+	TMiddlewares extends MiddlewareTreeFor<ApiShapeFromContractTree<TContracts>>,
 	TErrorMode extends ErrorMode,
 >(
-	shape: GatewayShape<TShape>,
+	mask: TMask,
 	contracts: TContracts,
 	middlewares: TMiddlewares,
 	errorMode: TErrorMode,
 	baseUrl: string,
-): GatewayService<TShape, TContracts, TMiddlewares, TErrorMode> => {
+): GatewayService<TContracts, TMask, TMiddlewares, TErrorMode> => {
 	return {
-		shape,
+		mask,
 		contracts,
 		middlewares,
 		errorMode,
@@ -230,6 +250,44 @@ export const createGatewayServices = <TServices extends GatewayServices>(
 	services: TServices,
 ): TServices => {
 	return services;
+};
+
+const applyGatewayServiceMask = (mask: unknown, contracts: unknown): ContractTree => {
+	if (!isRecordObject(mask) || !isRecordObject(contracts)) {
+		return {};
+	}
+
+	const maskedContracts: ContractTree = {};
+
+	if (mask.CONTRACT === true && isRecordObject(contracts.CONTRACT)) {
+		maskedContracts.CONTRACT = contracts.CONTRACT;
+	}
+
+	if (!isRecordObject(mask.SHAPE) || !isRecordObject(contracts.SHAPE)) {
+		return maskedContracts;
+	}
+
+	const maskedShape: Record<string, ContractTree> = {};
+	for (const [segment, childMask] of Object.entries(mask.SHAPE)) {
+		const childContracts = contracts.SHAPE[segment];
+		if (!isRecordObject(childMask) || !isRecordObject(childContracts)) {
+			continue;
+		}
+
+		const maskedChildContracts = applyGatewayServiceMask(childMask, childContracts);
+		if (
+			maskedChildContracts.CONTRACT !== undefined ||
+			maskedChildContracts.SHAPE !== undefined
+		) {
+			maskedShape[segment] = maskedChildContracts;
+		}
+	}
+
+	if (Object.keys(maskedShape).length > 0) {
+		maskedContracts.SHAPE = maskedShape;
+	}
+
+	return maskedContracts;
 };
 
 const resolveRouteMiddlewares = (
@@ -315,7 +373,9 @@ export const initGateway = <
 	options?: GatewayOptions<TServices, TGatewayMiddlewares, TContext>,
 ): void => {
 	for (const [serviceName, service] of Object.entries(services)) {
-		const routes = compileContractRoutes(service.contracts);
+		const routes = compileContractRoutes(
+			applyGatewayServiceMask(service.mask, service.contracts),
+		);
 		for (const route of routes) {
 			registerHonoRoute(
 				app,

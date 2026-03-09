@@ -270,18 +270,27 @@ type TypedClient = ReturnType<
 >;
 type ClientResponse = Awaited<ReturnType<TypedClient["fetch"]>>;
 type ClientRateLimitData = Extract<ClientResponse, { status: 429 }>["data"];
+type ClientBadRequestData = Extract<ClientResponse, { status: 400 }>["data"];
+type ClientNotFoundData = Extract<ClientResponse, { status: 404 }>["data"];
+type ClientInternalErrorData = Extract<ClientResponse, { status: 500 }>["data"];
 const has200: HasStatus<ClientResponse, 200> = true;
 const has429: HasStatus<ClientResponse, 429> = true;
 const has400: HasStatus<ClientResponse, 400> = true;
 const has404: HasStatus<ClientResponse, 404> = true;
 const has500: HasStatus<ClientResponse, 500> = true;
 const validRateLimitData: ClientRateLimitData = { retryAfter: 1 };
+const validBadRequestData: ClientBadRequestData = { message: "bad", issues: [] };
+const validNotFoundData: ClientNotFoundData = { message: "missing" };
+const validInternalErrorData: ClientInternalErrorData = { message: "boom" };
 void has200;
 void has429;
 void has400;
 void has404;
 void has500;
 void validRateLimitData;
+void validBadRequestData;
+void validNotFoundData;
+void validInternalErrorData;
 
 const typedClient = createClient<typeof shape, typeof contracts, typeof middlewares, "public">(
 	"http://localhost",

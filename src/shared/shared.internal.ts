@@ -26,6 +26,37 @@ type ResponseSpecLike = {
 	schema?: ZodTypeAny;
 };
 
+export type Prettify<Type> = Type extends (...args: Array<unknown>) => unknown
+	? Type
+	: {
+			[Key in keyof Type]: Type[Key];
+		};
+
+export type HumanReadableFetchResponse<TResponse> = TResponse extends {
+	status: infer TStatus;
+	data: infer TData;
+}
+	? Prettify<{
+			status: TStatus;
+			data: TData;
+			response: Response;
+		}>
+	: never;
+
+export type MapFetchRouteResponse<TRoute, TExtraResponse> = TRoute extends {
+	path: infer TPath extends string;
+	method: infer TMethod extends string;
+	request: infer TRequest;
+	response: infer TResponse;
+}
+	? {
+			path: TPath;
+			method: TMethod;
+			request: TRequest;
+			response: HumanReadableFetchResponse<TResponse | TExtraResponse>;
+		}
+	: never;
+
 type StructuredDataSpec = { type: "Standard" | "JSON" | "SuperJSON" };
 
 export const isRecordObject = (value: unknown): value is Record<string, unknown> => {

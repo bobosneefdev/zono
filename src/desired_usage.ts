@@ -7,7 +7,7 @@ import {
 	createGatewayService,
 	createGatewayServices,
 	GatewayMiddlewares,
-	GatewayShape,
+	GatewayServiceMask,
 	initGateway,
 } from "./gateway/gateway.js";
 import { MiddlewareTreeFor } from "./middleware/middleware.js";
@@ -102,16 +102,21 @@ const createUsersServiceContext = (async (_ctx) => {
 type UsersServiceContext = Awaited<ReturnType<typeof createUsersServiceContext>>;
 
 type UsersServiceUsersContract = typeof usersServiceContracts.SHAPE.users.CONTRACT;
-const getUsers: ContractHandler<UsersServiceUsersContract["get"], UsersServiceContext> = async () => ({
+const getUsers: ContractHandler<
+	UsersServiceUsersContract["get"],
+	UsersServiceContext
+> = async () => ({
 	status: 200,
 	type: "SuperJSON",
-	data: [{
-		id: crypto.randomUUID(),
-		first: "John",
-		last: "Pork",
-		email: "johnpork@gmail.com",
-		createdAt: new Date(),
-	}],
+	data: [
+		{
+			id: crypto.randomUUID(),
+			first: "John",
+			last: "Pork",
+			email: "johnpork@gmail.com",
+			createdAt: new Date(),
+		},
+	],
 });
 
 const usersServiceContractHandlers = createHonoContractHandlers<
@@ -188,18 +193,17 @@ const usersServiceClient = createClient<
 	console.log(users.response.status, users.data);
 })();
 
-// GatewayServiceShape is pretty much like a "Pick" util for the shape of the existing service shape.
-const usersGatewayServiceShape = {
+// GatewayServiceMask is pretty much like a "Pick" util for the shape of the existing service shape.
+const usersGatewayServiceMask = {
 	SHAPE: {
 		users: {
 			CONTRACT: true,
-			SHAPE: {}, // empty object should be ignored obviously
 		},
 	},
-} as const satisfies GatewayShape<UsersServiceShape>;
+} as const satisfies GatewayServiceMask<UsersServiceShape>;
 
 const usersGatewayService = createGatewayService(
-	usersGatewayServiceShape,
+	usersGatewayServiceMask,
 	usersServiceContracts,
 	usersServiceMiddlewares,
 	"public",
@@ -241,7 +245,10 @@ const gatewayMiddlewares = {
 } as const satisfies GatewayMiddlewares<GatewayServices>;
 
 type GatewayAuthMiddleware = typeof gatewayMiddlewares.MIDDLEWARE.gatewayAuth;
-const gatewayAuthMiddlewareHandler: MiddlewareHandler<GatewayAuthMiddleware> = async (_ctx, next) => {
+const gatewayAuthMiddlewareHandler: MiddlewareHandler<GatewayAuthMiddleware> = async (
+	_ctx,
+	next,
+) => {
 	const isAuthed = Math.random() > 0.5;
 	if (!isAuthed) {
 		return {

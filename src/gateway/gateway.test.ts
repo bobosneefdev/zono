@@ -6,7 +6,7 @@ import type { MiddlewareTreeFor } from "../middleware/middleware.js";
 import { createHonoMiddlewareHandlers } from "../middleware/middleware.js";
 import type { ApiShape } from "../shared/shared.js";
 import { createSerializedResponse, parseSerializedResponse } from "../shared/shared.js";
-import type { GatewayShape } from "./gateway.js";
+import type { GatewayServiceMask } from "./gateway.js";
 import {
 	createGatewayClient,
 	createGatewayService,
@@ -79,6 +79,47 @@ const serviceMiddlewares = {
 	MIDDLEWARE: {},
 } as const satisfies MiddlewareTreeFor<typeof serviceShape>;
 
+const nestedUsersServiceShape = {
+	SHAPE: {
+		users: {
+			CONTRACT: true,
+			SHAPE: {
+				$userId: { CONTRACT: true },
+			},
+		},
+	},
+} as const satisfies ApiShape;
+
+const nestedUsersServiceContracts = {
+	SHAPE: {
+		users: {
+			CONTRACT: {
+				get: {
+					responses: {
+						200: { type: "JSON", schema: z.object({ users: z.array(z.string()) }) },
+					},
+				},
+			},
+			SHAPE: {
+				$userId: {
+					CONTRACT: {
+						get: {
+							pathParams: z.object({ userId: z.string() }),
+							responses: {
+								200: { type: "JSON", schema: z.object({ id: z.string() }) },
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+} as const satisfies ContractTreeFor<typeof nestedUsersServiceShape>;
+
+const nestedUsersServiceMiddlewares = {
+	MIDDLEWARE: {},
+} as const satisfies MiddlewareTreeFor<typeof nestedUsersServiceShape>;
+
 describe("gateway runtime", () => {
 	test("proxies GET to upstream and preserves status headers serialized body", async () => {
 		const upstreamApp = new Hono();
@@ -96,13 +137,13 @@ describe("gateway runtime", () => {
 		});
 
 		const upstreamUrl = startServer(upstreamApp);
-		const gatewayShape = {
+		const gatewayMask = {
 			SHAPE: {
 				echo: { CONTRACT: true },
 			},
-		} as const satisfies GatewayShape<typeof serviceShape>;
+		} as const satisfies GatewayServiceMask<typeof serviceShape>;
 		const service = createGatewayService(
-			gatewayShape,
+			gatewayMask,
 			serviceContracts,
 			serviceMiddlewares,
 			"public",
@@ -154,6 +195,59 @@ describe("gateway runtime", () => {
 		expect(post.status).toBe(201);
 		expect(parsedPost.type).toBe("Text");
 		expect(parsedPost.data).toBe("body:hello");
+	});
+
+	test("does not register masked-out nested routes", async () => {
+		let usersHitCount = 0;
+		let userHitCount = 0;
+		const upstreamApp = new Hono();
+		upstreamApp.get("/users", () => {
+			usersHitCount += 1;
+			return createSerializedResponse({
+				status: 200,
+				type: "JSON",
+				source: "contract",
+				data: { users: ["u1"] },
+			});
+		});
+		upstreamApp.get("/users/:userId", (ctx) => {
+			userHitCount += 1;
+			return createSerializedResponse({
+				status: 200,
+				type: "JSON",
+				source: "contract",
+				data: { id: ctx.req.param("userId") },
+			});
+		});
+
+		const services = createGatewayServices({
+			usersService: createGatewayService(
+				{
+					SHAPE: {
+						users: { CONTRACT: true },
+					},
+				},
+				nestedUsersServiceContracts,
+				nestedUsersServiceMiddlewares,
+				"public",
+				startServer(upstreamApp),
+			),
+		});
+
+		const gatewayApp = new Hono();
+		initGateway(gatewayApp, services);
+		const gatewayUrl = startServer(gatewayApp);
+
+		const usersResponse = await fetch(`${gatewayUrl}/users`);
+		const maskedResponse = await fetch(`${gatewayUrl}/users/user-1`);
+		const parsedUsers = await parseSerializedResponse(usersResponse);
+
+		expect(usersResponse.status).toBe(200);
+		expect(parsedUsers.source).toBe("contract");
+		expect(parsedUsers.data).toEqual({ users: ["u1"] });
+		expect(maskedResponse.status).toBe(404);
+		expect(usersHitCount).toBe(1);
+		expect(userHitCount).toBe(0);
 	});
 
 	test("runs layered gateway middlewares in path order and passes gateway context", async () => {
@@ -534,14 +628,14 @@ describe("gateway runtime", () => {
 	});
 });
 
-const gatewayShapeTyped = {
+const gatewayMaskTyped = {
 	SHAPE: {
 		echo: { CONTRACT: true },
 		plain: { CONTRACT: true },
 		users: { CONTRACT: true },
 	},
-} as const satisfies GatewayShape<typeof serviceShape>;
-void gatewayShapeTyped;
+} as const satisfies GatewayServiceMask<typeof serviceShape>;
+void gatewayMaskTyped;
 
 type ExtractStatus<T, TStatus extends number> = Extract<T, { status: TStatus }>;
 const typeOnly = (_cb: () => void): void => {};
@@ -617,10 +711,21 @@ typeOnly(() => {
 		service: "usersService",
 	};
 	const usersAuditData: ExtractStatus<UsersResponse, 418>["data"] = { traceId: "trace-1" };
+	const usersBadRequestData: ExtractStatus<UsersResponse, 400>["data"] = {
+		message: "bad",
+		issues: [],
+	};
+	const usersNotFoundData: ExtractStatus<UsersResponse, 404>["data"] = { message: "missing" };
+	const usersInternalErrorData: ExtractStatus<UsersResponse, 500>["data"] = {
+		message: "boom",
+	};
 	void usersAuthData;
 	void usersRateLimitData;
 	void usersServiceGuardData;
 	void usersAuditData;
+	void usersBadRequestData;
+	void usersNotFoundData;
+	void usersInternalErrorData;
 
 	const invalidUsersRateLimitData: ExtractStatus<UsersResponse, 429>["data"] = {
 		// @ts-expect-error gateway middleware status 429 keeps its declared payload shape
@@ -662,4 +767,50 @@ typeOnly(() => {
 		response: new Response(),
 	};
 	void plainUsersAuth;
+
+	const maskedNestedService = createGatewayService(
+		{
+			SHAPE: {
+				users: { CONTRACT: true },
+			},
+		},
+		nestedUsersServiceContracts,
+		nestedUsersServiceMiddlewares,
+		"public",
+		"http://localhost",
+	);
+	const maskedNestedServices = createGatewayServices({ usersService: maskedNestedService });
+
+	const maskedGatewayMiddlewares = {
+		SHAPE: {
+			usersService: {
+				SHAPE: {
+					users: {
+						// @ts-expect-error masked-out nested route should not allow gateway middleware
+						SHAPE: {
+							$userId: {
+								MIDDLEWARE: {
+									auth: {
+										403: {
+											type: "JSON",
+											schema: z.object({ message: z.string() }),
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	} as const satisfies GatewayMiddlewares<typeof maskedNestedServices>;
+	void maskedGatewayMiddlewares;
+
+	const maskedClient = createGatewayClient<typeof maskedNestedServices>("http://localhost");
+	void maskedClient.usersService.fetch("/users", "get");
+
+	// @ts-expect-error masked-out nested route should not be exposed on the gateway client
+	void maskedClient.usersService.fetch("/users/$userId", "get", {
+		pathParams: { userId: "user-1" },
+	});
 });
