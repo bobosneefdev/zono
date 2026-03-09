@@ -13,9 +13,11 @@ import {
 import { MiddlewareTreeFor } from "./middleware/middleware.js";
 import {
 	ContextFactory,
+	ContractHandler,
 	createHonoContractHandlers,
 	createHonoMiddlewareHandlers,
 	initHono,
+	MiddlewareHandler,
 } from "./server/server.js";
 import { ApiShape } from "./shared/shared.js";
 
@@ -99,6 +101,19 @@ const createUsersServiceContext = (async (_ctx) => {
 }) satisfies ContextFactory;
 type UsersServiceContext = Awaited<ReturnType<typeof createUsersServiceContext>>;
 
+type UsersServiceUsersContract = typeof usersServiceContracts.SHAPE.users.CONTRACT;
+const getUsers: ContractHandler<UsersServiceUsersContract["get"], UsersServiceContext> = async () => ({
+	status: 200,
+	type: "SuperJSON",
+	data: [{
+		id: crypto.randomUUID(),
+		first: "John",
+		last: "Pork",
+		email: "johnpork@gmail.com",
+		createdAt: new Date(),
+	}],
+});
+
 const usersServiceContractHandlers = createHonoContractHandlers<
 	UsersServiceContracts,
 	UsersServiceContext
@@ -106,19 +121,7 @@ const usersServiceContractHandlers = createHonoContractHandlers<
 	SHAPE: {
 		users: {
 			HANDLER: {
-				get: async () => ({
-					status: 200,
-					type: "SuperJSON",
-					data: [
-						{
-							id: crypto.randomUUID(),
-							first: "John",
-							last: "Pork",
-							email: "johnpork@gmail.com",
-							createdAt: new Date(),
-						},
-					],
-				}),
+				get: getUsers,
 			},
 			SHAPE: {
 				$userId: {
@@ -209,6 +212,14 @@ const gatewayServices = createGatewayServices({
 type GatewayServices = typeof gatewayServices;
 
 const gatewayMiddlewares = {
+	MIDDLEWARE: {
+		gatewayAuth: {
+			401: {
+				type: "JSON",
+				schema: z.object({ message: z.string() }),
+			},
+		},
+	},
 	SHAPE: {
 		users: {
 			// This would represent the users service
@@ -229,9 +240,25 @@ const gatewayMiddlewares = {
 	},
 } as const satisfies GatewayMiddlewares<GatewayServices>;
 
+type GatewayAuthMiddleware = typeof gatewayMiddlewares.MIDDLEWARE.gatewayAuth;
+const gatewayAuthMiddlewareHandler: MiddlewareHandler<GatewayAuthMiddleware> = async (_ctx, next) => {
+	const isAuthed = Math.random() > 0.5;
+	if (!isAuthed) {
+		return {
+			type: "JSON",
+			status: 401,
+			data: { message: "Unauthorized" },
+		};
+	}
+	await next();
+};
+
 const gatewayApp = new Hono();
 initGateway(gatewayApp, gatewayServices, {
 	middlewares: createHonoMiddlewareHandlers(gatewayMiddlewares, {
+		MIDDLEWARE: {
+			gatewayAuth: gatewayAuthMiddlewareHandler,
+		},
 		SHAPE: {
 			users: {
 				SHAPE: {

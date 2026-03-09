@@ -178,10 +178,15 @@ describe("gateway runtime", () => {
 		});
 
 		const gatewayMiddlewares = {
+			MIDDLEWARE: {
+				gatewayGuard: {
+					418: { type: "JSON", schema: z.object({ message: z.string() }) },
+				},
+			},
 			SHAPE: {
 				usersService: {
 					MIDDLEWARE: {
-						rootGuard: {
+						serviceGuard: {
 							401: { type: "JSON", schema: z.object({ message: z.string() }) },
 						},
 					},
@@ -206,13 +211,20 @@ describe("gateway runtime", () => {
 			typeof gatewayMiddlewares,
 			{ requestId: string }
 		>(gatewayMiddlewares, {
+			MIDDLEWARE: {
+				gatewayGuard: async (_ctx, next, ourContext) => {
+					steps.push(`gateway:before:${ourContext.requestId}`);
+					await next();
+					steps.push("gateway:after");
+				},
+			},
 			SHAPE: {
 				usersService: {
 					MIDDLEWARE: {
-						rootGuard: async (_ctx, next, ourContext) => {
-							steps.push(`root:before:${ourContext.requestId}`);
+						serviceGuard: async (_ctx, next, ourContext) => {
+							steps.push(`service:before:${ourContext.requestId}`);
 							await next();
-							steps.push("root:after");
+							steps.push("service:after");
 						},
 					},
 					SHAPE: {
@@ -243,14 +255,91 @@ describe("gateway runtime", () => {
 		expect(parsed.source).toBe("contract");
 		expect(parsed.data).toEqual({ users: ["u1"] });
 		expect(steps).toEqual([
-			"root:before:ctx-1",
+			"gateway:before:ctx-1",
+			"service:before:ctx-1",
 			"auth:before:ctx-1",
 			"auth:after",
-			"root:after",
+			"service:after",
+			"gateway:after",
 		]);
 	});
 
-	test("gateway middleware short-circuits before upstream proxy", async () => {
+	test("gateway root middleware applies to all routes", async () => {
+		let upstreamHitCount = 0;
+		const upstreamApp = new Hono();
+		upstreamApp.get("/users", () => {
+			upstreamHitCount += 1;
+			return createSerializedResponse({
+				status: 200,
+				type: "JSON",
+				source: "contract",
+				data: { users: ["u1"] },
+			});
+		});
+		upstreamApp.get("/plain", () => {
+			upstreamHitCount += 1;
+			return createSerializedResponse({
+				status: 200,
+				type: "JSON",
+				source: "contract",
+				data: { ok: true },
+			});
+		});
+
+		const services = createGatewayServices({
+			usersService: createGatewayService(
+				{ SHAPE: { users: { CONTRACT: true }, plain: { CONTRACT: true } } },
+				serviceContracts,
+				serviceMiddlewares,
+				"public",
+				startServer(upstreamApp),
+			),
+		});
+
+		const gatewayMiddlewares = {
+			MIDDLEWARE: {
+				gatewayGuard: {
+					418: { type: "JSON", schema: z.object({ message: z.string() }) },
+				},
+			},
+		} as const satisfies GatewayMiddlewares<typeof services>;
+
+		const seenPaths: Array<string> = [];
+		const boundGatewayMiddlewares = createHonoMiddlewareHandlers<
+			typeof gatewayMiddlewares,
+			{ requestId: string }
+		>(gatewayMiddlewares, {
+			MIDDLEWARE: {
+				gatewayGuard: async (ctx, next) => {
+					seenPaths.push(new URL(ctx.req.url).pathname);
+					await next();
+				},
+			},
+		});
+
+		const gatewayApp = new Hono();
+		initGateway(gatewayApp, services, {
+			middlewares: boundGatewayMiddlewares,
+			createContext: () => ({ requestId: "ctx-2" }),
+		});
+
+		const gatewayUrl = startServer(gatewayApp);
+		const usersResponse = await fetch(`${gatewayUrl}/users`);
+		const plainResponse = await fetch(`${gatewayUrl}/plain`);
+		const usersParsed = await parseSerializedResponse(usersResponse);
+		const plainParsed = await parseSerializedResponse(plainResponse);
+
+		expect(usersResponse.status).toBe(200);
+		expect(plainResponse.status).toBe(200);
+		expect(usersParsed.source).toBe("contract");
+		expect(plainParsed.source).toBe("contract");
+		expect(usersParsed.data).toEqual({ users: ["u1"] });
+		expect(plainParsed.data).toEqual({ ok: true });
+		expect(upstreamHitCount).toBe(2);
+		expect(seenPaths).toEqual(["/users", "/plain"]);
+	});
+
+	test("gateway root middleware short-circuits before upstream proxy", async () => {
 		let upstreamHitCount = 0;
 		const upstreamApp = new Hono();
 		upstreamApp.get("/users", () => {
@@ -274,13 +363,13 @@ describe("gateway runtime", () => {
 		});
 
 		const gatewayMiddlewares = {
+			MIDDLEWARE: {
+				gatewayGuard: {
+					401: { type: "JSON", schema: z.object({ message: z.string() }) },
+				},
+			},
 			SHAPE: {
 				usersService: {
-					MIDDLEWARE: {
-						rootGuard: {
-							401: { type: "JSON", schema: z.object({ message: z.string() }) },
-						},
-					},
 					SHAPE: {
 						users: {
 							MIDDLEWARE: {
@@ -302,15 +391,18 @@ describe("gateway runtime", () => {
 			typeof gatewayMiddlewares,
 			{ requestId: string }
 		>(gatewayMiddlewares, {
+			MIDDLEWARE: {
+				gatewayGuard: () => {
+					steps.push("gateway:block");
+					return {
+						status: 401,
+						type: "JSON",
+						data: { message: "Unauthorized" },
+					};
+				},
+			},
 			SHAPE: {
 				usersService: {
-					MIDDLEWARE: {
-						rootGuard: async (_ctx, next) => {
-							steps.push("root:before");
-							await next();
-							steps.push("root:after");
-						},
-					},
 					SHAPE: {
 						users: {
 							MIDDLEWARE: {
@@ -319,7 +411,7 @@ describe("gateway runtime", () => {
 									return {
 										status: 403,
 										type: "JSON",
-										data: { message: "Unauthorized" },
+										data: { message: "Forbidden" },
 									};
 								},
 							},
@@ -332,7 +424,92 @@ describe("gateway runtime", () => {
 		const gatewayApp = new Hono();
 		initGateway(gatewayApp, services, {
 			middlewares: boundGatewayMiddlewares,
-			createContext: () => ({ requestId: "ctx-2" }),
+			createContext: () => ({ requestId: "ctx-3" }),
+		});
+
+		const response = await fetch(`${startServer(gatewayApp)}/users`);
+		const parsed = await parseSerializedResponse(response);
+
+		expect(response.status).toBe(401);
+		expect(parsed.source).toBe("middleware");
+		expect(parsed.data).toEqual({ message: "Unauthorized" });
+		expect(upstreamHitCount).toBe(0);
+		expect(steps).toEqual(["gateway:block"]);
+	});
+
+	test("deeper gateway middleware overrides root middleware with the same name", async () => {
+		const upstreamApp = new Hono();
+		upstreamApp.get("/users", () => {
+			return createSerializedResponse({
+				status: 200,
+				type: "JSON",
+				source: "contract",
+				data: { users: ["u1"] },
+			});
+		});
+
+		const services = createGatewayServices({
+			usersService: createGatewayService(
+				{ SHAPE: { users: { CONTRACT: true }, plain: { CONTRACT: true } } },
+				serviceContracts,
+				serviceMiddlewares,
+				"public",
+				startServer(upstreamApp),
+			),
+		});
+
+		const gatewayMiddlewares = {
+			MIDDLEWARE: {
+				auth: {
+					401: { type: "JSON", schema: z.object({ message: z.string() }) },
+				},
+			},
+			SHAPE: {
+				usersService: {
+					SHAPE: {
+						users: {
+							MIDDLEWARE: {
+								auth: {
+									403: {
+										type: "JSON",
+										schema: z.object({ message: z.string() }),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		} as const satisfies GatewayMiddlewares<typeof services>;
+
+		const boundGatewayMiddlewares = createHonoMiddlewareHandlers(gatewayMiddlewares, {
+			MIDDLEWARE: {
+				auth: () => ({
+					status: 401,
+					type: "JSON",
+					data: { message: "Global" },
+				}),
+			},
+			SHAPE: {
+				usersService: {
+					SHAPE: {
+						users: {
+							MIDDLEWARE: {
+								auth: () => ({
+									status: 403,
+									type: "JSON",
+									data: { message: "Scoped" },
+								}),
+							},
+						},
+					},
+				},
+			},
+		});
+
+		const gatewayApp = new Hono();
+		initGateway(gatewayApp, services, {
+			middlewares: boundGatewayMiddlewares,
 		});
 
 		const response = await fetch(`${startServer(gatewayApp)}/users`);
@@ -340,9 +517,7 @@ describe("gateway runtime", () => {
 
 		expect(response.status).toBe(403);
 		expect(parsed.source).toBe("middleware");
-		expect(parsed.data).toEqual({ message: "Unauthorized" });
-		expect(upstreamHitCount).toBe(0);
-		expect(steps).toEqual(["root:before", "auth:block", "root:after"]);
+		expect(parsed.data).toEqual({ message: "Scoped" });
 	});
 
 	test("createGatewayClient caches service clients", () => {
@@ -388,16 +563,30 @@ typeOnly(() => {
 	const services = createGatewayServices({ usersService: service });
 
 	const gatewayMiddlewares = {
+		MIDDLEWARE: {
+			auth: {
+				401: { type: "JSON", schema: z.object({ scope: z.literal("global") }) },
+			},
+			audit: {
+				418: { type: "JSON", schema: z.object({ traceId: z.string() }) },
+			},
+		},
 		SHAPE: {
 			usersService: {
 				MIDDLEWARE: {
-					auth: {
-						403: { type: "JSON", schema: z.object({ message: z.string() }) },
+					serviceGuard: {
+						430: { type: "JSON", schema: z.object({ service: z.string() }) },
 					},
 				},
 				SHAPE: {
 					users: {
 						MIDDLEWARE: {
+							auth: {
+								403: {
+									type: "JSON",
+									schema: z.object({ scope: z.literal("users") }),
+								},
+							},
 							rateLimit: {
 								429: { type: "JSON", schema: z.object({ retryAfter: z.number() }) },
 							},
@@ -422,10 +611,16 @@ typeOnly(() => {
 
 	const usersResponsePromise = client.usersService.fetch("/users", "get");
 	type UsersResponse = Awaited<typeof usersResponsePromise>;
-	const usersAuthData: ExtractStatus<UsersResponse, 403>["data"] = { message: "Unauthorized" };
+	const usersAuthData: ExtractStatus<UsersResponse, 403>["data"] = { scope: "users" };
 	const usersRateLimitData: ExtractStatus<UsersResponse, 429>["data"] = { retryAfter: 1000 };
+	const usersServiceGuardData: ExtractStatus<UsersResponse, 430>["data"] = {
+		service: "usersService",
+	};
+	const usersAuditData: ExtractStatus<UsersResponse, 418>["data"] = { traceId: "trace-1" };
 	void usersAuthData;
 	void usersRateLimitData;
+	void usersServiceGuardData;
+	void usersAuditData;
 
 	const invalidUsersRateLimitData: ExtractStatus<UsersResponse, 429>["data"] = {
 		// @ts-expect-error gateway middleware status 429 keeps its declared payload shape
@@ -435,8 +630,14 @@ typeOnly(() => {
 
 	const plainResponsePromise = client.usersService.fetch("/plain", "get");
 	type PlainResponse = Awaited<typeof plainResponsePromise>;
-	const plainAuthData: ExtractStatus<PlainResponse, 403>["data"] = { message: "Unauthorized" };
+	const plainAuthData: ExtractStatus<PlainResponse, 401>["data"] = { scope: "global" };
+	const plainServiceGuardData: ExtractStatus<PlainResponse, 430>["data"] = {
+		service: "usersService",
+	};
+	const plainAuditData: ExtractStatus<PlainResponse, 418>["data"] = { traceId: "trace-2" };
 	void plainAuthData;
+	void plainServiceGuardData;
+	void plainAuditData;
 
 	// @ts-expect-error /plain should not include /users scoped gateway middleware status 429
 	const plainRateLimit: ExtractStatus<PlainResponse, 429> = {
@@ -445,4 +646,20 @@ typeOnly(() => {
 		response: new Response(),
 	};
 	void plainRateLimit;
+
+	// @ts-expect-error /users auth overrides root auth with the same middleware name
+	const usersGlobalAuth: ExtractStatus<UsersResponse, 401> = {
+		status: 401,
+		data: { scope: "global" },
+		response: new Response(),
+	};
+	void usersGlobalAuth;
+
+	// @ts-expect-error /plain should not include /users scoped auth override
+	const plainUsersAuth: ExtractStatus<PlainResponse, 403> = {
+		status: 403,
+		data: { scope: "users" },
+		response: new Response(),
+	};
+	void plainUsersAuth;
 });

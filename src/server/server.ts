@@ -124,7 +124,7 @@ export type ContractHandlerTree<TContractsNode, TContext> = TContractsNode exten
 				}
 			: never;
 
-export type MiddlewareHandler<TDefinition extends MiddlewareSpec, TContext> = (
+export type MiddlewareHandler<TDefinition extends MiddlewareSpec, TContext = unknown> = (
 	ctx: Context,
 	next: () => Promise<void>,
 	ourContext: TContext,

@@ -4,7 +4,6 @@ import type { ContractCallRoutes, ContractTree, HTTPMethod } from "../contract/c
 import { compileContractRoutes } from "../contract/contract.js";
 import type {
 	InferAllMiddlewareResponseUnion,
-	InferMiddlewareResponseUnion,
 	MiddlewareSpec,
 	MiddlewareTree,
 } from "../middleware/middleware.js";
@@ -74,8 +73,9 @@ export type GatewayServices = Record<
 >;
 
 export type GatewayMiddlewares<TServices extends GatewayServices> = {
-	SHAPE: {
-		[TService in keyof TServices]: GatewayMiddlewareTreeFromContracts<
+	MIDDLEWARE?: Record<string, MiddlewareSpec>;
+	SHAPE?: Record<string, MiddlewareTree> & {
+		[TService in keyof TServices]?: GatewayMiddlewareTreeFromContracts<
 			TServices[TService]["contracts"]
 		>;
 	};
@@ -91,25 +91,20 @@ type PathSegments<TPath extends string> = TPath extends `/${infer TTrimmed}`
 	? SplitPath<TTrimmed>
 	: SplitPath<TPath>;
 
-type MiddlewareDefinitionsAtNode<TNode> = TNode extends {
+type MiddlewareMapAtNode<TNode> = TNode extends {
 	MIDDLEWARE: infer TDefinitions;
 }
 	? TDefinitions extends Record<string, MiddlewareSpec>
-		? TDefinitions[keyof TDefinitions]
-		: never
-	: never;
+		? TDefinitions
+		: EmptyObject
+	: EmptyObject;
 
-type MiddlewareDefinitionsAlongPath<TNode, TSegments extends Array<string>> =
-	| MiddlewareDefinitionsAtNode<TNode>
-	| (TSegments extends [infer THead extends string, ...infer TTail extends Array<string>]
-			? TNode extends { SHAPE: infer TShape extends Record<string, MiddlewareTree> }
-				? THead extends keyof TShape
-					? MiddlewareDefinitionsAlongPath<TShape[THead], TTail>
-					: never
-				: never
-			: never);
+type MergeMiddlewareMaps<
+	TBase extends Record<string, MiddlewareSpec>,
+	TNext extends Record<string, MiddlewareSpec>,
+> = Omit<TBase, keyof TNext> & TNext;
 
-type GatewayServiceTreeAtRoot<
+type GatewayServiceMiddlewareTree<
 	TGatewayMiddlewares,
 	TService extends PropertyKey,
 > = TGatewayMiddlewares extends { SHAPE: infer TShape extends Record<PropertyKey, MiddlewareTree> }
@@ -118,18 +113,35 @@ type GatewayServiceTreeAtRoot<
 		: never
 	: never;
 
+type MergeMiddlewareDefinitionsAlongPath<
+	TNode,
+	TSegments extends Array<string>,
+	TAcc extends Record<string, MiddlewareSpec> = EmptyObject,
+> = [TNode] extends [never]
+	? TAcc
+	: TNode extends { SHAPE: infer TShape extends Record<string, MiddlewareTree> }
+		? TSegments extends [infer THead extends string, ...infer TTail extends Array<string>]
+			? THead extends keyof TShape
+				? MergeMiddlewareDefinitionsAlongPath<
+						TShape[THead],
+						TTail,
+						MergeMiddlewareMaps<TAcc, MiddlewareMapAtNode<TNode>>
+					>
+				: MergeMiddlewareMaps<TAcc, MiddlewareMapAtNode<TNode>>
+			: MergeMiddlewareMaps<TAcc, MiddlewareMapAtNode<TNode>>
+		: MergeMiddlewareMaps<TAcc, MiddlewareMapAtNode<TNode>>;
+
 type InferGatewayMiddlewareResponseUnionAtPath<
 	TGatewayMiddlewares,
 	TService extends PropertyKey,
 	TPath extends string,
-> = MiddlewareDefinitionsAlongPath<
-	GatewayServiceTreeAtRoot<TGatewayMiddlewares, TService>,
-	PathSegments<TPath>
-> extends infer TDefinitions
-	? TDefinitions extends MiddlewareSpec
-		? InferMiddlewareResponseUnion<TDefinitions>
-		: never
-	: never;
+> = InferAllMiddlewareResponseUnion<{
+	MIDDLEWARE: MergeMiddlewareDefinitionsAlongPath<
+		GatewayServiceMiddlewareTree<TGatewayMiddlewares, TService>,
+		PathSegments<TPath>,
+		MiddlewareMapAtNode<TGatewayMiddlewares>
+	>;
+}>;
 
 type GatewayClientRoutes<
 	TService extends GatewayService<
@@ -221,18 +233,15 @@ export const createGatewayServices = <TServices extends GatewayServices>(
 };
 
 const resolveRouteMiddlewares = (
-	serviceMiddlewaresRoot: MiddlewareTree | undefined,
-	serviceHandlersRoot: unknown,
-	pathTemplate: string,
+	middlewareNodes: Array<unknown>,
+	handlerNodes: Array<unknown>,
 ): MiddlewareBindings<{ MIDDLEWARE: Record<string, MiddlewareSpec> }, unknown> | undefined => {
-	if (!serviceMiddlewaresRoot) {
+	if (middlewareNodes.length === 0) {
 		return undefined;
 	}
 
 	const mergedDefinitions: Record<string, MiddlewareSpec> = {};
 	const mergedHandlers: Record<string, MiddlewareHandler<MiddlewareSpec, unknown>> = {};
-	const middlewareNodes = collectShapePathNodes(serviceMiddlewaresRoot, pathTemplate);
-	const handlerNodes = collectShapePathNodes(serviceHandlersRoot, pathTemplate);
 
 	for (let index = 0; index < middlewareNodes.length; index += 1) {
 		const middlewareNode = middlewareNodes[index];
@@ -262,6 +271,37 @@ const resolveRouteMiddlewares = (
 		handlers: {
 			MIDDLEWARE: mergedHandlers,
 		},
+	};
+};
+
+const collectGatewayRouteMiddlewareNodes = (
+	gatewayMiddlewares: MiddlewareTree,
+	gatewayHandlers: unknown,
+	serviceName: string,
+	pathTemplate: string,
+): {
+	middlewareNodes: Array<unknown>;
+	handlerNodes: Array<unknown>;
+} => {
+	const middlewareNodes: Array<unknown> = [gatewayMiddlewares];
+	const handlerNodes: Array<unknown> = [gatewayHandlers];
+
+	const serviceMiddlewareRoot = gatewayMiddlewares.SHAPE?.[serviceName];
+	if (!serviceMiddlewareRoot) {
+		return { middlewareNodes, handlerNodes };
+	}
+
+	const serviceHandlerRoot =
+		isRecordObject(gatewayHandlers) && isRecordObject(gatewayHandlers.SHAPE)
+			? gatewayHandlers.SHAPE[serviceName]
+			: undefined;
+
+	return {
+		middlewareNodes: [
+			...middlewareNodes,
+			...collectShapePathNodes(serviceMiddlewareRoot, pathTemplate),
+		],
+		handlerNodes: [...handlerNodes, ...collectShapePathNodes(serviceHandlerRoot, pathTemplate)],
 	};
 };
 
@@ -310,19 +350,17 @@ export const initGateway = <
 					};
 
 					const boundGatewayMiddlewares = options?.middlewares;
-					const serviceTree = boundGatewayMiddlewares?.middlewares.SHAPE?.[
-						serviceName as keyof TServices
-					] as MiddlewareTree | undefined;
-					if (!boundGatewayMiddlewares || !serviceTree) {
+					if (!boundGatewayMiddlewares) {
 						return executeProxy();
 					}
 
-					const merged = resolveRouteMiddlewares(
-						serviceTree,
-						(boundGatewayMiddlewares.handlers as { SHAPE?: Record<string, unknown> })
-							.SHAPE?.[serviceName],
+					const { middlewareNodes, handlerNodes } = collectGatewayRouteMiddlewareNodes(
+						boundGatewayMiddlewares.middlewares,
+						boundGatewayMiddlewares.handlers,
+						serviceName,
 						route.pathTemplate,
 					);
+					const merged = resolveRouteMiddlewares(middlewareNodes, handlerNodes);
 					if (!merged) {
 						return executeProxy();
 					}
