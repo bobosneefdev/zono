@@ -54,15 +54,15 @@ const contracts = {
 							pathParams: z.object({ userId: z.string() }),
 							query: {
 								type: "JSON",
-								query: z.object({ active: z.boolean() }),
+								schema: z.object({ active: z.boolean() }),
 							},
 							headers: {
 								type: "JSON",
-								headers: z.object({ source: z.string() }),
+								schema: z.object({ source: z.string() }),
 							},
 							body: {
 								type: "JSON",
-								body: z.object({ name: z.string() }),
+								schema: z.object({ name: z.string() }),
 							},
 							responses: {
 								200: {
@@ -85,7 +85,7 @@ const contracts = {
 				post: {
 					body: {
 						type: "URLSearchParams",
-						body: z.instanceof(URLSearchParams),
+						schema: z.instanceof(URLSearchParams),
 					},
 					responses: {
 						200: {
@@ -101,7 +101,7 @@ const contracts = {
 				post: {
 					body: {
 						type: "FormData",
-						body: z.instanceof(FormData),
+						schema: z.instanceof(FormData),
 					},
 					responses: {
 						200: {
@@ -117,15 +117,15 @@ const contracts = {
 				post: {
 					query: {
 						type: "SuperJSON",
-						query: z.object({ createdAt: z.date() }).optional(),
+						schema: z.object({ createdAt: z.date() }).optional(),
 					},
 					headers: {
 						type: "SuperJSON",
-						headers: z.object({ createdAt: z.date() }).optional(),
+						schema: z.object({ createdAt: z.date() }).optional(),
 					},
 					body: {
 						type: "SuperJSON",
-						body: z.object({ createdAt: z.date() }),
+						schema: z.object({ createdAt: z.date() }),
 					},
 					responses: {
 						200: {

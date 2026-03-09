@@ -61,7 +61,7 @@ const usersServiceContracts = {
 						get: {
 							query: {
 								type: "SuperJSON",
-								query: z.object({ active: z.boolean() }),
+								schema: z.object({ active: z.boolean() }),
 							},
 							pathParams: z.object({ userId: z.uuid() }),
 							responses: {

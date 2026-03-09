@@ -47,27 +47,18 @@ export type PathParamsFor<TDynamicPaths extends string> = z.ZodType<
 	Record<TDynamicPaths, string>
 >;
 
-type SchemaCarrier<TType extends string, TKey extends string, TOutput, TInput = TOutput> = {
+type SchemaCarrier<TType extends string, TOutput, TInput = TOutput> = {
 	type: TType;
-} & {
-	[K in TKey]: z.ZodType<TOutput, TInput>;
+	schema: z.ZodType<TOutput, TInput>;
 };
 
 export type HeadersSpec = StandardHeadersSpec | JSONHeadersSpec | SuperJSONHeadersSpec;
 
-export type StandardHeadersSpec = SchemaCarrier<
-	"Standard",
-	"headers",
-	Record<string, string | undefined>
->;
+export type StandardHeadersSpec = SchemaCarrier<"Standard", Record<string, string | undefined>>;
 
-export type JSONHeadersSpec = SchemaCarrier<"JSON", "headers", JSONValue | undefined>;
+export type JSONHeadersSpec = SchemaCarrier<"JSON", JSONValue | undefined>;
 
-export type SuperJSONHeadersSpec = SchemaCarrier<
-	"SuperJSON",
-	"headers",
-	SuperJSONValue | undefined
->;
+export type SuperJSONHeadersSpec = SchemaCarrier<"SuperJSON", SuperJSONValue | undefined>;
 
 export type ResponseSchema = {
 	headers?: HeadersSpec;
@@ -83,34 +74,30 @@ export type ResponseSchema = {
 
 export type ResponseSpec = ResponseSchema;
 
-export type JSONResponseSpec = SchemaCarrier<"JSON", "schema", JSONValue, unknown>;
+export type JSONResponseSpec = SchemaCarrier<"JSON", JSONValue, unknown>;
 
-export type SuperJSONResponseSpec = SchemaCarrier<"SuperJSON", "schema", SuperJSONValue, unknown>;
+export type SuperJSONResponseSpec = SchemaCarrier<"SuperJSON", SuperJSONValue, unknown>;
 
-export type TextResponseSpec = SchemaCarrier<"Text", "schema", string, unknown>;
+export type TextResponseSpec = SchemaCarrier<"Text", string, unknown>;
 
 export type ContentlessResponseSpec = {
 	type: "Contentless";
 	schema?: undefined;
 };
 
-export type FormDataResponseSpec = SchemaCarrier<"FormData", "schema", FormData, unknown>;
+export type FormDataResponseSpec = SchemaCarrier<"FormData", FormData, unknown>;
 
-export type BlobResponseSpec = SchemaCarrier<"Blob", "schema", Blob, unknown>;
+export type BlobResponseSpec = SchemaCarrier<"Blob", Blob, unknown>;
 
-export type BytesResponseSpec = SchemaCarrier<"Bytes", "schema", Uint8Array, unknown>;
+export type BytesResponseSpec = SchemaCarrier<"Bytes", Uint8Array, unknown>;
 
 export type QuerySpec = StandardQuerySpec | JSONQuerySpec | SuperJSONQuerySpec;
 
-export type StandardQuerySpec = SchemaCarrier<
-	"Standard",
-	"query",
-	Record<string, string | undefined>
->;
+export type StandardQuerySpec = SchemaCarrier<"Standard", Record<string, string | undefined>>;
 
-export type JSONQuerySpec = SchemaCarrier<"JSON", "query", JSONValue | undefined>;
+export type JSONQuerySpec = SchemaCarrier<"JSON", JSONValue | undefined>;
 
-export type SuperJSONQuerySpec = SchemaCarrier<"SuperJSON", "query", SuperJSONValue | undefined>;
+export type SuperJSONQuerySpec = SchemaCarrier<"SuperJSON", SuperJSONValue | undefined>;
 
 export type BodySpec =
 	| JSONBodySpec
@@ -120,17 +107,17 @@ export type BodySpec =
 	| TextBodySpec
 	| BlobBodySpec;
 
-export type JSONBodySpec = SchemaCarrier<"JSON", "body", JSONValue>;
+export type JSONBodySpec = SchemaCarrier<"JSON", JSONValue>;
 
-export type SuperJSONBodySpec = SchemaCarrier<"SuperJSON", "body", SuperJSONValue>;
+export type SuperJSONBodySpec = SchemaCarrier<"SuperJSON", SuperJSONValue>;
 
-export type FormDataBodySpec = SchemaCarrier<"FormData", "body", FormData>;
+export type FormDataBodySpec = SchemaCarrier<"FormData", FormData>;
 
-export type URLSearchParamsBodySpec = SchemaCarrier<"URLSearchParams", "body", URLSearchParams>;
+export type URLSearchParamsBodySpec = SchemaCarrier<"URLSearchParams", URLSearchParams>;
 
-export type TextBodySpec = SchemaCarrier<"Text", "body", string>;
+export type TextBodySpec = SchemaCarrier<"Text", string>;
 
-export type BlobBodySpec = SchemaCarrier<"Blob", "body", Blob>;
+export type BlobBodySpec = SchemaCarrier<"Blob", Blob>;
 
 type ExtractPathParamName<TKey extends string> = TKey extends `$${infer TPathParamName}`
 	? TPathParamName
@@ -182,9 +169,9 @@ export type InferContractResponseData<TResponseSpec extends ResponseSpec> =
 
 type RequestPartOutputs<TMethod extends ContractMethod> = {
 	pathParams: TMethod extends { pathParams: z.ZodType<infer TData, unknown> } ? TData : never;
-	query: TMethod extends { query: { query: z.ZodType<infer TData, unknown> } } ? TData : never;
-	body: TMethod extends { body: { body: z.ZodType<infer TData, unknown> } } ? TData : never;
-	headers: TMethod extends { headers: { headers: z.ZodType<infer TData, unknown> } }
+	query: TMethod extends { query: { schema: z.ZodType<infer TData, unknown> } } ? TData : never;
+	body: TMethod extends { body: { schema: z.ZodType<infer TData, unknown> } } ? TData : never;
+	headers: TMethod extends { headers: { schema: z.ZodType<infer TData, unknown> } }
 		? TData
 		: never;
 };
@@ -198,40 +185,34 @@ export type RequestData<TMethod extends ContractMethod> = Expand<{
 }>;
 
 type QueryClientInput<TQuerySpec extends QuerySpec> = TQuerySpec extends StandardQuerySpec
-	? { type: "Standard"; data: InferSchemaDataLike<TQuerySpec, "query"> }
+	? { type: "Standard"; data: InferSchemaData<TQuerySpec> }
 	: TQuerySpec extends JSONQuerySpec
-		? { type: "JSON"; data: InferSchemaDataLike<TQuerySpec, "query"> }
+		? { type: "JSON"; data: InferSchemaData<TQuerySpec> }
 		: TQuerySpec extends SuperJSONQuerySpec
-			? { type: "SuperJSON"; data: InferSchemaDataLike<TQuerySpec, "query"> }
+			? { type: "SuperJSON"; data: InferSchemaData<TQuerySpec> }
 			: never;
 
 type HeadersClientInput<THeadersSpec extends HeadersSpec> = THeadersSpec extends StandardHeadersSpec
-	? { type: "Standard"; data: InferSchemaDataLike<THeadersSpec, "headers"> }
+	? { type: "Standard"; data: InferSchemaData<THeadersSpec> }
 	: THeadersSpec extends JSONHeadersSpec
-		? { type: "JSON"; data: InferSchemaDataLike<THeadersSpec, "headers"> }
+		? { type: "JSON"; data: InferSchemaData<THeadersSpec> }
 		: THeadersSpec extends SuperJSONHeadersSpec
-			? { type: "SuperJSON"; data: InferSchemaDataLike<THeadersSpec, "headers"> }
+			? { type: "SuperJSON"; data: InferSchemaData<THeadersSpec> }
 			: never;
 
 type BodyClientInput<TBodySpec extends BodySpec> = TBodySpec extends JSONBodySpec
-	? { type: "JSON"; data: InferSchemaDataLike<TBodySpec, "body"> }
+	? { type: "JSON"; data: InferSchemaData<TBodySpec> }
 	: TBodySpec extends SuperJSONBodySpec
-		? { type: "SuperJSON"; data: InferSchemaDataLike<TBodySpec, "body"> }
+		? { type: "SuperJSON"; data: InferSchemaData<TBodySpec> }
 		: TBodySpec extends FormDataBodySpec
-			? { type: "FormData"; data: InferSchemaDataLike<TBodySpec, "body"> }
+			? { type: "FormData"; data: InferSchemaData<TBodySpec> }
 			: TBodySpec extends URLSearchParamsBodySpec
-				? { type: "URLSearchParams"; data: InferSchemaDataLike<TBodySpec, "body"> }
+				? { type: "URLSearchParams"; data: InferSchemaData<TBodySpec> }
 				: TBodySpec extends TextBodySpec
-					? { type: "Text"; data: InferSchemaDataLike<TBodySpec, "body"> }
+					? { type: "Text"; data: InferSchemaData<TBodySpec> }
 					: TBodySpec extends BlobBodySpec
-						? { type: "Blob"; data: InferSchemaDataLike<TBodySpec, "body"> }
+						? { type: "Blob"; data: InferSchemaData<TBodySpec> }
 						: never;
-
-type InferSchemaDataLike<TSpec, TKey extends string> = TSpec extends {
-	[K in TKey]: z.ZodType<infer TOutput, unknown>;
-}
-	? TOutput
-	: never;
 
 type ClientRequestPartOutputs<TMethod extends ContractMethod> = {
 	pathParams: TMethod extends { pathParams: z.ZodType<infer TData, unknown> } ? TData : never;

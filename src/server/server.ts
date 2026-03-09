@@ -364,7 +364,7 @@ const parseRequestData = async (
 		} catch (error) {
 			throw createRequestValidationError("Query", [createParseFailureIssue(error)]);
 		}
-		const queryParseResult = await requestParsers.query.query.safeParseAsync(queryInput);
+		const queryParseResult = await requestParsers.query.schema.safeParseAsync(queryInput);
 		if (!queryParseResult.success) {
 			throw createRequestValidationError("Query", queryParseResult.error.issues);
 		}
@@ -378,8 +378,7 @@ const parseRequestData = async (
 		} catch (error) {
 			throw createRequestValidationError("Headers", [createParseFailureIssue(error)]);
 		}
-		const headersParseResult =
-			await requestParsers.headers.headers.safeParseAsync(headersInput);
+		const headersParseResult = await requestParsers.headers.schema.safeParseAsync(headersInput);
 		if (!headersParseResult.success) {
 			throw createRequestValidationError("Headers", headersParseResult.error.issues);
 		}
@@ -393,7 +392,7 @@ const parseRequestData = async (
 		} catch (error) {
 			throw createRequestValidationError("Body", [createParseFailureIssue(error)]);
 		}
-		const bodyParseResult = await requestParsers.body.body.safeParseAsync(bodyInput);
+		const bodyParseResult = await requestParsers.body.schema.safeParseAsync(bodyInput);
 		if (!bodyParseResult.success) {
 			throw createRequestValidationError("Body", bodyParseResult.error.issues);
 		}

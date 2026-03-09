@@ -50,7 +50,7 @@ const contracts = {
 		json: {
 			CONTRACT: {
 				post: {
-					body: { type: "JSON", body: z.object({ name: z.string() }) },
+					body: { type: "JSON", schema: z.object({ name: z.string() }) },
 					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
 				},
 			},
@@ -60,7 +60,7 @@ const contracts = {
 				get: {
 					query: {
 						type: "JSON",
-						query: z.object({
+						schema: z.object({
 							count: z.number().refine(async (count) => count > 0),
 						}),
 					},
@@ -73,7 +73,7 @@ const contracts = {
 				get: {
 					headers: {
 						type: "JSON",
-						headers: z.object({ trace: z.string() }),
+						schema: z.object({ trace: z.string() }),
 					},
 					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
 				},
@@ -84,7 +84,7 @@ const contracts = {
 				get: {
 					query: {
 						type: "JSON",
-						query: z.object({ count: z.number() }).optional(),
+						schema: z.object({ count: z.number() }).optional(),
 					},
 					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
 				},
@@ -95,7 +95,7 @@ const contracts = {
 				get: {
 					headers: {
 						type: "JSON",
-						headers: z.object({ trace: z.string() }).optional(),
+						schema: z.object({ trace: z.string() }).optional(),
 					},
 					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
 				},
@@ -106,7 +106,7 @@ const contracts = {
 				get: {
 					query: {
 						type: "SuperJSON",
-						query: z.object({ createdAt: z.date() }),
+						schema: z.object({ createdAt: z.date() }),
 					},
 					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
 				},
@@ -117,7 +117,7 @@ const contracts = {
 				get: {
 					headers: {
 						type: "SuperJSON",
-						headers: z.object({ createdAt: z.date() }),
+						schema: z.object({ createdAt: z.date() }),
 					},
 					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
 				},
@@ -126,7 +126,7 @@ const contracts = {
 		text: {
 			CONTRACT: {
 				post: {
-					body: { type: "Text", body: z.string() },
+					body: { type: "Text", schema: z.string() },
 					responses: { 200: { type: "Text", schema: z.string() } },
 				},
 			},
@@ -134,7 +134,7 @@ const contracts = {
 		blob: {
 			CONTRACT: {
 				post: {
-					body: { type: "Blob", body: z.instanceof(Blob) },
+					body: { type: "Blob", schema: z.instanceof(Blob) },
 					responses: { 200: { type: "Bytes", schema: z.instanceof(Uint8Array) } },
 				},
 			},
@@ -142,7 +142,7 @@ const contracts = {
 		form: {
 			CONTRACT: {
 				post: {
-					body: { type: "FormData", body: z.instanceof(FormData) },
+					body: { type: "FormData", schema: z.instanceof(FormData) },
 					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
 				},
 			},
@@ -150,7 +150,7 @@ const contracts = {
 		urlencoded: {
 			CONTRACT: {
 				post: {
-					body: { type: "URLSearchParams", body: z.instanceof(URLSearchParams) },
+					body: { type: "URLSearchParams", schema: z.instanceof(URLSearchParams) },
 					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
 				},
 			},

@@ -421,4 +421,70 @@ typeOnly(() => {
 		},
 	} as const satisfies ContractTreeFor<typeof shape>;
 	void invalidResponseSpec;
+
+	const invalidQuerySpec = {
+		SHAPE: {
+			users: {
+				SHAPE: {
+					$userId: {
+						CONTRACT: {
+							get: {
+								pathParams: z.object({ userId: z.string() }),
+								// @ts-expect-error request query specs must use schema, not query
+								query: { type: "JSON", query: z.object({ id: z.string() }) },
+								responses: {
+									200: { type: "JSON", schema: z.object({ id: z.string() }) },
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	} as const satisfies ContractTreeFor<typeof shape>;
+	void invalidQuerySpec;
+
+	const invalidHeadersSpec = {
+		SHAPE: {
+			users: {
+				SHAPE: {
+					$userId: {
+						CONTRACT: {
+							get: {
+								pathParams: z.object({ userId: z.string() }),
+								// @ts-expect-error request header specs must use schema, not headers
+								headers: { type: "JSON", headers: z.object({ id: z.string() }) },
+								responses: {
+									200: { type: "JSON", schema: z.object({ id: z.string() }) },
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	} as const satisfies ContractTreeFor<typeof shape>;
+	void invalidHeadersSpec;
+
+	const invalidBodySpec = {
+		SHAPE: {
+			users: {
+				SHAPE: {
+					$userId: {
+						CONTRACT: {
+							get: {
+								pathParams: z.object({ userId: z.string() }),
+								// @ts-expect-error request body specs must use schema, not body
+								body: { type: "JSON", body: z.object({ id: z.string() }) },
+								responses: {
+									200: { type: "JSON", schema: z.object({ id: z.string() }) },
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	} as const satisfies ContractTreeFor<typeof shape>;
+	void invalidBodySpec;
 });
