@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import type { ResponseSchema } from "../contract/contract.js";
+import type { ResponseSpec } from "../contract/contract.js";
 import type {
 	MiddlewareBindings,
 	MiddlewareHandlerTree,
@@ -11,7 +11,7 @@ import { createSerializedResponse } from "../shared/shared.js";
 
 declare const MIDDLEWARE_SHAPE_BRAND: unique symbol;
 
-export type MiddlewareResponseSchema = ResponseSchema<"schema">;
+export type MiddlewareResponseSchema = ResponseSpec;
 
 export type MiddlewareSpec = Record<number, MiddlewareResponseSchema>;
 

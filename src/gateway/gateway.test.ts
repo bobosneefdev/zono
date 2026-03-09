@@ -45,13 +45,13 @@ const serviceContracts = {
 					responses: {
 						200: {
 							type: "JSON",
-							body: z.object({ query: z.string(), header: z.string() }),
+							schema: z.object({ query: z.string(), header: z.string() }),
 						},
 					},
 				},
 				post: {
 					responses: {
-						201: { type: "Text", body: z.string() },
+						201: { type: "Text", schema: z.string() },
 					},
 				},
 			},
@@ -59,7 +59,7 @@ const serviceContracts = {
 		plain: {
 			CONTRACT: {
 				get: {
-					responses: { 200: { type: "JSON", body: z.object({ ok: z.boolean() }) } },
+					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
 				},
 			},
 		},
@@ -67,7 +67,7 @@ const serviceContracts = {
 			CONTRACT: {
 				get: {
 					responses: {
-						200: { type: "JSON", body: z.object({ users: z.array(z.string()) }) },
+						200: { type: "JSON", schema: z.object({ users: z.array(z.string()) }) },
 					},
 				},
 			},

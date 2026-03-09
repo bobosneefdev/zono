@@ -35,11 +35,9 @@ export type Expand<T> = T extends (...args: Array<unknown>) => unknown
 
 export type ExpandUnion<T> = T extends unknown ? Expand<T> : never;
 
-export type InferSchemaData<TSpec> = TSpec extends { body: ZodType<infer TOutput, unknown> }
+export type InferSchemaData<TSpec> = TSpec extends { schema: ZodType<infer TOutput, unknown> }
 	? TOutput
-	: TSpec extends { schema: ZodType<infer TOutput, unknown> }
-		? TOutput
-		: undefined;
+	: undefined;
 
 export type StatusMapToResponseUnion<
 	TStatuses extends Record<number, { type: SerializedResponseType }>,

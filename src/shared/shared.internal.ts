@@ -23,7 +23,6 @@ export type RuntimeResponseLike = {
 
 type ResponseSpecLike = {
 	type: SerializedResponseType;
-	body?: ZodTypeAny;
 	schema?: ZodTypeAny;
 };
 
@@ -94,10 +93,7 @@ export const collectShapePathNodes = (root: unknown, pathTemplate: string): Arra
 };
 
 export const getResponseSpecParser = (responseSpec: ResponseSpecLike): ZodTypeAny | undefined => {
-	if (responseSpec.schema) {
-		return responseSpec.schema;
-	}
-	return responseSpec.body;
+	return responseSpec.schema;
 };
 
 export const validateResponseAgainstStatusMap = (

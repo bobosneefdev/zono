@@ -42,7 +42,7 @@ const contracts = {
 			CONTRACT: {
 				post: {
 					body: { type: "JSON", body: z.object({ name: z.string() }) },
-					responses: { 200: { type: "JSON", body: z.object({ ok: z.boolean() }) } },
+					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
 				},
 			},
 		},
@@ -55,7 +55,7 @@ const contracts = {
 							count: z.number().refine(async (count) => count > 0),
 						}),
 					},
-					responses: { 200: { type: "JSON", body: z.object({ ok: z.boolean() }) } },
+					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
 				},
 			},
 		},
@@ -66,7 +66,7 @@ const contracts = {
 						type: "Standard",
 						headers: z.object({ "x-trace": z.string() }),
 					},
-					responses: { 200: { type: "JSON", body: z.object({ ok: z.boolean() }) } },
+					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
 				},
 			},
 		},
@@ -74,7 +74,7 @@ const contracts = {
 			CONTRACT: {
 				post: {
 					body: { type: "Text", body: z.string() },
-					responses: { 200: { type: "Text", body: z.string() } },
+					responses: { 200: { type: "Text", schema: z.string() } },
 				},
 			},
 		},
@@ -82,7 +82,7 @@ const contracts = {
 			CONTRACT: {
 				post: {
 					body: { type: "Blob", body: z.instanceof(Blob) },
-					responses: { 200: { type: "Bytes", body: z.instanceof(Uint8Array) } },
+					responses: { 200: { type: "Bytes", schema: z.instanceof(Uint8Array) } },
 				},
 			},
 		},
@@ -90,7 +90,7 @@ const contracts = {
 			CONTRACT: {
 				post: {
 					body: { type: "FormData", body: z.instanceof(FormData) },
-					responses: { 200: { type: "JSON", body: z.object({ ok: z.boolean() }) } },
+					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
 				},
 			},
 		},
@@ -98,21 +98,21 @@ const contracts = {
 			CONTRACT: {
 				post: {
 					body: { type: "URLSearchParams", body: z.instanceof(URLSearchParams) },
-					responses: { 200: { type: "JSON", body: z.object({ ok: z.boolean() }) } },
+					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
 				},
 			},
 		},
 		middleware: {
 			CONTRACT: {
 				get: {
-					responses: { 200: { type: "JSON", body: z.object({ ok: z.boolean() }) } },
+					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
 				},
 			},
 		},
 		boom: {
 			CONTRACT: {
 				get: {
-					responses: { 200: { type: "JSON", body: z.object({ ok: z.boolean() }) } },
+					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
 				},
 			},
 		},

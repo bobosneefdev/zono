@@ -61,7 +61,7 @@ const contracts = {
 							responses: {
 								200: {
 									type: "JSON",
-									body: z.object({
+									schema: z.object({
 										userId: z.string(),
 										active: z.string(),
 										header: z.string(),
@@ -84,7 +84,7 @@ const contracts = {
 					responses: {
 						200: {
 							type: "JSON",
-							body: z.object({ contentType: z.string(), payload: z.string() }),
+							schema: z.object({ contentType: z.string(), payload: z.string() }),
 						},
 					},
 				},
@@ -100,7 +100,7 @@ const contracts = {
 					responses: {
 						200: {
 							type: "JSON",
-							body: z.object({ fileName: z.string() }),
+							schema: z.object({ fileName: z.string() }),
 						},
 					},
 				},
@@ -112,11 +112,11 @@ const contracts = {
 					responses: {
 						200: {
 							type: "SuperJSON",
-							body: z.object({ createdAt: z.date() }),
+							schema: z.object({ createdAt: z.date() }),
 						},
 						503: {
 							type: "JSON",
-							body: z.object({ message: z.string() }),
+							schema: z.object({ message: z.string() }),
 						},
 					},
 				},

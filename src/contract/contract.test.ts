@@ -58,7 +58,7 @@ describe("contract route compilation", () => {
 					CONTRACT: {
 						get: {
 							responses: {
-								200: { type: "JSON", body: z.object({ ok: z.boolean() }) },
+								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
 							},
 						},
 					},
@@ -68,7 +68,7 @@ describe("contract route compilation", () => {
 								get: {
 									pathParams: z.object({ userId: z.uuid() }),
 									responses: {
-										200: { type: "JSON", body: z.object({ id: z.string() }) },
+										200: { type: "JSON", schema: z.object({ id: z.string() }) },
 									},
 								},
 							},
@@ -107,7 +107,7 @@ describe("server middleware + client", () => {
 							responses: {
 								200: {
 									type: "JSON",
-									body: z.array(z.object({ id: z.string() })),
+									schema: z.array(z.object({ id: z.string() })),
 								},
 							},
 						},
@@ -192,7 +192,10 @@ describe("server middleware + client", () => {
 					CONTRACT: {
 						get: {
 							responses: {
-								200: { type: "JSON", body: z.array(z.object({ id: z.string() })) },
+								200: {
+									type: "JSON",
+									schema: z.array(z.object({ id: z.string() })),
+								},
 							},
 						},
 					},
@@ -262,7 +265,7 @@ describe("gateway proxy", () => {
 							responses: {
 								200: {
 									type: "SuperJSON",
-									body: z.array(
+									schema: z.array(
 										z.object({ id: z.string(), createdAt: z.date() }),
 									),
 								},
@@ -356,7 +359,7 @@ typeOnly(() => {
 							get: {
 								pathParams: z.object({ userId: z.string() }),
 								responses: {
-									200: { type: "JSON", body: z.object({ id: z.string() }) },
+									200: { type: "JSON", schema: z.object({ id: z.string() }) },
 								},
 							},
 						},
@@ -387,7 +390,7 @@ typeOnly(() => {
 							// @ts-expect-error dynamic segment contracts require pathParams schema
 							get: {
 								responses: {
-									200: { type: "JSON", body: z.object({ id: z.string() }) },
+									200: { type: "JSON", schema: z.object({ id: z.string() }) },
 								},
 							},
 						},
@@ -397,4 +400,25 @@ typeOnly(() => {
 		},
 	} as const satisfies ContractTreeFor<typeof shape>;
 	void invalidContracts;
+
+	const invalidResponseSpec = {
+		SHAPE: {
+			users: {
+				SHAPE: {
+					$userId: {
+						CONTRACT: {
+							get: {
+								pathParams: z.object({ userId: z.string() }),
+								responses: {
+									// @ts-expect-error response specs must use schema, not body
+									200: { type: "JSON", body: z.object({ id: z.string() }) },
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	} as const satisfies ContractTreeFor<typeof shape>;
+	void invalidResponseSpec;
 });

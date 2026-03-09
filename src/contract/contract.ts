@@ -49,12 +49,6 @@ export type PathParamsFor<TDynamicPaths extends string> = z.ZodType<
 
 export type HeadersSpec = StandardHeadersSpec | JSONHeadersSpec | SuperJSONHeadersSpec;
 
-export type ResponseSpecFieldKey = "body" | "schema";
-
-type SchemaContainerByField<TField extends ResponseSpecFieldKey, TOutput> = TField extends "body"
-	? { body: z.ZodType<TOutput, unknown> }
-	: { schema: z.ZodType<TOutput, unknown> };
-
 export type StandardHeadersSpec = {
 	type: "Standard";
 	headers: z.ZodType<Record<string, string | undefined>, Record<string, string | undefined>>;
@@ -76,50 +70,54 @@ export type SuperJSONHeadersSpec = {
 	>;
 };
 
-export type ResponseSchema<TField extends ResponseSpecFieldKey = "body"> = {
+export type ResponseSchema = {
 	headers?: HeadersSpec;
 } & (
-	| JSONResponseSpec<TField>
-	| SuperJSONResponseSpec<TField>
-	| TextResponseSpec<TField>
+	| JSONResponseSpec
+	| SuperJSONResponseSpec
+	| TextResponseSpec
 	| ContentlessResponseSpec
-	| FormDataResponseSpec<TField>
-	| BlobResponseSpec<TField>
-	| BytesResponseSpec<TField>
+	| FormDataResponseSpec
+	| BlobResponseSpec
+	| BytesResponseSpec
 );
 
-export type ResponseSpec = ResponseSchema<"body">;
+export type ResponseSpec = ResponseSchema;
 
-export type JSONResponseSpec<TField extends ResponseSpecFieldKey = "body"> = {
+export type JSONResponseSpec = {
 	type: "JSON";
-} & SchemaContainerByField<TField, JSONValue>;
+	schema: z.ZodType<JSONValue, unknown>;
+};
 
-export type SuperJSONResponseSpec<TField extends ResponseSpecFieldKey = "body"> = {
+export type SuperJSONResponseSpec = {
 	type: "SuperJSON";
-} & SchemaContainerByField<TField, SuperJSONValue>;
+	schema: z.ZodType<SuperJSONValue, unknown>;
+};
 
-export type TextResponseSpec<TField extends ResponseSpecFieldKey = "body"> = {
+export type TextResponseSpec = {
 	type: "Text";
-} & SchemaContainerByField<TField, string>;
+	schema: z.ZodType<string, unknown>;
+};
 
 export type ContentlessResponseSpec = {
 	type: "Contentless";
-	body?: undefined;
+	schema?: undefined;
 };
 
-export type FormDataResponseSpec<TField extends ResponseSpecFieldKey = "body"> = {
+export type FormDataResponseSpec = {
 	type: "FormData";
-} & SchemaContainerByField<TField, FormData>;
+	schema: z.ZodType<FormData, unknown>;
+};
 
-export type BlobResponseSpec<TField extends ResponseSpecFieldKey = "body"> = {
+export type BlobResponseSpec = {
 	type: "Blob";
-} & SchemaContainerByField<TField, Blob>;
+	schema: z.ZodType<Blob, unknown>;
+};
 
-export type BytesResponseSpec<TField extends ResponseSpecFieldKey = "body"> = {
+export type BytesResponseSpec = {
 	type: "Bytes";
-} & SchemaContainerByField<TField, Uint8Array>;
-
-export type RuntimeResponseSpec = ResponseSchema<ResponseSpecFieldKey>;
+	schema: z.ZodType<Uint8Array, unknown>;
+};
 
 export type QuerySpec = StandardQuerySpec | JSONQuerySpec | SuperJSONQuerySpec;
 
@@ -221,7 +219,7 @@ export type ContractTree = {
 	SHAPE?: Record<string, ContractTree>;
 };
 
-export type InferRuntimeResponseData<TResponseSpec extends RuntimeResponseSpec> =
+export type InferRuntimeResponseData<TResponseSpec extends ResponseSpec> =
 	InferSchemaData<TResponseSpec>;
 
 export type InferContractResponseData<TResponseSpec extends ResponseSpec> =
@@ -404,12 +402,12 @@ export const getContractRequestParsers = (
 export const getContractResponseSchema = (
 	methodDefinition: ContractMethod,
 	status: number,
-): RuntimeResponseSpec | undefined => {
+): ResponseSpec | undefined => {
 	return methodDefinition.responses[status];
 };
 
 export const validateContractResponseType = (
-	responseSchema: RuntimeResponseSpec,
+	responseSchema: ResponseSpec,
 	type: string,
 ): boolean => {
 	return responseSchema.type === type;

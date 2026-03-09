@@ -48,7 +48,7 @@ const usersServiceContracts = {
 					responses: {
 						200: {
 							type: "SuperJSON",
-							body: z.array(zUser),
+							schema: z.array(zUser),
 						},
 					},
 				},
@@ -61,7 +61,7 @@ const usersServiceContracts = {
 							responses: {
 								200: {
 									type: "SuperJSON",
-									body: zUser.nullable(),
+									schema: zUser.nullable(),
 								},
 							},
 						},
