@@ -269,16 +269,19 @@ type TypedClient = ReturnType<
 	typeof createClient<typeof shape, typeof contracts, typeof middlewares, "public">
 >;
 type ClientResponse = Awaited<ReturnType<TypedClient["fetch"]>>;
+type ClientRateLimitData = Extract<ClientResponse, { status: 429 }>["data"];
 const has200: HasStatus<ClientResponse, 200> = true;
 const has429: HasStatus<ClientResponse, 429> = true;
 const has400: HasStatus<ClientResponse, 400> = true;
 const has404: HasStatus<ClientResponse, 404> = true;
 const has500: HasStatus<ClientResponse, 500> = true;
+const validRateLimitData: ClientRateLimitData = { retryAfter: 1 };
 void has200;
 void has429;
 void has400;
 void has404;
 void has500;
+void validRateLimitData;
 
 const typedClient = createClient<typeof shape, typeof contracts, typeof middlewares, "public">(
 	"http://localhost",
@@ -306,4 +309,8 @@ runTypeOnly(() => {
 		headers: { "x-custom": { source: "dev" } },
 		body: { name: "alice" },
 	});
+
+	// @ts-expect-error middleware status 429 must keep its declared payload shape
+	const invalidRateLimitData: ClientRateLimitData = { retryAfter: "soon" };
+	void invalidRateLimitData;
 });

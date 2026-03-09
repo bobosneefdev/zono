@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import z from "zod";
+import type { MiddlewareHandler } from "../server/server.js";
 import type { ApiShape } from "../shared/shared.js";
 import { createSerializedResponse, parseSerializedResponse } from "../shared/shared.js";
 import type { MiddlewareTreeFor } from "./middleware.js";
@@ -141,7 +142,14 @@ describe("middleware runtime", () => {
 			middlewares,
 			{
 				MIDDLEWARE: {
-					guard: () => ({ status: 418, type: "JSON", data: { retryAfter: 1 } }),
+					guard: (() => ({
+						status: 418,
+						type: "JSON",
+						data: { retryAfter: 1 },
+					})) as unknown as MiddlewareHandler<
+						typeof middlewares.MIDDLEWARE.guard,
+						unknown
+					>,
 				},
 			},
 		);
@@ -162,7 +170,14 @@ describe("middleware runtime", () => {
 			middlewares,
 			{
 				MIDDLEWARE: {
-					guard: () => ({ status: 429, type: "Text", data: "nope" }),
+					guard: (() => ({
+						status: 429,
+						type: "Text",
+						data: "nope",
+					})) as unknown as MiddlewareHandler<
+						typeof middlewares.MIDDLEWARE.guard,
+						unknown
+					>,
 				},
 			},
 		);
@@ -181,7 +196,11 @@ describe("middleware runtime", () => {
 
 		const invalidData = createHonoMiddlewareHandlers<typeof middlewares, unknown>(middlewares, {
 			MIDDLEWARE: {
-				guard: () => ({ status: 429, type: "JSON", data: { retryAfter: "bad" } }),
+				guard: (() => ({
+					status: 429,
+					type: "JSON",
+					data: { retryAfter: "bad" },
+				})) as unknown as MiddlewareHandler<typeof middlewares.MIDDLEWARE.guard, unknown>,
 			},
 		});
 		app.get("/data", async (ctx) => {
@@ -237,6 +256,16 @@ void typedMiddlewares;
 const typeOnly = (_cb: () => void): void => {};
 
 typeOnly(() => {
+	const validHandler: MiddlewareHandler<
+		typeof middlewaresType.MIDDLEWARE.rateLimit,
+		{ requestId: string }
+	> = (_ctx, _next, ourContext) => {
+		const requestId: string = ourContext.requestId;
+		void requestId;
+		return { status: 429, type: "JSON", data: { retryAfter: 1 } };
+	};
+	void validHandler;
+
 	void createHonoMiddlewareHandlers<typeof middlewaresType, { requestId: string }>(
 		middlewaresType,
 		{
@@ -250,4 +279,31 @@ typeOnly(() => {
 			},
 		},
 	);
+
+	// @ts-expect-error 418 is not declared by the middleware spec
+	const invalidStatus: MiddlewareHandler<
+		typeof middlewaresType.MIDDLEWARE.rateLimit,
+		{ requestId: string }
+	> = () => {
+		return { status: 418, type: "JSON", data: { retryAfter: 1 } };
+	};
+	void invalidStatus;
+
+	// @ts-expect-error rateLimit only allows JSON responses
+	const invalidType: MiddlewareHandler<
+		typeof middlewaresType.MIDDLEWARE.rateLimit,
+		{ requestId: string }
+	> = () => {
+		return { status: 429, type: "Text", data: "too many requests" };
+	};
+	void invalidType;
+
+	// @ts-expect-error retryAfter must be a number
+	const invalidData: MiddlewareHandler<
+		typeof middlewaresType.MIDDLEWARE.rateLimit,
+		{ requestId: string }
+	> = () => {
+		return { status: 429, type: "JSON", data: { retryAfter: "1" } };
+	};
+	void invalidData;
 });

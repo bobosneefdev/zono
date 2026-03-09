@@ -427,6 +427,12 @@ typeOnly(() => {
 	void usersAuthData;
 	void usersRateLimitData;
 
+	const invalidUsersRateLimitData: ExtractStatus<UsersResponse, 429>["data"] = {
+		// @ts-expect-error gateway middleware status 429 keeps its declared payload shape
+		retryAfter: "later",
+	};
+	void invalidUsersRateLimitData;
+
 	const plainResponsePromise = client.usersService.fetch("/plain", "get");
 	type PlainResponse = Awaited<typeof plainResponsePromise>;
 	const plainAuthData: ExtractStatus<PlainResponse, 403>["data"] = { message: "Unauthorized" };

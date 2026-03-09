@@ -253,7 +253,9 @@ initGateway(gatewayApp, gatewayServices, {
 Bun.serve({ fetch: gatewayApp.fetch, port: 3001 });
 
 // Note that client no longer gets real run-time schemas, etc. This is to protect leakage of full API details to the client.
-const gatewayClient = createGatewayClient<GatewayServices, typeof gatewayMiddlewares>("http://localhost:3001");
+const gatewayClient = createGatewayClient<GatewayServices, typeof gatewayMiddlewares>(
+	"http://localhost:3001",
+);
 
 (async () => {
 	const users = await gatewayClient.users.fetch("/users", "get");

@@ -50,7 +50,7 @@ export type InferAllMiddlewareResponseUnion<
 }[keyof TMiddlewares["MIDDLEWARE"]];
 
 export const createHonoMiddlewareHandlers = <
-	TMiddlewares extends MiddlewareTree,
+	const TMiddlewares extends MiddlewareTree,
 	TContext = unknown,
 >(
 	middlewares: TMiddlewares,

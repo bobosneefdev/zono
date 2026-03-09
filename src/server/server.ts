@@ -12,6 +12,7 @@ import {
 } from "../contract/contract.js";
 import type {
 	InferAllMiddlewareResponseUnion,
+	InferMiddlewareResponseUnion,
 	MiddlewareSpec,
 	MiddlewareTree,
 	MiddlewareTreeFor,
@@ -87,7 +88,7 @@ export type ContractHandler<TMethod extends ContractMethod, TContext> = (
 ) => Promise<InferContractResponseUnion<TMethod>> | InferContractResponseUnion<TMethod>;
 
 export type ContractHandlerMap<TContract extends ContractMethods, TContext> = {
-	[TMethod in keyof TContract & HTTPMethod]?: NonNullable<
+	[TMethod in keyof TContract & HTTPMethod]: NonNullable<
 		TContract[TMethod]
 	> extends ContractMethod
 		? ContractHandler<NonNullable<TContract[TMethod]>, TContext>
@@ -123,11 +124,14 @@ export type ContractHandlerTree<TContractsNode, TContext> = TContractsNode exten
 				}
 			: never;
 
-export type MiddlewareHandler<_TDefinition extends MiddlewareSpec, TContext> = (
+export type MiddlewareHandler<TDefinition extends MiddlewareSpec, TContext> = (
 	ctx: Context,
 	next: () => Promise<void>,
 	ourContext: TContext,
-) => Promise<void | RuntimeHandlerResponse> | void | RuntimeHandlerResponse;
+) =>
+	| Promise<void | InferMiddlewareResponseUnion<TDefinition>>
+	| void
+	| InferMiddlewareResponseUnion<TDefinition>;
 
 type MiddlewareHandlerShape<TShapeNode, TContext> =
 	TShapeNode extends Record<string, unknown>
@@ -302,7 +306,10 @@ const getHandlerAtPath = (
 	return handler as (...args: Array<unknown>) => unknown;
 };
 
-export const createHonoContractHandlers = <TContracts extends ContractTree, TContext = unknown>(
+export const createHonoContractHandlers = <
+	const TContracts extends ContractTree,
+	TContext = unknown,
+>(
 	contracts: TContracts,
 	handlers: ContractHandlerTree<TContracts, TContext>,
 ): ContractBindings<TContracts, TContext> => {
