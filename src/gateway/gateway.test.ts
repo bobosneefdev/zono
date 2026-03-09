@@ -4,8 +4,8 @@ import z from "zod";
 import type { ContractTreeFor } from "../contract/contract.js";
 import type { MiddlewareTreeFor } from "../middleware/middleware.js";
 import { createHonoMiddlewareHandlers } from "../middleware/middleware.js";
+import { createSerializedResponse, parseSerializedResponse } from "../shared/shared.internal.js";
 import type { ApiShape } from "../shared/shared.js";
-import { createSerializedResponse, parseSerializedResponse } from "../shared/shared.js";
 import type { GatewayServiceMask } from "./gateway.js";
 import {
 	createGatewayClient,

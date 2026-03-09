@@ -22,12 +22,14 @@ import type {
 	MiddlewareHandler,
 } from "../server/server.js";
 import {
+	type ApiShape,
 	collectShapePathNodes,
+	type EmptyObject,
 	isRecordObject,
 	type MapFetchRouteResponse,
 	registerHonoRoute,
+	type TypedFetch,
 } from "../shared/shared.internal.js";
-import type { ApiShape, EmptyObject, TypedFetch } from "../shared/shared.js";
 
 export type GatewayServiceMask<TShape extends ApiShape> = {} & (TShape extends { CONTRACT: true }
 	? { CONTRACT?: true }

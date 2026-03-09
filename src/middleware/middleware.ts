@@ -6,8 +6,12 @@ import type {
 	MiddlewareHandlerTree,
 	RuntimeHandlerResponse,
 } from "../server/server.js";
-import { validateAndSerializeResponse } from "../shared/shared.internal.js";
-import type { ApiShape, InferSchemaData, StatusMapToResponseUnion } from "../shared/shared.js";
+import {
+	type ApiShape,
+	type InferSchemaData,
+	type StatusMapToResponseUnion,
+	validateAndSerializeResponse,
+} from "../shared/shared.internal.js";
 
 declare const MIDDLEWARE_SHAPE_BRAND: unique symbol;
 

@@ -19,6 +19,7 @@ import type {
 } from "../middleware/middleware.js";
 import { runMiddlewareHandlers } from "../middleware/middleware.js";
 import {
+	type ApiShape,
 	findExactShapePathNode,
 	isRecordObject,
 	parseBodyInput,
@@ -29,7 +30,6 @@ import {
 	toSerializedRuntimeResponse,
 	validateAndSerializeResponse,
 } from "../shared/shared.internal.js";
-import { type ApiShape } from "../shared/shared.js";
 
 export type ContextFactory<T = unknown> = (ctx: Context) => Promise<T> | T;
 

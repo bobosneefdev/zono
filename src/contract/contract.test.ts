@@ -15,8 +15,8 @@ import {
 	createHonoMiddlewareHandlers,
 	initHono,
 } from "../server/server.js";
+import { parseSerializedResponse } from "../shared/shared.internal.js";
 import type { ApiShape } from "../shared/shared.js";
-import { parseSerializedResponse } from "../shared/shared.js";
 import type { ContractTreeFor } from "./contract.js";
 import { compileContractRoutes } from "./contract.js";
 

@@ -8,16 +8,20 @@ import type {
 } from "../contract/contract.js";
 import type { MiddlewareSpec, MiddlewareTreeFor } from "../middleware/middleware.js";
 import type { ErrorMode } from "../server/server.js";
-import type { MapFetchRouteResponse } from "../shared/shared.internal.js";
-import { toPathParamsRecord, toRequestParts } from "../shared/shared.internal.js";
 import {
 	type ApiShape,
+	appendQueryParams,
 	interpolatePathTemplate,
+	type MapFetchRouteResponse,
+	normalizeHeaderValues,
 	parseSerializedResponse,
+	serializeStructuredData,
 	type TypedFetch,
+	toPathParamsRecord,
+	toRequestParts,
 	ZONO_HEADER_DATA_HEADER,
 	ZONO_QUERY_DATA_KEY,
-} from "../shared/shared.js";
+} from "../shared/shared.internal.js";
 
 type ClientFetchRoutes<
 	TContracts extends ContractTree,
@@ -69,19 +73,11 @@ const buildRequest = (
 	if (requestParts?.query !== undefined) {
 		const query = requestParts.query as { type: string; data: unknown };
 		if (query.type === "Standard") {
-			const queryData = query.data as Record<string, string | undefined>;
-			for (const [key, value] of Object.entries(queryData)) {
-				if (value === undefined) {
-					continue;
-				}
-				url.searchParams.set(key, value);
-			}
+			appendQueryParams(url, query.data as Record<string, unknown>);
 		} else if (query.data !== undefined) {
 			url.searchParams.set(
 				ZONO_QUERY_DATA_KEY,
-				query.type === "SuperJSON"
-					? superjson.stringify(query.data)
-					: JSON.stringify(query.data),
+				serializeStructuredData(query.type, query.data),
 			);
 		}
 	}
@@ -89,19 +85,15 @@ const buildRequest = (
 	if (requestParts?.headers !== undefined) {
 		const requestHeaders = requestParts.headers as { type: string; data: unknown };
 		if (requestHeaders.type === "Standard") {
-			const headerData = requestHeaders.data as Record<string, string | undefined>;
-			for (const [key, value] of Object.entries(headerData)) {
-				if (value === undefined) {
-					continue;
-				}
+			for (const [key, value] of normalizeHeaderValues(
+				requestHeaders.data as Record<string, unknown>,
+			).entries()) {
 				headers.set(key, value);
 			}
 		} else if (requestHeaders.data !== undefined) {
 			headers.set(
 				ZONO_HEADER_DATA_HEADER,
-				requestHeaders.type === "SuperJSON"
-					? superjson.stringify(requestHeaders.data)
-					: JSON.stringify(requestHeaders.data),
+				serializeStructuredData(requestHeaders.type, requestHeaders.data),
 			);
 		}
 	}

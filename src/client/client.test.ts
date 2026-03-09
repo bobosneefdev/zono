@@ -4,12 +4,12 @@ import superjson from "superjson";
 import z from "zod";
 import type { ContractTreeFor } from "../contract/contract.js";
 import type { MiddlewareTreeFor } from "../middleware/middleware.js";
-import type { ApiShape } from "../shared/shared.js";
 import {
 	createSerializedResponse,
 	ZONO_HEADER_DATA_HEADER,
 	ZONO_QUERY_DATA_KEY,
-} from "../shared/shared.js";
+} from "../shared/shared.internal.js";
+import type { ApiShape } from "../shared/shared.js";
 import { createClient } from "./client.js";
 
 type HasStatus<TUnion, TStatus extends number> = Extract<TUnion, { status: TStatus }> extends never

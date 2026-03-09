@@ -1,13 +1,15 @@
 import z from "zod";
-import { ensurePath, isRecordObject, joinPath } from "../shared/shared.internal.js";
 import {
 	type ApiShape,
 	type Expand,
+	ensurePath,
 	type FetchRoute,
 	type InferSchemaData,
+	isRecordObject,
+	joinPath,
 	type StatusMapToResponseUnion,
 	toHonoPath,
-} from "../shared/shared.js";
+} from "../shared/shared.internal.js";
 
 export type CompiledContractRoute = {
 	pathTemplate: string;

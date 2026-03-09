@@ -2,8 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import z from "zod";
 import type { MiddlewareHandler } from "../server/server.js";
+import { createSerializedResponse, parseSerializedResponse } from "../shared/shared.internal.js";
 import type { ApiShape } from "../shared/shared.js";
-import { createSerializedResponse, parseSerializedResponse } from "../shared/shared.js";
 import type { MiddlewareTreeFor } from "./middleware.js";
 import { createHonoMiddlewareHandlers, runMiddlewareHandlers } from "./middleware.js";
 
