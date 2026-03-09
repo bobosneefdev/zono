@@ -61,16 +61,12 @@ export type StandardHeadersSpec = SchemaCarrier<
 	Record<string, string | undefined>
 >;
 
-export type JSONHeadersSpec = SchemaCarrier<
-	"JSON",
-	"headers",
-	Record<string, JSONValue | undefined>
->;
+export type JSONHeadersSpec = SchemaCarrier<"JSON", "headers", JSONValue | undefined>;
 
 export type SuperJSONHeadersSpec = SchemaCarrier<
 	"SuperJSON",
 	"headers",
-	Record<string, SuperJSONValue | undefined>
+	SuperJSONValue | undefined
 >;
 
 export type ResponseSchema = {
@@ -112,13 +108,9 @@ export type StandardQuerySpec = SchemaCarrier<
 	Record<string, string | undefined>
 >;
 
-export type JSONQuerySpec = SchemaCarrier<"JSON", "query", Record<string, JSONValue | undefined>>;
+export type JSONQuerySpec = SchemaCarrier<"JSON", "query", JSONValue | undefined>;
 
-export type SuperJSONQuerySpec = SchemaCarrier<
-	"SuperJSON",
-	"query",
-	Record<string, SuperJSONValue | undefined>
->;
+export type SuperJSONQuerySpec = SchemaCarrier<"SuperJSON", "query", SuperJSONValue | undefined>;
 
 export type BodySpec =
 	| JSONBodySpec
@@ -205,6 +197,84 @@ export type RequestData<TMethod extends ContractMethod> = Expand<{
 		: TKey]: RequestPartOutputs<TMethod>[TKey];
 }>;
 
+type QueryClientInput<TQuerySpec extends QuerySpec> = TQuerySpec extends StandardQuerySpec
+	? { type: "Standard"; data: InferSchemaDataLike<TQuerySpec, "query"> }
+	: TQuerySpec extends JSONQuerySpec
+		? { type: "JSON"; data: InferSchemaDataLike<TQuerySpec, "query"> }
+		: TQuerySpec extends SuperJSONQuerySpec
+			? { type: "SuperJSON"; data: InferSchemaDataLike<TQuerySpec, "query"> }
+			: never;
+
+type HeadersClientInput<THeadersSpec extends HeadersSpec> = THeadersSpec extends StandardHeadersSpec
+	? { type: "Standard"; data: InferSchemaDataLike<THeadersSpec, "headers"> }
+	: THeadersSpec extends JSONHeadersSpec
+		? { type: "JSON"; data: InferSchemaDataLike<THeadersSpec, "headers"> }
+		: THeadersSpec extends SuperJSONHeadersSpec
+			? { type: "SuperJSON"; data: InferSchemaDataLike<THeadersSpec, "headers"> }
+			: never;
+
+type BodyClientInput<TBodySpec extends BodySpec> = TBodySpec extends JSONBodySpec
+	? { type: "JSON"; data: InferSchemaDataLike<TBodySpec, "body"> }
+	: TBodySpec extends SuperJSONBodySpec
+		? { type: "SuperJSON"; data: InferSchemaDataLike<TBodySpec, "body"> }
+		: TBodySpec extends FormDataBodySpec
+			? { type: "FormData"; data: InferSchemaDataLike<TBodySpec, "body"> }
+			: TBodySpec extends URLSearchParamsBodySpec
+				? { type: "URLSearchParams"; data: InferSchemaDataLike<TBodySpec, "body"> }
+				: TBodySpec extends TextBodySpec
+					? { type: "Text"; data: InferSchemaDataLike<TBodySpec, "body"> }
+					: TBodySpec extends BlobBodySpec
+						? { type: "Blob"; data: InferSchemaDataLike<TBodySpec, "body"> }
+						: never;
+
+type InferSchemaDataLike<TSpec, TKey extends string> = TSpec extends {
+	[K in TKey]: z.ZodType<infer TOutput, unknown>;
+}
+	? TOutput
+	: never;
+
+type ClientRequestPartOutputs<TMethod extends ContractMethod> = {
+	pathParams: TMethod extends { pathParams: z.ZodType<infer TData, unknown> } ? TData : never;
+	query: TMethod extends { query: infer TQuerySpec extends QuerySpec }
+		? QueryClientInput<TQuerySpec>
+		: never;
+	body: TMethod extends { body: infer TBodySpec extends BodySpec }
+		? BodyClientInput<TBodySpec>
+		: never;
+	headers: TMethod extends { headers: infer THeadersSpec extends HeadersSpec }
+		? HeadersClientInput<THeadersSpec>
+		: never;
+};
+
+type OptionalClientRequestKeys<TMethod extends ContractMethod> = {
+	[TKey in keyof ClientRequestPartOutputs<TMethod>]: ClientRequestPartOutputs<TMethod>[TKey] extends {
+		data: infer TData;
+	}
+		? undefined extends TData
+			? TKey
+			: never
+		: never;
+}[keyof ClientRequestPartOutputs<TMethod>];
+
+type RequiredClientRequestKeys<TMethod extends ContractMethod> = Exclude<
+	{
+		[TKey in keyof ClientRequestPartOutputs<TMethod>]: [
+			ClientRequestPartOutputs<TMethod>[TKey],
+		] extends [never]
+			? never
+			: TKey;
+	}[keyof ClientRequestPartOutputs<TMethod>],
+	OptionalClientRequestKeys<TMethod>
+>;
+
+export type ClientRequestData<TMethod extends ContractMethod> = Expand<
+	{
+		[TKey in RequiredClientRequestKeys<TMethod>]: ClientRequestPartOutputs<TMethod>[TKey];
+	} & {
+		[TKey in OptionalClientRequestKeys<TMethod>]?: ClientRequestPartOutputs<TMethod>[TKey];
+	}
+>;
+
 type JoinPath<TPrefix extends string, TSegment extends string> = TPrefix extends ""
 	? `/${TSegment}`
 	: `${TPrefix}/${TSegment}`;
@@ -280,7 +350,7 @@ type ContractCallsFromRouteEntry<TRouteEntry> = TRouteEntry extends {
 				? {
 						path: TPath;
 						method: TMethod;
-						request: RequestData<NonNullable<TContract[TMethod]>>;
+						request: ClientRequestData<NonNullable<TContract[TMethod]>>;
 						response: InferContractResponseUnion<NonNullable<TContract[TMethod]>>;
 					}
 				: never;

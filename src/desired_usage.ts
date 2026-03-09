@@ -59,6 +59,10 @@ const usersServiceContracts = {
 				$userId: {
 					CONTRACT: {
 						get: {
+							query: {
+								type: "SuperJSON",
+								query: z.object({ active: z.boolean() }),
+							},
 							pathParams: z.object({ userId: z.uuid() }),
 							responses: {
 								200: {
@@ -189,6 +193,7 @@ const usersServiceClient = createClient<
 (async () => {
 	const users = await usersServiceClient.fetch("/users/$userId", "get", {
 		pathParams: { userId: crypto.randomUUID() },
+		query: { type: "SuperJSON", data: { active: true } },
 	});
 	console.log(users.response.status, users.data);
 })();

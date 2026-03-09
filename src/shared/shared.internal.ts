@@ -8,6 +8,8 @@ import {
 	type SerializedResponseSource,
 	type SerializedResponseType,
 	toHonoPath,
+	ZONO_HEADER_DATA_HEADER,
+	ZONO_QUERY_DATA_KEY,
 } from "./shared.js";
 
 export type RequestParts = {
@@ -205,12 +207,28 @@ const parseStructuredRecordInput = (
 	return parsedRecord;
 };
 
+const parseStructuredSlotInput = (
+	spec: Exclude<StructuredDataSpec, { type: "Standard" }>,
+	value: string | undefined,
+): unknown => {
+	if (value === undefined) {
+		return undefined;
+	}
+	return parseStructuredDataValue(spec, value);
+};
+
 export const parseQueryInput = (
 	querySpec: {
 		type: "Standard" | "JSON" | "SuperJSON";
 	},
 	requestUrl: URL,
 ): unknown => {
+	if (querySpec.type === "JSON" || querySpec.type === "SuperJSON") {
+		return parseStructuredSlotInput(
+			querySpec,
+			requestUrl.searchParams.get(ZONO_QUERY_DATA_KEY) ?? undefined,
+		);
+	}
 	return parseStructuredRecordInput(querySpec, getRequestQueryObject(requestUrl));
 };
 
@@ -220,6 +238,12 @@ export const parseHeadersInput = (
 	},
 	headers: Headers,
 ): unknown => {
+	if (headersSpec.type === "JSON" || headersSpec.type === "SuperJSON") {
+		return parseStructuredSlotInput(
+			headersSpec,
+			headers.get(ZONO_HEADER_DATA_HEADER) ?? undefined,
+		);
+	}
 	return parseStructuredRecordInput(headersSpec, getRequestHeadersObject(headers));
 };
 

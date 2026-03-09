@@ -1,21 +1,22 @@
+import superjson from "superjson";
 import type {
+	ClientRequestData,
 	ContractCallRoutes,
 	ContractTree,
 	ContractTreeFor,
 	HTTPMethod,
-	RequestData,
 } from "../contract/contract.js";
 import type { MiddlewareSpec, MiddlewareTreeFor } from "../middleware/middleware.js";
 import type { ErrorMode } from "../server/server.js";
 import type { MapFetchRouteResponse } from "../shared/shared.internal.js";
-import { toPathParamsRecord, toRecordObject, toRequestParts } from "../shared/shared.internal.js";
+import { toPathParamsRecord, toRequestParts } from "../shared/shared.internal.js";
 import {
 	type ApiShape,
-	appendQueryParams,
 	interpolatePathTemplate,
-	normalizeHeaderValues,
 	parseSerializedResponse,
 	type TypedFetch,
+	ZONO_HEADER_DATA_HEADER,
+	ZONO_QUERY_DATA_KEY,
 } from "../shared/shared.js";
 
 type ClientFetchRoutes<
@@ -55,7 +56,7 @@ const buildRequest = (
 	baseUrl: string,
 	path: string,
 	method: HTTPMethod,
-	data?: RequestData<import("../contract/contract.js").ContractMethod>,
+	data?: ClientRequestData<import("../contract/contract.js").ContractMethod>,
 ): { url: URL; init: RequestInit } => {
 	const requestParts = toRequestParts(data);
 	const resolvedPath = interpolatePathTemplate(
@@ -63,24 +64,73 @@ const buildRequest = (
 		toPathParamsRecord(requestParts?.pathParams),
 	);
 	const url = new URL(resolvedPath, baseUrl);
-	appendQueryParams(url, toRecordObject(requestParts?.query));
+	const headers = new Headers();
 
-	const headers = normalizeHeaderValues(toRecordObject(requestParts?.headers));
+	if (requestParts?.query !== undefined) {
+		const query = requestParts.query as { type: string; data: unknown };
+		if (query.type === "Standard") {
+			const queryData = query.data as Record<string, string | undefined>;
+			for (const [key, value] of Object.entries(queryData)) {
+				if (value === undefined) {
+					continue;
+				}
+				url.searchParams.set(key, value);
+			}
+		} else if (query.data !== undefined) {
+			url.searchParams.set(
+				ZONO_QUERY_DATA_KEY,
+				query.type === "SuperJSON"
+					? superjson.stringify(query.data)
+					: JSON.stringify(query.data),
+			);
+		}
+	}
+
+	if (requestParts?.headers !== undefined) {
+		const requestHeaders = requestParts.headers as { type: string; data: unknown };
+		if (requestHeaders.type === "Standard") {
+			const headerData = requestHeaders.data as Record<string, string | undefined>;
+			for (const [key, value] of Object.entries(headerData)) {
+				if (value === undefined) {
+					continue;
+				}
+				headers.set(key, value);
+			}
+		} else if (requestHeaders.data !== undefined) {
+			headers.set(
+				ZONO_HEADER_DATA_HEADER,
+				requestHeaders.type === "SuperJSON"
+					? superjson.stringify(requestHeaders.data)
+					: JSON.stringify(requestHeaders.data),
+			);
+		}
+	}
+
 	const init: RequestInit = {
 		method: method.toUpperCase(),
 		headers,
 	};
 
 	if (requestParts?.body !== undefined) {
-		const body = requestParts.body;
-		if (body instanceof FormData || body instanceof Blob || typeof body === "string") {
-			init.body = body;
-		} else if (body instanceof URLSearchParams) {
-			headers.set("content-type", "application/x-www-form-urlencoded;charset=UTF-8");
-			init.body = body.toString();
-		} else {
-			headers.set("content-type", "application/json");
-			init.body = JSON.stringify(body);
+		const body = requestParts.body as { type: string; data: unknown };
+		switch (body.type) {
+			case "FormData":
+			case "Blob":
+			case "Text":
+				init.body = body.data as FormData | Blob | string;
+				break;
+			case "URLSearchParams":
+				headers.set("content-type", "application/x-www-form-urlencoded;charset=UTF-8");
+				init.body = (body.data as URLSearchParams).toString();
+				break;
+			case "SuperJSON":
+				headers.set("content-type", "application/json");
+				init.body = superjson.stringify(body.data);
+				break;
+			case "JSON":
+				headers.set("content-type", "application/json");
+				init.body = JSON.stringify(body.data);
+				break;
 		}
 	}
 

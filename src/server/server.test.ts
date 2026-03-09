@@ -1,10 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
+import superjson from "superjson";
 import z from "zod";
 import type { ContractTreeFor } from "../contract/contract.js";
 import type { MiddlewareTreeFor } from "../middleware/middleware.js";
 import type { ApiShape } from "../shared/shared.js";
-import { parseSerializedResponse } from "../shared/shared.js";
+import {
+	parseSerializedResponse,
+	ZONO_HEADER_DATA_HEADER,
+	ZONO_QUERY_DATA_KEY,
+} from "../shared/shared.js";
 import type { ContractHandlerTree } from "./server.js";
 import { createHonoContractHandlers, createHonoMiddlewareHandlers, initHono } from "./server.js";
 
@@ -27,6 +32,10 @@ const shape = {
 		json: { CONTRACT: true },
 		query: { CONTRACT: true },
 		headers: { CONTRACT: true },
+		queryOptional: { CONTRACT: true },
+		headersOptional: { CONTRACT: true },
+		querySuper: { CONTRACT: true },
+		headersSuper: { CONTRACT: true },
 		text: { CONTRACT: true },
 		blob: { CONTRACT: true },
 		form: { CONTRACT: true },
@@ -63,8 +72,52 @@ const contracts = {
 			CONTRACT: {
 				get: {
 					headers: {
-						type: "Standard",
-						headers: z.object({ "x-trace": z.string() }),
+						type: "JSON",
+						headers: z.object({ trace: z.string() }),
+					},
+					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
+				},
+			},
+		},
+		queryOptional: {
+			CONTRACT: {
+				get: {
+					query: {
+						type: "JSON",
+						query: z.object({ count: z.number() }).optional(),
+					},
+					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
+				},
+			},
+		},
+		headersOptional: {
+			CONTRACT: {
+				get: {
+					headers: {
+						type: "JSON",
+						headers: z.object({ trace: z.string() }).optional(),
+					},
+					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
+				},
+			},
+		},
+		querySuper: {
+			CONTRACT: {
+				get: {
+					query: {
+						type: "SuperJSON",
+						query: z.object({ createdAt: z.date() }),
+					},
+					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
+				},
+			},
+		},
+		headersSuper: {
+			CONTRACT: {
+				get: {
+					headers: {
+						type: "SuperJSON",
+						headers: z.object({ createdAt: z.date() }),
 					},
 					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
 				},
@@ -124,6 +177,18 @@ const handlers: ContractHandlerTree<typeof contracts, unknown> = {
 		json: { HANDLER: { post: () => ({ status: 200, type: "JSON", data: { ok: true } }) } },
 		query: { HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) } },
 		headers: { HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) } },
+		queryOptional: {
+			HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
+		},
+		headersOptional: {
+			HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
+		},
+		querySuper: {
+			HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
+		},
+		headersSuper: {
+			HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
+		},
 		text: { HANDLER: { post: () => ({ status: 200, type: "Text", data: "ok" }) } },
 		blob: {
 			HANDLER: {
@@ -163,13 +228,21 @@ describe("server runtime", () => {
 		});
 		expect(json.status).toBe(200);
 
-		const query = await fetch(`${base}/query?count=2`);
+		const query = await fetch(
+			`${base}/query?${ZONO_QUERY_DATA_KEY}=${encodeURIComponent(JSON.stringify({ count: 2 }))}`,
+		);
 		expect(query.status).toBe(200);
 
 		const headers = await fetch(`${base}/headers`, {
-			headers: { "x-trace": "t1" },
+			headers: { [ZONO_HEADER_DATA_HEADER]: JSON.stringify({ trace: "t1" }) },
 		});
 		expect(headers.status).toBe(200);
+
+		const optionalQuery = await fetch(`${base}/queryOptional`);
+		expect(optionalQuery.status).toBe(200);
+
+		const optionalHeaders = await fetch(`${base}/headersOptional`);
+		expect(optionalHeaders.status).toBe(200);
 
 		const text = await fetch(`${base}/text`, { method: "POST", body: "hello" });
 		const parsedText = await parseSerializedResponse(text);
@@ -205,7 +278,7 @@ describe("server runtime", () => {
 
 		const base = startServer(app);
 
-		const badQuery = await fetch(`${base}/query?count=oops`);
+		const badQuery = await fetch(`${base}/query?${ZONO_QUERY_DATA_KEY}=oops`);
 		expect(badQuery.status).toBe(400);
 		const badQueryParsed = await parseSerializedResponse(badQuery);
 		expect(badQueryParsed.source).toBe("error");
@@ -237,7 +310,7 @@ describe("server runtime", () => {
 			createContext: () => ({}),
 		});
 
-		const badQuery = await fetch(`${startServer(app)}/query?count=oops`);
+		const badQuery = await fetch(`${startServer(app)}/query?${ZONO_QUERY_DATA_KEY}=oops`);
 		expect(badQuery.status).toBe(400);
 		const parsed = await parseSerializedResponse(badQuery);
 		expect((parsed.data as { message: string }).message).toBe("Query validation failed");
@@ -259,6 +332,109 @@ describe("server runtime", () => {
 		expect(parsed.source).toBe("error");
 		expect(parsed.type).toBe("JSON");
 		expect(parsed.data).toEqual({ message: "Not Found" });
+	});
+
+	test("parses SuperJSON query and headers from reserved transport slots", async () => {
+		let queryValue: { createdAt: Date } | undefined;
+		let headerValue: { createdAt: Date } | undefined;
+
+		const superHandlers: ContractHandlerTree<typeof contracts, unknown> = {
+			...handlers,
+			SHAPE: {
+				...handlers.SHAPE,
+				querySuper: {
+					HANDLER: {
+						get: (data) => {
+							queryValue = data.query;
+							return { status: 200, type: "JSON", data: { ok: true } };
+						},
+					},
+				},
+				headersSuper: {
+					HANDLER: {
+						get: (data) => {
+							headerValue = data.headers;
+							return { status: 200, type: "JSON", data: { ok: true } };
+						},
+					},
+				},
+			},
+		};
+
+		const app = new Hono();
+		initHono<typeof shape, unknown>(app, {
+			contracts: createHonoContractHandlers<typeof contracts, unknown>(
+				contracts,
+				superHandlers,
+			),
+			errorMode: "public",
+			createContext: () => ({}),
+		});
+
+		const queryCreatedAt = new Date("2024-02-02T00:00:00.000Z");
+		const headerCreatedAt = new Date("2024-03-03T00:00:00.000Z");
+		const base = startServer(app);
+
+		const queryResponse = await fetch(
+			`${base}/querySuper?${ZONO_QUERY_DATA_KEY}=${encodeURIComponent(superjson.stringify({ createdAt: queryCreatedAt }))}`,
+		);
+		const headerResponse = await fetch(`${base}/headersSuper`, {
+			headers: {
+				[ZONO_HEADER_DATA_HEADER]: superjson.stringify({ createdAt: headerCreatedAt }),
+			},
+		});
+
+		expect(queryResponse.status).toBe(200);
+		expect(headerResponse.status).toBe(200);
+		expect(queryValue).toEqual({ createdAt: queryCreatedAt });
+		expect(headerValue).toEqual({ createdAt: headerCreatedAt });
+	});
+
+	test("optional structured query and headers resolve to undefined when transport slots are absent", async () => {
+		let optionalQueryValue: { count: number } | undefined;
+		let optionalHeaderValue: { trace: string } | undefined;
+
+		const optionalHandlers: ContractHandlerTree<typeof contracts, unknown> = {
+			...handlers,
+			SHAPE: {
+				...handlers.SHAPE,
+				queryOptional: {
+					HANDLER: {
+						get: (data) => {
+							optionalQueryValue = data.query;
+							return { status: 200, type: "JSON", data: { ok: true } };
+						},
+					},
+				},
+				headersOptional: {
+					HANDLER: {
+						get: (data) => {
+							optionalHeaderValue = data.headers;
+							return { status: 200, type: "JSON", data: { ok: true } };
+						},
+					},
+				},
+			},
+		};
+
+		const app = new Hono();
+		initHono<typeof shape, unknown>(app, {
+			contracts: createHonoContractHandlers<typeof contracts, unknown>(
+				contracts,
+				optionalHandlers,
+			),
+			errorMode: "public",
+			createContext: () => ({}),
+		});
+
+		const base = startServer(app);
+		const queryResponse = await fetch(`${base}/queryOptional`);
+		const headerResponse = await fetch(`${base}/headersOptional`);
+
+		expect(queryResponse.status).toBe(200);
+		expect(headerResponse.status).toBe(200);
+		expect(optionalQueryValue).toBeUndefined();
+		expect(optionalHeaderValue).toBeUndefined();
 	});
 
 	test("middleware short-circuits and error mode public/private differ", async () => {
@@ -326,6 +502,18 @@ describe("server runtime", () => {
 				headers: {
 					HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
 				},
+				queryOptional: {
+					HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
+				},
+				headersOptional: {
+					HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
+				},
+				querySuper: {
+					HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
+				},
+				headersSuper: {
+					HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
+				},
 				text: { HANDLER: { post: () => ({ status: 200, type: "Text", data: "ok" }) } },
 				blob: {
 					HANDLER: {
@@ -391,6 +579,16 @@ const typed = createHonoContractHandlers<typeof contracts, { requestId: string }
 		},
 		query: { HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) } },
 		headers: { HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) } },
+		queryOptional: {
+			HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
+		},
+		headersOptional: {
+			HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
+		},
+		querySuper: { HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) } },
+		headersSuper: {
+			HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
+		},
 		text: { HANDLER: { post: () => ({ status: 200, type: "Text", data: "ok" }) } },
 		blob: {
 			HANDLER: { post: () => ({ status: 200, type: "Bytes", data: new Uint8Array([1]) }) },
@@ -422,6 +620,18 @@ typeOnly(() => {
 			},
 			query: { HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) } },
 			headers: {
+				HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
+			},
+			queryOptional: {
+				HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
+			},
+			headersOptional: {
+				HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
+			},
+			querySuper: {
+				HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
+			},
+			headersSuper: {
 				HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
 			},
 			text: { HANDLER: { post: () => ({ status: 200, type: "Text", data: "ok" }) } },

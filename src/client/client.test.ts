@@ -1,10 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
+import superjson from "superjson";
 import z from "zod";
 import type { ContractTreeFor } from "../contract/contract.js";
 import type { MiddlewareTreeFor } from "../middleware/middleware.js";
 import type { ApiShape } from "../shared/shared.js";
-import { createSerializedResponse } from "../shared/shared.js";
+import {
+	createSerializedResponse,
+	ZONO_HEADER_DATA_HEADER,
+	ZONO_QUERY_DATA_KEY,
+} from "../shared/shared.js";
 import { createClient } from "./client.js";
 
 type HasStatus<TUnion, TStatus extends number> = Extract<TUnion, { status: TStatus }> extends never
@@ -34,6 +39,7 @@ const shape = {
 		},
 		search: { CONTRACT: true },
 		upload: { CONTRACT: true },
+		structured: { CONTRACT: true },
 		events: { CONTRACT: true },
 	},
 } as const satisfies ApiShape;
@@ -52,7 +58,7 @@ const contracts = {
 							},
 							headers: {
 								type: "JSON",
-								headers: z.object({ "x-custom": z.object({ source: z.string() }) }),
+								headers: z.object({ source: z.string() }),
 							},
 							body: {
 								type: "JSON",
@@ -63,8 +69,8 @@ const contracts = {
 									type: "JSON",
 									schema: z.object({
 										userId: z.string(),
-										active: z.string(),
-										header: z.string(),
+										queryPayload: z.string(),
+										headerPayload: z.string(),
 										name: z.string(),
 									}),
 								},
@@ -101,6 +107,34 @@ const contracts = {
 						200: {
 							type: "JSON",
 							schema: z.object({ fileName: z.string() }),
+						},
+					},
+				},
+			},
+		},
+		structured: {
+			CONTRACT: {
+				post: {
+					query: {
+						type: "SuperJSON",
+						query: z.object({ createdAt: z.date() }).optional(),
+					},
+					headers: {
+						type: "SuperJSON",
+						headers: z.object({ createdAt: z.date() }).optional(),
+					},
+					body: {
+						type: "SuperJSON",
+						body: z.object({ createdAt: z.date() }),
+					},
+					responses: {
+						200: {
+							type: "JSON",
+							schema: z.object({
+								queryPayload: z.string().optional(),
+								headerPayload: z.string().optional(),
+								bodyPayload: z.string(),
+							}),
 						},
 					},
 				},
@@ -147,8 +181,8 @@ describe("createClient runtime", () => {
 				source: "contract",
 				data: {
 					userId: ctx.req.param("userId"),
-					active: ctx.req.query("active") ?? "",
-					header: ctx.req.header("x-custom") ?? "",
+					queryPayload: ctx.req.query(ZONO_QUERY_DATA_KEY) ?? "",
+					headerPayload: ctx.req.header(ZONO_HEADER_DATA_HEADER) ?? "",
 					name: payload.name,
 				},
 			});
@@ -160,9 +194,9 @@ describe("createClient runtime", () => {
 
 		const response = await client.fetch("/users/$userId", "post", {
 			pathParams: { userId: "a/b" },
-			query: { active: true },
-			headers: { "x-custom": { source: "test" } },
-			body: { name: "alice" },
+			query: { type: "JSON", data: { active: true } },
+			headers: { type: "JSON", data: { source: "test" } },
+			body: { type: "JSON", data: { name: "alice" } },
 		});
 
 		expect(response.status).toBe(200);
@@ -170,8 +204,8 @@ describe("createClient runtime", () => {
 		expect(response.response.status).toBe(200);
 		expect(response.data).toEqual({
 			userId: "a/b",
-			active: "true",
-			header: '{"source":"test"}',
+			queryPayload: '{"active":true}',
+			headerPayload: '{"source":"test"}',
 			name: "alice",
 		});
 	});
@@ -203,7 +237,7 @@ describe("createClient runtime", () => {
 		);
 
 		const urlEncoded = await client.fetch("/search", "post", {
-			body: new URLSearchParams({ q: "zono docs" }),
+			body: { type: "URLSearchParams", data: new URLSearchParams({ q: "zono docs" }) },
 		});
 		expect(urlEncoded.status).toBe(200);
 		expect(urlEncoded.response.status).toBe(200);
@@ -214,10 +248,84 @@ describe("createClient runtime", () => {
 
 		const formData = new FormData();
 		formData.set("fileName", "avatar.png");
-		const uploaded = await client.fetch("/upload", "post", { body: formData });
+		const uploaded = await client.fetch("/upload", "post", {
+			body: { type: "FormData", data: formData },
+		});
 		expect(uploaded.status).toBe(200);
 		expect(uploaded.response.status).toBe(200);
 		expect(uploaded.data).toEqual({ fileName: "avatar.png" });
+	});
+
+	test("serializes SuperJSON body, query, and headers through reserved transport slots", async () => {
+		const app = new Hono();
+		app.post("/structured", async (ctx) => {
+			return createSerializedResponse({
+				status: 200,
+				type: "JSON",
+				source: "contract",
+				data: {
+					queryPayload: ctx.req.query(ZONO_QUERY_DATA_KEY) ?? undefined,
+					headerPayload: ctx.req.header(ZONO_HEADER_DATA_HEADER) ?? undefined,
+					bodyPayload: await ctx.req.text(),
+				},
+			});
+		});
+
+		const client = createClient<typeof shape, typeof contracts, typeof middlewares, "public">(
+			startServer(app),
+		);
+		const createdAt = new Date("2024-02-02T00:00:00.000Z");
+
+		const response = await client.fetch("/structured", "post", {
+			query: { type: "SuperJSON", data: { createdAt } },
+			headers: { type: "SuperJSON", data: { createdAt } },
+			body: { type: "SuperJSON", data: { createdAt } },
+		});
+
+		expect(response.status).toBe(200);
+		expect(
+			superjson.parse((response.data as { queryPayload: string }).queryPayload) as {
+				createdAt: Date;
+			},
+		).toEqual({ createdAt });
+		expect(
+			superjson.parse((response.data as { headerPayload: string }).headerPayload) as {
+				createdAt: Date;
+			},
+		).toEqual({ createdAt });
+		expect(
+			superjson.parse((response.data as { bodyPayload: string }).bodyPayload) as {
+				createdAt: Date;
+			},
+		).toEqual({ createdAt });
+	});
+
+	test("omits reserved query and header slots when structured data is undefined", async () => {
+		const app = new Hono();
+		app.post("/structured", async (ctx) => {
+			return createSerializedResponse({
+				status: 200,
+				type: "JSON",
+				source: "contract",
+				data: {
+					queryPayload: ctx.req.query(ZONO_QUERY_DATA_KEY) ?? undefined,
+					headerPayload: ctx.req.header(ZONO_HEADER_DATA_HEADER) ?? undefined,
+					bodyPayload: await ctx.req.text(),
+				},
+			});
+		});
+
+		const client = createClient<typeof shape, typeof contracts, typeof middlewares, "public">(
+			startServer(app),
+		);
+
+		const response = await client.fetch("/structured", "post", {
+			body: { type: "SuperJSON", data: { createdAt: new Date("2024-02-02T00:00:00.000Z") } },
+		});
+
+		expect(response.status).toBe(200);
+		expect((response.data as { queryPayload?: string }).queryPayload).toBeUndefined();
+		expect((response.data as { headerPayload?: string }).headerPayload).toBeUndefined();
 	});
 
 	test("parses serialized responses including SuperJSON", async () => {
@@ -301,9 +409,9 @@ const runTypeOnly = (_cb: () => void): void => {};
 runTypeOnly(() => {
 	void typedClient.fetch("/users/$userId", "post", {
 		pathParams: { userId: "u1" },
-		query: { active: true },
-		headers: { "x-custom": { source: "dev" } },
-		body: { name: "alice" },
+		query: { type: "JSON", data: { active: true } },
+		headers: { type: "JSON", data: { source: "dev" } },
+		body: { type: "JSON", data: { name: "alice" } },
 	});
 
 	// @ts-expect-error unknown path should fail
@@ -314,9 +422,27 @@ runTypeOnly(() => {
 
 	// @ts-expect-error pathParams required for dynamic route
 	void typedClient.fetch("/users/$userId", "post", {
+		query: { type: "JSON", data: { active: true } },
+		headers: { type: "JSON", data: { source: "dev" } },
+		body: { type: "JSON", data: { name: "alice" } },
+	});
+
+	void typedClient.fetch("/structured", "post", {
+		query: { type: "SuperJSON", data: { createdAt: new Date() } },
+		headers: { type: "SuperJSON", data: { createdAt: new Date() } },
+		body: { type: "SuperJSON", data: { createdAt: new Date() } },
+	});
+
+	void typedClient.fetch("/structured", "post", {
+		body: { type: "SuperJSON", data: { createdAt: new Date() } },
+	});
+
+	void typedClient.fetch("/users/$userId", "post", {
+		pathParams: { userId: "u1" },
+		// @ts-expect-error query now requires a transport wrapper
 		query: { active: true },
-		headers: { "x-custom": { source: "dev" } },
-		body: { name: "alice" },
+		headers: { type: "JSON", data: { source: "dev" } },
+		body: { type: "JSON", data: { name: "alice" } },
 	});
 
 	// @ts-expect-error middleware status 429 must keep its declared payload shape

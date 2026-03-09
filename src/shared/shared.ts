@@ -4,6 +4,8 @@ import type { ZodType } from "zod";
 export const ZONO_RESPONSE_TYPE_HEADER = "x-zono-response-type";
 export const ZONO_RESPONSE_SOURCE_HEADER = "x-zono-response-source";
 export const ZONO_SUPERJSON_HEADER = "x-zono-superjson";
+export const ZONO_QUERY_DATA_KEY = "_zono";
+export const ZONO_HEADER_DATA_HEADER = "x-zono-data";
 
 export type ApiShape = {
 	CONTRACT?: true;
