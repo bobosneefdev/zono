@@ -9,7 +9,7 @@ import {
 	joinPath,
 	type StatusMapToResponseUnion,
 	toHonoPath,
-} from "../shared/shared.internal.js";
+} from "../shared/shared.js";
 
 export type CompiledContractRoute = {
 	pathTemplate: string;

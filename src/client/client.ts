@@ -25,7 +25,7 @@ import {
 	toRequestParts,
 	ZONO_HEADER_DATA_HEADER,
 	ZONO_QUERY_DATA_KEY,
-} from "../shared/shared.internal.js";
+} from "../shared/shared.js";
 
 type ClientFetchRoutes<
 	TContracts extends ContractTree,

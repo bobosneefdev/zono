@@ -10,8 +10,8 @@ import type {
 	Expand,
 	InferSchemaData,
 	StatusMapToResponseUnion,
-} from "../shared/shared.internal.js";
-import { isRecordObject } from "../shared/shared.internal.js";
+} from "../shared/shared.js";
+import { isRecordObject } from "../shared/shared.js";
 
 export type MiddlewareResponseSchema = ResponseSpec;
 

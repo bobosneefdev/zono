@@ -9,8 +9,8 @@ import {
 	createHonoMiddlewareHandlers as createServerMiddlewareHandlers,
 	initHono,
 } from "../server/server.js";
-import { createSerializedResponse, parseSerializedResponse } from "../shared/shared.internal.js";
 import type { ApiShape } from "../shared/shared.js";
+import { createSerializedResponse, parseSerializedResponse } from "../shared/shared.js";
 import type { GatewayServiceMask } from "./gateway.js";
 import {
 	createGatewayClient,

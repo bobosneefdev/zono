@@ -33,7 +33,7 @@ import {
 	toHonoPath,
 	toSerializedRuntimeResponse,
 	validateAndSerializeResponse,
-} from "../shared/shared.internal.js";
+} from "../shared/shared.js";
 
 export type ContextFactory<T = unknown> = (ctx: Context) => Promise<T> | T;
 

@@ -34,7 +34,7 @@ import {
 	toHonoPath,
 	toSerializedRuntimeResponse,
 	validateAndSerializeResponse,
-} from "../shared/shared.internal.js";
+} from "../shared/shared.js";
 
 export type GatewayServiceMask<TShape extends ApiShape> = {} & (TShape extends { CONTRACT: true }
 	? { CONTRACT?: true }

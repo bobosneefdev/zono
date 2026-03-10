@@ -1,1 +1,1 @@
-export * from "./shared.js";
+export type { ApiShape } from "./shared.js";

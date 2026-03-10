@@ -4,12 +4,12 @@ import superjson from "superjson";
 import z from "zod";
 import type { ContractTreeFor } from "../contract/contract.js";
 import type { MiddlewareTreeFor } from "../middleware/middleware.js";
+import type { ApiShape } from "../shared/shared.js";
 import {
 	parseSerializedResponse,
 	ZONO_HEADER_DATA_HEADER,
 	ZONO_QUERY_DATA_KEY,
-} from "../shared/shared.internal.js";
-import type { ApiShape } from "../shared/shared.js";
+} from "../shared/shared.js";
 import type { ContractHandlerTree } from "./server.js";
 import { createHonoContractHandlers, createHonoMiddlewareHandlers, initHono } from "./server.js";
 
