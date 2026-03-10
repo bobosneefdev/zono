@@ -19,9 +19,9 @@ import type {
 import { collectMiddlewareLayers } from "../middleware/middleware.js";
 import type {
 	ContextFactory,
-	ErrorMode,
 	ErrorResponse,
 	MiddlewareBindings,
+	ServerErrorMode,
 } from "../server/server.js";
 import {
 	type ApiShape,
@@ -88,7 +88,7 @@ export type GatewayService<
 	TContracts extends ContractTree,
 	TMask extends GatewayServiceMask<ApiShapeFromContractTree<TContracts>>,
 	TMiddlewares extends MiddlewareTreeFor<ApiShapeFromContractTree<TContracts>>,
-	TErrorMode extends ErrorMode,
+	TErrorMode extends ServerErrorMode,
 > = {
 	mask: TMask;
 	contracts: TContracts;
@@ -101,7 +101,7 @@ type AnyGatewayService = {
 	mask: GatewayServiceMask<ApiShape>;
 	contracts: ContractTree;
 	middlewares: MiddlewareTree;
-	errorMode: ErrorMode;
+	errorMode: ServerErrorMode;
 	baseUrl: string;
 };
 
@@ -193,7 +193,7 @@ export const createGatewayService = <
 	TContracts extends ContractTree,
 	const TMask extends GatewayServiceMask<ApiShapeFromContractTree<TContracts>>,
 	TMiddlewares extends MiddlewareTreeFor<ApiShapeFromContractTree<TContracts>>,
-	TErrorMode extends ErrorMode,
+	TErrorMode extends ServerErrorMode,
 >(
 	mask: TMask,
 	contracts: TContracts,
@@ -260,7 +260,7 @@ type PreparedGatewayRoute = {
 	serializedMethod: string;
 	shouldSendBody: boolean;
 	baseUrl: string;
-	errorMode: ErrorMode;
+	errorMode: ServerErrorMode;
 };
 
 const collectGatewayRouteMiddlewareNodes = (
@@ -309,11 +309,14 @@ const getGatewayContext = <TContext>(ctx: Context): Awaited<TContext> => {
 	return getContextValue(ctx, ZONO_GATEWAY_CONTEXT_KEY) as Awaited<TContext>;
 };
 
-const getGatewayErrorMode = (ctx: Context): ErrorMode => {
-	return (getContextValue(ctx, ZONO_GATEWAY_ERROR_MODE_KEY) as ErrorMode | undefined) ?? "public";
+const getGatewayErrorMode = (ctx: Context): ServerErrorMode => {
+	return (
+		(getContextValue(ctx, ZONO_GATEWAY_ERROR_MODE_KEY) as ServerErrorMode | undefined) ??
+		"public"
+	);
 };
 
-const makeGatewayErrorResponse = (error: unknown, errorMode: ErrorMode) => {
+const makeGatewayErrorResponse = (error: unknown, errorMode: ServerErrorMode) => {
 	if (errorMode === "public") {
 		return {
 			status: 500,

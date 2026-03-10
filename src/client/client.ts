@@ -11,7 +11,7 @@ import type {
 	MiddlewareTree,
 	MiddlewareTreeFor,
 } from "../middleware/middleware.js";
-import type { ErrorMode } from "../server/server.js";
+import type { ClientErrorMode, ErrorResponse, ServerErrorMode } from "../server/server.js";
 import {
 	type ApiShape,
 	appendQueryParams,
@@ -27,10 +27,13 @@ import {
 	ZONO_QUERY_DATA_KEY,
 } from "../shared/shared.js";
 
+type ClientInferredErrorResponse<TErrorMode extends ClientErrorMode> =
+	TErrorMode extends ServerErrorMode ? ErrorResponse<TErrorMode> : never;
+
 type ClientFetchRoutes<
 	TContracts extends ContractTree,
 	TMiddlewares extends MiddlewareTree,
-	TErrorMode extends ErrorMode,
+	TErrorMode extends ClientErrorMode,
 > = ContractCallRoutes<TContracts> extends infer TRoute
 	? TRoute extends {
 			path: infer TPath extends string;
@@ -41,7 +44,7 @@ type ClientFetchRoutes<
 		? MapFetchRouteResponse<
 				TRoute,
 				| InferMiddlewareResponseUnionAtPath<TMiddlewares, TPath>
-				| import("../server/server.js").ErrorResponse<TErrorMode>
+				| ClientInferredErrorResponse<TErrorMode>
 			>
 		: never
 	: never;
@@ -49,13 +52,13 @@ type ClientFetchRoutes<
 export type ClientFetchMethod<
 	TContracts extends ContractTree,
 	TMiddlewares extends MiddlewareTree,
-	TErrorMode extends ErrorMode,
+	TErrorMode extends ClientErrorMode,
 > = TypedFetch<ClientFetchRoutes<TContracts, TMiddlewares, TErrorMode>>;
 
 export type Client<
 	TContracts extends ContractTree,
 	TMiddlewares extends MiddlewareTree,
-	TErrorMode extends ErrorMode,
+	TErrorMode extends ClientErrorMode,
 > = {
 	fetch: ClientFetchMethod<TContracts, TMiddlewares, TErrorMode>;
 };
@@ -137,7 +140,7 @@ export const createClient = <
 	TShape extends ApiShape,
 	TContracts extends ContractTreeFor<TShape> & ContractTree,
 	TMiddlewares extends MiddlewareTreeFor<TShape>,
-	TErrorMode extends ErrorMode,
+	TErrorMode extends ClientErrorMode,
 >(
 	baseUrl: string,
 ): Client<TContracts, TMiddlewares, TErrorMode> => {

@@ -37,7 +37,8 @@ import {
 
 export type ContextFactory<T = unknown> = (ctx: Context) => Promise<T> | T;
 
-export type ErrorMode = "public" | "private";
+export type ServerErrorMode = "public" | "private";
+export type ClientErrorMode = ServerErrorMode | "N/A";
 
 export type Public500ErrorData = {
 	message: string;
@@ -67,7 +68,7 @@ export type PublicErrorData = Public400ErrorData | NotFoundErrorData | Public500
 
 export type PrivateErrorData = Private400ErrorData | NotFoundErrorData | Private500ErrorData;
 
-export type ErrorResponse<TErrorMode extends ErrorMode> =
+export type ErrorResponse<TErrorMode extends ServerErrorMode> =
 	| {
 			status: 400;
 			type: "JSON";
@@ -232,14 +233,14 @@ export type ServerOptions<
 > = {
 	contracts: ContractBindings<ContractTreeFor<TShape>, TContext>;
 	middlewares?: MiddlewareBindings<TMiddlewares, TContext>;
-	errorMode: ErrorMode;
+	errorMode: ServerErrorMode;
 	createContext: ContextFactory<TContext>;
 };
 
 export type ClientResponse<
 	TMethod extends ContractMethod,
 	TMiddlewares extends { MIDDLEWARE: Record<string, MiddlewareSpec> },
-	TErrorMode extends ErrorMode,
+	TErrorMode extends ServerErrorMode,
 > =
 	| InferContractResponseUnion<TMethod>
 	| InferAllMiddlewareResponseUnion<TMiddlewares>
@@ -279,7 +280,7 @@ const makeNotFoundResponse = (): RuntimeHandlerResponse => {
 	};
 };
 
-const makeErrorResponse = (error: unknown, errorMode: ErrorMode): RuntimeHandlerResponse => {
+const makeErrorResponse = (error: unknown, errorMode: ServerErrorMode): RuntimeHandlerResponse => {
 	if (error instanceof RequestValidationError) {
 		if (errorMode === "public") {
 			return {

@@ -730,7 +730,30 @@ void validBadRequestData;
 void validNotFoundData;
 void validInternalErrorData;
 
+type NaTypedClient = ReturnType<
+	typeof createClient<typeof shape, typeof contracts, typeof middlewares, "N/A">
+>;
+type NaClientResponse = Awaited<ReturnType<NaTypedClient["fetch"]>>;
+type NaClientRateLimitData = Extract<NaClientResponse, { status: 429 }>["data"];
+const naHas200: HasStatus<NaClientResponse, 200> = true;
+const naHas204: HasStatus<NaClientResponse, 204> = true;
+const naHas429: HasStatus<NaClientResponse, 429> = true;
+const naHas400: HasStatus<NaClientResponse, 400> = false;
+const naHas404: HasStatus<NaClientResponse, 404> = false;
+const naHas500: HasStatus<NaClientResponse, 500> = false;
+const naValidRateLimitData: NaClientRateLimitData = { retryAfter: 1 };
+void naHas200;
+void naHas204;
+void naHas429;
+void naHas400;
+void naHas404;
+void naHas500;
+void naValidRateLimitData;
+
 const typedClient = createClient<typeof shape, typeof contracts, typeof middlewares, "public">(
+	"http://localhost",
+);
+const naTypedClient = createClient<typeof shape, typeof contracts, typeof middlewares, "N/A">(
 	"http://localhost",
 );
 
@@ -927,6 +950,32 @@ runTypeOnly(() => {
 	type EventResponse = Awaited<typeof eventResponsePromise>;
 	const eventHeaders: Extract<EventResponse, { status: 200 }>["headers"] = undefined;
 	void eventHeaders;
+
+	const naEventResponsePromise = naTypedClient.fetch("/events", "get");
+	type NaEventResponse = Awaited<typeof naEventResponsePromise>;
+	const naEventServiceUnavailableData: Extract<NaEventResponse, { status: 503 }>["data"] = {
+		message: "down",
+	};
+	void naEventServiceUnavailableData;
+
+	// @ts-expect-error "N/A" client omits inferred built-in error statuses
+	const naBadRequestData: Extract<NaClientResponse, { status: 400 }>["data"] = {
+		message: "bad",
+		issues: [],
+	};
+	void naBadRequestData;
+
+	// @ts-expect-error "N/A" client omits inferred built-in error statuses
+	const naNotFoundData: Extract<NaClientResponse, { status: 404 }>["data"] = {
+		message: "missing",
+	};
+	void naNotFoundData;
+
+	// @ts-expect-error "N/A" client omits inferred built-in error statuses
+	const naInternalErrorData: Extract<NaClientResponse, { status: 500 }>["data"] = {
+		message: "boom",
+	};
+	void naInternalErrorData;
 
 	// @ts-expect-error response headers are required when declared
 	const missingStandardHeaders: Extract<StandardHeadersResponse, { status: 200 }> = {
