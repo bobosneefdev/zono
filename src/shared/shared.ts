@@ -55,15 +55,17 @@ type ResponseHeadersField<TSpec> = TSpec extends { headers: infer THeadersSpec }
 export type StatusMapToResponseUnion<
 	TStatuses extends Record<number, { type: SerializedResponseType }>,
 > = {
-	[TStatus in keyof TStatuses & number]: {
-		status: TStatus;
-		type: TStatuses[TStatus]["type"];
-		data: InferSchemaData<TStatuses[TStatus]>;
-	} & ResponseHeadersField<TStatuses[TStatus]>;
+	[TStatus in keyof TStatuses & number]: Expand<
+		{
+			status: TStatus;
+			type: TStatuses[TStatus]["type"];
+			data: InferSchemaData<TStatuses[TStatus]>;
+		} & ResponseHeadersField<TStatuses[TStatus]>
+	>;
 }[keyof TStatuses & number];
 
 export type FetchResponse<TResponse> = TResponse extends unknown
-	? Omit<TResponse, "type"> & { response: Response }
+	? Expand<Omit<TResponse, "type"> & { response: Response }>
 	: never;
 
 export type FetchRoute = {
@@ -73,14 +75,43 @@ export type FetchRoute = {
 	response: unknown;
 };
 
+type FetchRouteAtPath<TRoute extends FetchRoute, TPath extends TRoute["path"]> = Extract<
+	TRoute,
+	{ path: TPath }
+>;
+
+type FetchRouteAtPathAndMethod<
+	TRoute extends FetchRoute,
+	TPath extends TRoute["path"],
+	TMethod extends FetchRouteAtPath<TRoute, TPath>["method"],
+> = Extract<TRoute, { path: TPath; method: TMethod }>;
+
 export type TypedFetch<TRoute extends FetchRoute> = <
 	TPath extends TRoute["path"],
-	TMethod extends Extract<TRoute, { path: TPath }>["method"],
+	TMethod extends FetchRouteAtPath<TRoute, TPath>["method"],
 >(
 	path: TPath,
 	method: TMethod,
-	data?: Extract<TRoute, { path: TPath; method: TMethod }>["request"],
-) => Promise<Extract<TRoute, { path: TPath; method: TMethod }>["response"]>;
+	data?: FetchRouteAtPathAndMethod<TRoute, TPath, TMethod>["request"],
+) => Promise<FetchRouteAtPathAndMethod<TRoute, TPath, TMethod>["response"]>;
+
+export type TypedFetchConfig<TRoute extends FetchRoute> = <
+	TPath extends TRoute["path"],
+	TMethod extends FetchRouteAtPath<TRoute, TPath>["method"],
+>(
+	path: TPath,
+	method: TMethod,
+	data?: FetchRouteAtPathAndMethod<TRoute, TPath, TMethod>["request"],
+) => [string, RequestInit];
+
+export type TypedParseResponse<TRoute extends FetchRoute> = <
+	TPath extends TRoute["path"],
+	TMethod extends FetchRouteAtPath<TRoute, TPath>["method"],
+>(
+	path: TPath,
+	method: TMethod,
+	response: Response,
+) => Promise<FetchRouteAtPathAndMethod<TRoute, TPath, TMethod>["response"]>;
 
 export type RequestParts = {
 	pathParams?: unknown;
@@ -118,6 +149,97 @@ export type MapFetchRouteResponse<TRoute, TExtraResponse> = TRoute extends {
 			response: FetchResponse<TResponse | TExtraResponse>;
 		}
 	: never;
+
+export const createFetchConfig = (
+	baseUrl: string,
+	path: string,
+	method: string,
+	data?: unknown,
+): [string, RequestInit] => {
+	const requestParts = toRequestParts(data);
+	const resolvedPath = interpolatePathTemplate(
+		path,
+		toPathParamsRecord(requestParts?.pathParams),
+	);
+	const url = new URL(resolvedPath, baseUrl);
+	const headers = new Headers();
+
+	if (requestParts?.query !== undefined) {
+		const query = requestParts.query as { type: string; data: unknown };
+		if (query.type === "Standard") {
+			appendQueryParams(url, query.data as Record<string, unknown>);
+		} else if (query.data !== undefined) {
+			url.searchParams.set(
+				ZONO_QUERY_DATA_KEY,
+				serializeStructuredData(query.type, query.data),
+			);
+		}
+	}
+
+	if (requestParts?.headers !== undefined) {
+		const requestHeaders = requestParts.headers as { type: string; data: unknown };
+		if (requestHeaders.type === "Standard") {
+			for (const [key, value] of normalizeHeaderValues(
+				requestHeaders.data as Record<string, unknown>,
+			).entries()) {
+				headers.set(key, value);
+			}
+		} else if (requestHeaders.data !== undefined) {
+			headers.set(
+				ZONO_HEADER_DATA_HEADER,
+				serializeStructuredData(requestHeaders.type, requestHeaders.data),
+			);
+		}
+	}
+
+	const init: RequestInit = {
+		method: method.toUpperCase(),
+		headers,
+	};
+
+	if (requestParts?.body !== undefined) {
+		const body = requestParts.body as { type: string; data: unknown };
+		switch (body.type) {
+			case "FormData":
+			case "Blob":
+			case "Text":
+				init.body = body.data as FormData | Blob | string;
+				break;
+			case "URLSearchParams":
+				headers.set("content-type", "application/x-www-form-urlencoded;charset=UTF-8");
+				init.body = (body.data as URLSearchParams).toString();
+				break;
+			case "SuperJSON":
+				headers.set("content-type", "application/json");
+				init.body = superjson.stringify(body.data);
+				break;
+			case "JSON":
+				headers.set("content-type", "application/json");
+				init.body = JSON.stringify(body.data);
+				break;
+		}
+	}
+
+	return [url.toString(), init];
+};
+
+export const parseFetchResponse = async (
+	response: Response,
+): Promise<{
+	status: number;
+	response: Response;
+	data: unknown;
+	headers: unknown;
+}> => {
+	const responseCopy = response.clone();
+	const parsed = await parseSerializedResponse(response);
+	return {
+		status: response.status,
+		response: responseCopy,
+		data: parsed.data,
+		headers: parsed.headers,
+	};
+};
 
 type StructuredDataType = "Standard" | "JSON" | "SuperJSON";
 

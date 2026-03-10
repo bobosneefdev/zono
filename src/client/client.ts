@@ -1,6 +1,4 @@
-import superjson from "superjson";
 import type {
-	ClientRequestData,
 	ContractCallRoutes,
 	ContractTree,
 	ContractTreeFor,
@@ -14,17 +12,12 @@ import type {
 import type { ClientErrorMode, ErrorResponse, ServerErrorMode } from "../server/server.js";
 import {
 	type ApiShape,
-	appendQueryParams,
-	interpolatePathTemplate,
+	createFetchConfig,
 	type MapFetchRouteResponse,
-	normalizeHeaderValues,
-	parseSerializedResponse,
-	serializeStructuredData,
+	parseFetchResponse,
 	type TypedFetch,
-	toPathParamsRecord,
-	toRequestParts,
-	ZONO_HEADER_DATA_HEADER,
-	ZONO_QUERY_DATA_KEY,
+	type TypedFetchConfig,
+	type TypedParseResponse,
 } from "../shared/shared.js";
 
 type ClientInferredErrorResponse<TErrorMode extends ClientErrorMode> =
@@ -55,85 +48,26 @@ export type ClientFetchMethod<
 	TErrorMode extends ClientErrorMode,
 > = TypedFetch<ClientFetchRoutes<TContracts, TMiddlewares, TErrorMode>>;
 
+export type ClientFetchConfigMethod<
+	TContracts extends ContractTree,
+	TMiddlewares extends MiddlewareTree,
+	TErrorMode extends ClientErrorMode,
+> = TypedFetchConfig<ClientFetchRoutes<TContracts, TMiddlewares, TErrorMode>>;
+
+export type ClientParseResponseMethod<
+	TContracts extends ContractTree,
+	TMiddlewares extends MiddlewareTree,
+	TErrorMode extends ClientErrorMode,
+> = TypedParseResponse<ClientFetchRoutes<TContracts, TMiddlewares, TErrorMode>>;
+
 export type Client<
 	TContracts extends ContractTree,
 	TMiddlewares extends MiddlewareTree,
 	TErrorMode extends ClientErrorMode,
 > = {
 	fetch: ClientFetchMethod<TContracts, TMiddlewares, TErrorMode>;
-};
-
-const buildRequest = (
-	baseUrl: string,
-	path: string,
-	method: HTTPMethod,
-	data?: ClientRequestData<import("../contract/contract.js").ContractMethod>,
-): { url: URL; init: RequestInit } => {
-	const requestParts = toRequestParts(data);
-	const resolvedPath = interpolatePathTemplate(
-		path,
-		toPathParamsRecord(requestParts?.pathParams),
-	);
-	const url = new URL(resolvedPath, baseUrl);
-	const headers = new Headers();
-
-	if (requestParts?.query !== undefined) {
-		const query = requestParts.query as { type: string; data: unknown };
-		if (query.type === "Standard") {
-			appendQueryParams(url, query.data as Record<string, unknown>);
-		} else if (query.data !== undefined) {
-			url.searchParams.set(
-				ZONO_QUERY_DATA_KEY,
-				serializeStructuredData(query.type, query.data),
-			);
-		}
-	}
-
-	if (requestParts?.headers !== undefined) {
-		const requestHeaders = requestParts.headers as { type: string; data: unknown };
-		if (requestHeaders.type === "Standard") {
-			for (const [key, value] of normalizeHeaderValues(
-				requestHeaders.data as Record<string, unknown>,
-			).entries()) {
-				headers.set(key, value);
-			}
-		} else if (requestHeaders.data !== undefined) {
-			headers.set(
-				ZONO_HEADER_DATA_HEADER,
-				serializeStructuredData(requestHeaders.type, requestHeaders.data),
-			);
-		}
-	}
-
-	const init: RequestInit = {
-		method: method.toUpperCase(),
-		headers,
-	};
-
-	if (requestParts?.body !== undefined) {
-		const body = requestParts.body as { type: string; data: unknown };
-		switch (body.type) {
-			case "FormData":
-			case "Blob":
-			case "Text":
-				init.body = body.data as FormData | Blob | string;
-				break;
-			case "URLSearchParams":
-				headers.set("content-type", "application/x-www-form-urlencoded;charset=UTF-8");
-				init.body = (body.data as URLSearchParams).toString();
-				break;
-			case "SuperJSON":
-				headers.set("content-type", "application/json");
-				init.body = superjson.stringify(body.data);
-				break;
-			case "JSON":
-				headers.set("content-type", "application/json");
-				init.body = JSON.stringify(body.data);
-				break;
-		}
-	}
-
-	return { url, init };
+	fetchConfig: ClientFetchConfigMethod<TContracts, TMiddlewares, TErrorMode>;
+	parseResponse: ClientParseResponseMethod<TContracts, TMiddlewares, TErrorMode>;
 };
 
 export const createClient = <
@@ -144,24 +78,37 @@ export const createClient = <
 >(
 	baseUrl: string,
 ): Client<TContracts, TMiddlewares, TErrorMode> => {
+	const fetchConfigMethod: ClientFetchConfigMethod<TContracts, TMiddlewares, TErrorMode> = (
+		path,
+		method,
+		data,
+	) => {
+		return createFetchConfig(baseUrl, path, method, data);
+	};
+
+	const parseResponseMethod: ClientParseResponseMethod<
+		TContracts,
+		TMiddlewares,
+		TErrorMode
+	> = async (_path, _method, response) => {
+		return parseFetchResponse(response) as Awaited<ReturnType<typeof parseResponseMethod>>;
+	};
+
 	const fetchMethod: ClientFetchMethod<TContracts, TMiddlewares, TErrorMode> = async (
 		path,
 		method,
 		data,
 	) => {
-		const request = buildRequest(baseUrl, path, method, data);
-		const response = await fetch(request.url, request.init);
-		const responseCopy = response.clone();
-		const parsed = await parseSerializedResponse(response);
-		return {
-			status: response.status,
-			response: responseCopy,
-			data: parsed.data,
-			headers: parsed.headers,
-		} as Awaited<ReturnType<typeof fetchMethod>>;
+		const [url, init] = fetchConfigMethod(path, method, data);
+		const response = await fetch(url, init);
+		return parseResponseMethod(path, method, response) as Awaited<
+			ReturnType<typeof fetchMethod>
+		>;
 	};
 
 	return {
 		fetch: fetchMethod,
+		fetchConfig: fetchConfigMethod,
+		parseResponse: parseResponseMethod,
 	};
 };

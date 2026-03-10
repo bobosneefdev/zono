@@ -382,6 +382,48 @@ describe("createClient runtime", () => {
 		});
 	});
 
+	test("builds absolute fetch config for standard and structured transports", async () => {
+		const client = createClient<typeof shape, typeof contracts, typeof middlewares, "public">(
+			"http://localhost:3000/base/",
+		);
+
+		const [standardUrl, standardInit] = client.fetchConfig("/standard", "get", {
+			query: { type: "Standard", data: { foo: "bar", count: "2" } },
+			headers: { type: "Standard", data: { "x-trace": "trace-1", "x-meta": '{"ok":true}' } },
+		});
+		const standardRequest = new Request(standardUrl, standardInit);
+
+		expect(standardUrl).toBe("http://localhost:3000/standard?foo=bar&count=2");
+		expect(standardInit.method).toBe("GET");
+		expect(standardRequest.headers.get("x-trace")).toBe("trace-1");
+		expect(standardRequest.headers.get("x-meta")).toBe('{"ok":true}');
+		expect(standardRequest.headers.get(ZONO_HEADER_DATA_HEADER)).toBeNull();
+
+		const createdAt = new Date("2024-02-02T00:00:00.000Z");
+		const [structuredUrl, structuredInit] = client.fetchConfig("/structured", "post", {
+			query: { type: "SuperJSON", data: { createdAt } },
+			headers: { type: "SuperJSON", data: { createdAt } },
+			body: { type: "SuperJSON", data: { createdAt } },
+		});
+		const structuredRequest = new Request(structuredUrl, structuredInit);
+		const structuredHeaderData = superjson.parse(
+			structuredRequest.headers.get(ZONO_HEADER_DATA_HEADER) ?? "null",
+		) as { createdAt: Date };
+		const structuredQueryData = superjson.parse(
+			new URL(structuredUrl).searchParams.get(ZONO_QUERY_DATA_KEY) ?? "null",
+		) as { createdAt: Date };
+		const structuredBodyData = superjson.parse(await structuredRequest.text()) as {
+			createdAt: Date;
+		};
+
+		expect(structuredUrl).toContain("http://localhost:3000/structured?_zono=");
+		expect(structuredInit.method).toBe("POST");
+		expect(structuredRequest.headers.get("content-type")).toBe("application/json");
+		expect(structuredHeaderData).toEqual({ createdAt });
+		expect(structuredQueryData).toEqual({ createdAt });
+		expect(structuredBodyData).toEqual({ createdAt });
+	});
+
 	test("supports Text, Blob, URLSearchParams, and FormData request bodies", async () => {
 		const app = new Hono();
 		app.post("/textUpload", async (ctx) => {
@@ -529,6 +571,33 @@ describe("createClient runtime", () => {
 
 		expect((response.data as { queryPayload?: string }).queryPayload).toBeUndefined();
 		expect((response.data as { headerPayload?: string }).headerPayload).toBeUndefined();
+	});
+
+	test("parses manual fetch responses and preserves a readable cloned response", async () => {
+		const app = new Hono();
+		app.get("/events", () => {
+			return createSerializedResponse({
+				status: 200,
+				type: "SuperJSON",
+				source: "contract",
+				data: { createdAt: new Date("2024-02-02T00:00:00.000Z") },
+			});
+		});
+
+		const client = createClient<typeof shape, typeof contracts, typeof middlewares, "public">(
+			startServer(app),
+		);
+
+		const [url, init] = client.fetchConfig("/events", "get");
+		const rawResponse = await fetch(url, init);
+		const parsedResponse = await client.parseResponse("/events", "get", rawResponse);
+
+		expect(rawResponse.bodyUsed).toBe(true);
+		expect(parsedResponse.status).toBe(200);
+		expect(parsedResponse.data).toEqual({
+			createdAt: new Date("2024-02-02T00:00:00.000Z"),
+		});
+		expect(await parsedResponse.response.text()).toContain("2024-02-02T00:00:00.000Z");
 	});
 
 	test("parses Text, Bytes, Blob, FormData, Contentless, and SuperJSON responses", async () => {
@@ -767,11 +836,31 @@ runTypeOnly(() => {
 		body: { type: "JSON", data: { name: "alice" } },
 	});
 
+	void typedClient.fetchConfig("/users/$userId", "post", {
+		pathParams: { userId: "u1" },
+		query: { type: "JSON", data: { active: true } },
+		headers: { type: "JSON", data: { source: "dev" } },
+		body: { type: "JSON", data: { name: "alice" } },
+	});
+
+	const parsedEventResponsePromise = typedClient.parseResponse("/events", "get", new Response());
+	type ParsedEventResponse = Awaited<typeof parsedEventResponsePromise>;
+	const parsedEventData: Extract<ParsedEventResponse, { status: 200 }>["data"] = {
+		createdAt: new Date(),
+	};
+	void parsedEventData;
+
 	// @ts-expect-error unknown path should fail
 	void typedClient.fetch("/unknown", "get");
 
+	// @ts-expect-error unknown path should fail
+	void typedClient.fetchConfig("/unknown", "get");
+
 	// @ts-expect-error method not declared on /events should fail
 	void typedClient.fetch("/events", "post");
+
+	// @ts-expect-error method not declared on /events should fail
+	void typedClient.fetchConfig("/events", "post");
 
 	// @ts-expect-error pathParams required for dynamic route
 	void typedClient.fetch("/users/$userId", "post", {
@@ -957,6 +1046,20 @@ runTypeOnly(() => {
 		message: "down",
 	};
 	void naEventServiceUnavailableData;
+
+	const naParsedEventResponsePromise = naTypedClient.parseResponse(
+		"/events",
+		"get",
+		new Response(),
+	);
+	type NaParsedEventResponse = Awaited<typeof naParsedEventResponsePromise>;
+	const naParsedEventServiceUnavailableData: Extract<
+		NaParsedEventResponse,
+		{ status: 503 }
+	>["data"] = {
+		message: "down",
+	};
+	void naParsedEventServiceUnavailableData;
 
 	// @ts-expect-error "N/A" client omits inferred built-in error statuses
 	const naBadRequestData: Extract<NaClientResponse, { status: 400 }>["data"] = {

@@ -31,6 +31,8 @@ import {
 	type MapFetchRouteResponse,
 	registerHonoRoute,
 	type TypedFetch,
+	type TypedFetchConfig,
+	type TypedParseResponse,
 	toHonoPath,
 	toSerializedRuntimeResponse,
 	validateAndSerializeResponse,
@@ -168,15 +170,37 @@ type GatewayClientRoutes<
 		: never
 	: never;
 
-type GatewayServiceClientFetchMethod<
+export type GatewayClientFetchMethod<
 	TService extends AnyGatewayService,
 	TGatewayMiddlewares,
 	TServiceKey extends PropertyKey,
 > = TypedFetch<GatewayClientRoutes<TService, TGatewayMiddlewares, TServiceKey>>;
 
+export type GatewayClientFetchConfigMethod<
+	TService extends AnyGatewayService,
+	TGatewayMiddlewares,
+	TServiceKey extends PropertyKey,
+> = TypedFetchConfig<GatewayClientRoutes<TService, TGatewayMiddlewares, TServiceKey>>;
+
+export type GatewayClientParseResponseMethod<
+	TService extends AnyGatewayService,
+	TGatewayMiddlewares,
+	TServiceKey extends PropertyKey,
+> = TypedParseResponse<GatewayClientRoutes<TService, TGatewayMiddlewares, TServiceKey>>;
+
 export type GatewayClient<TServices extends GatewayServices, TGatewayMiddlewares = undefined> = {
 	[TService in keyof TServices]: {
-		fetch: GatewayServiceClientFetchMethod<TServices[TService], TGatewayMiddlewares, TService>;
+		fetch: GatewayClientFetchMethod<TServices[TService], TGatewayMiddlewares, TService>;
+		fetchConfig: GatewayClientFetchConfigMethod<
+			TServices[TService],
+			TGatewayMiddlewares,
+			TService
+		>;
+		parseResponse: GatewayClientParseResponseMethod<
+			TServices[TService],
+			TGatewayMiddlewares,
+			TService
+		>;
 	};
 };
 
@@ -493,8 +517,14 @@ export const createGatewayClient = <
 			}
 			const client = createClient(gatewayBaseUrl) as {
 				fetch: ServiceMap[keyof ServiceMap]["fetch"];
+				fetchConfig: ServiceMap[keyof ServiceMap]["fetchConfig"];
+				parseResponse: ServiceMap[keyof ServiceMap]["parseResponse"];
 			};
-			const serviceClient = { fetch: client.fetch } as ServiceMap[keyof ServiceMap];
+			const serviceClient = {
+				fetch: client.fetch,
+				fetchConfig: client.fetchConfig,
+				parseResponse: client.parseResponse,
+			} as ServiceMap[keyof ServiceMap];
 			obj[serviceKey as keyof ServiceMap] = serviceClient;
 			return serviceClient;
 		},

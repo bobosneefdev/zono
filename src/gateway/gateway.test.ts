@@ -970,6 +970,82 @@ describe("gateway error handling", () => {
 		expect(response.headers).toEqual({ "x-upstream": "1" });
 		expect(response.response.headers.get("x-upstream")).toBe("1");
 	});
+
+	test("gateway client fetchConfig and parseResponse compose through vanilla fetch", async () => {
+		const upstreamShape = {
+			SHAPE: {
+				users: { CONTRACT: true },
+			},
+		} as const satisfies ApiShape;
+
+		const upstreamContracts = {
+			SHAPE: {
+				users: {
+					CONTRACT: {
+						get: {
+							responses: {
+								200: {
+									type: "JSON",
+									schema: z.object({ users: z.array(z.string()) }),
+								},
+							},
+						},
+					},
+				},
+			},
+		} as const satisfies ContractTreeFor<typeof upstreamShape>;
+
+		const upstreamMiddlewares = {
+			MIDDLEWARE: {
+				rateLimit: {
+					429: { type: "JSON", schema: z.object({ retryAfter: z.number() }) },
+				},
+			},
+		} as const satisfies MiddlewareTreeFor<typeof upstreamShape>;
+
+		const upstreamApp = new Hono();
+		initHono<typeof upstreamShape, unknown, typeof upstreamMiddlewares>(upstreamApp, {
+			contracts: createHonoContractHandlers(upstreamContracts, {
+				SHAPE: {
+					users: {
+						HANDLER: {
+							get: () => ({ status: 200, type: "JSON", data: { users: ["u1"] } }),
+						},
+					},
+				},
+			}),
+			middlewares: createServerMiddlewareHandlers(upstreamMiddlewares, {
+				MIDDLEWARE: {
+					rateLimit: () => ({ status: 429, type: "JSON", data: { retryAfter: 1 } }),
+				},
+			}),
+			errorMode: "public",
+			createContext: () => ({}),
+		});
+
+		const services = createGatewayServices({
+			upstream: createGatewayService(
+				{ SHAPE: { users: { CONTRACT: true } } },
+				upstreamContracts,
+				upstreamMiddlewares,
+				"public",
+				startServer(upstreamApp),
+			),
+		});
+		const gatewayApp = new Hono();
+		initGateway(gatewayApp, services);
+		const gatewayClient = createGatewayClient<typeof services>(startServer(gatewayApp));
+
+		const [url, init] = gatewayClient.upstream.fetchConfig("/users", "get");
+		const rawResponse = await fetch(url, init);
+		const parsed = await gatewayClient.upstream.parseResponse("/users", "get", rawResponse);
+
+		expect(url).toContain("/users");
+		expect(init.method).toBe("GET");
+		expect(parsed.status).toBe(429);
+		expect(parsed.data).toEqual({ retryAfter: 1 });
+		expect(await parsed.response.json()).toEqual({ retryAfter: 1 });
+	});
 });
 
 describe("gateway proxy edge cases", () => {
@@ -1077,12 +1153,30 @@ typeOnly(() => {
 
 	void client.usersService.fetch("/echo", "get");
 	void client.usersService.fetch("/headered", "get");
+	void client.usersService.fetchConfig("/echo", "get");
+
+	const parsedUsersResponsePromise = client.usersService.parseResponse(
+		"/users",
+		"get",
+		new Response(),
+	);
+	type ParsedUsersResponse = Awaited<typeof parsedUsersResponsePromise>;
+	const parsedUsersRateLimitData: ExtractStatus<ParsedUsersResponse, 429>["data"] = {
+		retryAfter: 1000,
+	};
+	void parsedUsersRateLimitData;
 
 	// @ts-expect-error invalid path for service contracts
 	void client.usersService.fetch("/missing", "get");
 
+	// @ts-expect-error invalid path for service contracts
+	void client.usersService.fetchConfig("/missing", "get");
+
 	// @ts-expect-error method not defined on route
 	void client.usersService.fetch("/echo", "put");
+
+	// @ts-expect-error method not defined on route
+	void client.usersService.fetchConfig("/echo", "put");
 
 	const usersResponsePromise = client.usersService.fetch("/users", "get");
 	type UsersResponse = Awaited<typeof usersResponsePromise>;
@@ -1209,9 +1303,15 @@ typeOnly(() => {
 
 	const maskedClient = createGatewayClient<typeof maskedNestedServices>("http://localhost");
 	void maskedClient.usersService.fetch("/users", "get");
+	void maskedClient.usersService.fetchConfig("/users", "get");
 
 	// @ts-expect-error masked-out nested route should not be exposed on the gateway client
 	void maskedClient.usersService.fetch("/users/$userId", "get", {
+		pathParams: { userId: "user-1" },
+	});
+
+	// @ts-expect-error masked-out nested route should not be exposed on the gateway client
+	void maskedClient.usersService.fetchConfig("/users/$userId", "get", {
 		pathParams: { userId: "user-1" },
 	});
 });
