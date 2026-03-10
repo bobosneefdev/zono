@@ -50,6 +50,7 @@ export type StatusMapToResponseUnion<
 		status: TStatus;
 		type: TStatuses[TStatus]["type"];
 		data: InferSchemaData<TStatuses[TStatus]>;
+		headers?: HeadersInit;
 	};
 }[keyof TStatuses & number];
 
@@ -527,6 +528,15 @@ export const registerHonoRoute = (
 	pathTemplate: string,
 	handler: (ctx: import("hono").Context) => Promise<Response>,
 ): void => {
+	if (method.toLowerCase() === "head") {
+		app.use(toHonoPath(pathTemplate), async (ctx, next) => {
+			if (ctx.req.method === "HEAD") {
+				return handler(ctx);
+			}
+			await next();
+		});
+		return;
+	}
 	app.on(method.toUpperCase(), toHonoPath(pathTemplate), handler);
 };
 

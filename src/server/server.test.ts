@@ -27,353 +27,166 @@ afterEach(() => {
 	}
 });
 
-const shape = {
-	SHAPE: {
-		json: { CONTRACT: true },
-		query: { CONTRACT: true },
-		headers: { CONTRACT: true },
-		queryOptional: { CONTRACT: true },
-		headersOptional: { CONTRACT: true },
-		querySuper: { CONTRACT: true },
-		headersSuper: { CONTRACT: true },
-		text: { CONTRACT: true },
-		blob: { CONTRACT: true },
-		form: { CONTRACT: true },
-		urlencoded: { CONTRACT: true },
-		middleware: { CONTRACT: true },
-		boom: { CONTRACT: true },
-	},
-} as const satisfies ApiShape;
-
-const contracts = {
-	SHAPE: {
-		json: {
-			CONTRACT: {
-				post: {
-					body: { type: "JSON", schema: z.object({ name: z.string() }) },
-					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
-				},
-			},
-		},
-		query: {
-			CONTRACT: {
-				get: {
-					query: {
-						type: "JSON",
-						schema: z.object({
-							count: z.number().refine(async (count) => count > 0),
-						}),
-					},
-					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
-				},
-			},
-		},
-		headers: {
-			CONTRACT: {
-				get: {
-					headers: {
-						type: "JSON",
-						schema: z.object({ trace: z.string() }),
-					},
-					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
-				},
-			},
-		},
-		queryOptional: {
-			CONTRACT: {
-				get: {
-					query: {
-						type: "JSON",
-						schema: z.object({ count: z.number() }).optional(),
-					},
-					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
-				},
-			},
-		},
-		headersOptional: {
-			CONTRACT: {
-				get: {
-					headers: {
-						type: "JSON",
-						schema: z.object({ trace: z.string() }).optional(),
-					},
-					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
-				},
-			},
-		},
-		querySuper: {
-			CONTRACT: {
-				get: {
-					query: {
-						type: "SuperJSON",
-						schema: z.object({ createdAt: z.date() }),
-					},
-					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
-				},
-			},
-		},
-		headersSuper: {
-			CONTRACT: {
-				get: {
-					headers: {
-						type: "SuperJSON",
-						schema: z.object({ createdAt: z.date() }),
-					},
-					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
-				},
-			},
-		},
-		text: {
-			CONTRACT: {
-				post: {
-					body: { type: "Text", schema: z.string() },
-					responses: { 200: { type: "Text", schema: z.string() } },
-				},
-			},
-		},
-		blob: {
-			CONTRACT: {
-				post: {
-					body: { type: "Blob", schema: z.instanceof(Blob) },
-					responses: { 200: { type: "Bytes", schema: z.instanceof(Uint8Array) } },
-				},
-			},
-		},
-		form: {
-			CONTRACT: {
-				post: {
-					body: { type: "FormData", schema: z.instanceof(FormData) },
-					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
-				},
-			},
-		},
-		urlencoded: {
-			CONTRACT: {
-				post: {
-					body: { type: "URLSearchParams", schema: z.instanceof(URLSearchParams) },
-					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
-				},
-			},
-		},
-		middleware: {
-			CONTRACT: {
-				get: {
-					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
-				},
-			},
-		},
-		boom: {
-			CONTRACT: {
-				get: {
-					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
-				},
-			},
-		},
-	},
-} as const satisfies ContractTreeFor<typeof shape>;
-
-const handlers: ContractHandlerTree<typeof contracts, unknown> = {
-	SHAPE: {
-		json: { HANDLER: { post: () => ({ status: 200, type: "JSON", data: { ok: true } }) } },
-		query: { HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) } },
-		headers: { HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) } },
-		queryOptional: {
-			HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
-		},
-		headersOptional: {
-			HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
-		},
-		querySuper: {
-			HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
-		},
-		headersSuper: {
-			HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
-		},
-		text: { HANDLER: { post: () => ({ status: 200, type: "Text", data: "ok" }) } },
-		blob: {
-			HANDLER: {
-				post: () => ({ status: 200, type: "Bytes", data: new Uint8Array([1, 2, 3]) }),
-			},
-		},
-		form: { HANDLER: { post: () => ({ status: 200, type: "JSON", data: { ok: true } }) } },
-		urlencoded: {
-			HANDLER: { post: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
-		},
-		middleware: { HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) } },
-		boom: {
-			HANDLER: {
-				get: () => {
-					throw new Error("boom");
-				},
-			},
-		},
-	},
-};
-
 describe("server runtime", () => {
-	test("accepts valid input parsers and returns serialized output", async () => {
+	test("parses path params, standard query, and standard headers into handler data", async () => {
+		const shape = {
+			SHAPE: {
+				users: {
+					SHAPE: {
+						$userId: { CONTRACT: true },
+					},
+				},
+			},
+		} as const satisfies ApiShape;
+
+		const contracts = {
+			SHAPE: {
+				users: {
+					SHAPE: {
+						$userId: {
+							CONTRACT: {
+								get: {
+									pathParams: z.object({ userId: z.string() }),
+									query: {
+										type: "Standard",
+										schema: z.object({ foo: z.string(), count: z.string() }),
+									},
+									headers: {
+										type: "Standard",
+										schema: z.object({ "x-trace": z.string() }),
+									},
+									responses: {
+										200: {
+											type: "JSON",
+											schema: z.object({
+												userId: z.string(),
+												foo: z.string(),
+												count: z.string(),
+												trace: z.string(),
+											}),
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		} as const satisfies ContractTreeFor<typeof shape>;
+
 		const app = new Hono();
 		initHono<typeof shape, unknown>(app, {
-			contracts: createHonoContractHandlers<typeof contracts, unknown>(contracts, handlers),
+			contracts: createHonoContractHandlers(contracts, {
+				SHAPE: {
+					users: {
+						SHAPE: {
+							$userId: {
+								HANDLER: {
+									get: (data) => ({
+										status: 200,
+										type: "JSON",
+										data: {
+											userId: data.pathParams.userId,
+											foo: data.query.foo,
+											count: data.query.count,
+											trace: data.headers["x-trace"],
+										},
+									}),
+								},
+							},
+						},
+					},
+				},
+			}),
 			errorMode: "public",
 			createContext: () => ({}),
 		});
 
-		const base = startServer(app);
-
-		const json = await fetch(`${base}/json`, {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ name: "alice" }),
+		const response = await fetch(`${startServer(app)}/users/u1?foo=bar&count=2`, {
+			headers: { "x-trace": "trace-1" },
 		});
-		expect(json.status).toBe(200);
+		const parsed = await parseSerializedResponse(response);
 
-		const query = await fetch(
-			`${base}/query?${ZONO_QUERY_DATA_KEY}=${encodeURIComponent(JSON.stringify({ count: 2 }))}`,
-		);
-		expect(query.status).toBe(200);
-
-		const headers = await fetch(`${base}/headers`, {
-			headers: { [ZONO_HEADER_DATA_HEADER]: JSON.stringify({ trace: "t1" }) },
+		expect(response.status).toBe(200);
+		expect(parsed.data).toEqual({
+			userId: "u1",
+			foo: "bar",
+			count: "2",
+			trace: "trace-1",
 		});
-		expect(headers.status).toBe(200);
-
-		const optionalQuery = await fetch(`${base}/queryOptional`);
-		expect(optionalQuery.status).toBe(200);
-
-		const optionalHeaders = await fetch(`${base}/headersOptional`);
-		expect(optionalHeaders.status).toBe(200);
-
-		const text = await fetch(`${base}/text`, { method: "POST", body: "hello" });
-		const parsedText = await parseSerializedResponse(text);
-		expect(parsedText.type).toBe("Text");
-
-		const blob = await fetch(`${base}/blob`, {
-			method: "POST",
-			body: new Blob([new Uint8Array([1, 2, 3])]),
-		});
-		const parsedBlob = await parseSerializedResponse(blob);
-		expect(parsedBlob.type).toBe("Bytes");
-
-		const formData = new FormData();
-		formData.set("name", "x");
-		const form = await fetch(`${base}/form`, { method: "POST", body: formData });
-		expect(form.status).toBe(200);
-
-		const urlencoded = await fetch(`${base}/urlencoded`, {
-			method: "POST",
-			headers: { "content-type": "application/x-www-form-urlencoded;charset=UTF-8" },
-			body: "q=zono",
-		});
-		expect(urlencoded.status).toBe(200);
-	});
-
-	test("rejects invalid query and headers as 400 public errors", async () => {
-		const app = new Hono();
-		initHono<typeof shape, unknown>(app, {
-			contracts: createHonoContractHandlers<typeof contracts, unknown>(contracts, handlers),
-			errorMode: "public",
-			createContext: () => ({}),
-		});
-
-		const base = startServer(app);
-
-		const badQuery = await fetch(`${base}/query?${ZONO_QUERY_DATA_KEY}=oops`);
-		expect(badQuery.status).toBe(400);
-		const badQueryParsed = await parseSerializedResponse(badQuery);
-		expect(badQueryParsed.source).toBe("error");
-		expect((badQueryParsed.data as { message: string }).message).toBe(
-			"Query validation failed",
-		);
-		expect((badQueryParsed.data as { issues: Array<unknown> }).issues.length).toBeGreaterThan(
-			0,
-		);
-
-		const badHeaders = await fetch(`${base}/headers`, {
-			headers: {},
-		});
-		expect(badHeaders.status).toBe(400);
-		const badHeadersParsed = await parseSerializedResponse(badHeaders);
-		expect((badHeadersParsed.data as { message: string }).message).toBe(
-			"Headers validation failed",
-		);
-		expect((badHeadersParsed.data as { issues: Array<unknown> }).issues.length).toBeGreaterThan(
-			0,
-		);
-	});
-
-	test("returns 400 private validation payload with issueCount", async () => {
-		const app = new Hono();
-		initHono<typeof shape, unknown>(app, {
-			contracts: createHonoContractHandlers<typeof contracts, unknown>(contracts, handlers),
-			errorMode: "private",
-			createContext: () => ({}),
-		});
-
-		const badQuery = await fetch(`${startServer(app)}/query?${ZONO_QUERY_DATA_KEY}=oops`);
-		expect(badQuery.status).toBe(400);
-		const parsed = await parseSerializedResponse(badQuery);
-		expect((parsed.data as { message: string }).message).toBe("Query validation failed");
-		expect((parsed.data as { issueCount: number }).issueCount).toBeGreaterThan(0);
-		expect(parsed.data).not.toHaveProperty("issues");
-	});
-
-	test("returns JSON 404 for unmatched routes", async () => {
-		const app = new Hono();
-		initHono<typeof shape, unknown>(app, {
-			contracts: createHonoContractHandlers<typeof contracts, unknown>(contracts, handlers),
-			errorMode: "public",
-			createContext: () => ({}),
-		});
-
-		const notFound = await fetch(`${startServer(app)}/not-a-route`);
-		expect(notFound.status).toBe(404);
-		const parsed = await parseSerializedResponse(notFound);
-		expect(parsed.source).toBe("error");
-		expect(parsed.type).toBe("JSON");
-		expect(parsed.data).toEqual({ message: "Not Found" });
 	});
 
 	test("parses SuperJSON query and headers from reserved transport slots", async () => {
-		let queryValue: { createdAt: Date } | undefined;
-		let headerValue: { createdAt: Date } | undefined;
-
-		const superHandlers: ContractHandlerTree<typeof contracts, unknown> = {
-			...handlers,
+		const shape = {
 			SHAPE: {
-				...handlers.SHAPE,
+				querySuper: { CONTRACT: true },
+				headersSuper: { CONTRACT: true },
+			},
+		} as const satisfies ApiShape;
+
+		const contracts = {
+			SHAPE: {
 				querySuper: {
-					HANDLER: {
-						get: (data) => {
-							queryValue = data.query;
-							return { status: 200, type: "JSON", data: { ok: true } };
+					CONTRACT: {
+						get: {
+							query: {
+								type: "SuperJSON",
+								schema: z.object({ createdAt: z.date() }),
+							},
+							responses: {
+								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+							},
 						},
 					},
 				},
 				headersSuper: {
-					HANDLER: {
-						get: (data) => {
-							headerValue = data.headers;
-							return { status: 200, type: "JSON", data: { ok: true } };
+					CONTRACT: {
+						get: {
+							headers: {
+								type: "SuperJSON",
+								schema: z.object({ createdAt: z.date() }),
+							},
+							responses: {
+								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+							},
 						},
 					},
 				},
 			},
-		};
+		} as const satisfies ContractTreeFor<typeof shape>;
+
+		let queryValue: { createdAt: Date } | undefined;
+		let headerValue: { createdAt: Date } | undefined;
 
 		const app = new Hono();
 		initHono<typeof shape, unknown>(app, {
-			contracts: createHonoContractHandlers<typeof contracts, unknown>(
-				contracts,
-				superHandlers,
-			),
+			contracts: createHonoContractHandlers(contracts, {
+				SHAPE: {
+					querySuper: {
+						HANDLER: {
+							get: (data) => {
+								queryValue = data.query;
+								return { status: 200, type: "JSON", data: { ok: true } };
+							},
+						},
+					},
+					headersSuper: {
+						HANDLER: {
+							get: (data) => {
+								headerValue = data.headers;
+								return { status: 200, type: "JSON", data: { ok: true } };
+							},
+						},
+					},
+				},
+			}),
 			errorMode: "public",
 			createContext: () => ({}),
 		});
 
+		const base = startServer(app);
 		const queryCreatedAt = new Date("2024-02-02T00:00:00.000Z");
 		const headerCreatedAt = new Date("2024-03-03T00:00:00.000Z");
-		const base = startServer(app);
 
 		const queryResponse = await fetch(
 			`${base}/querySuper?${ZONO_QUERY_DATA_KEY}=${encodeURIComponent(superjson.stringify({ createdAt: queryCreatedAt }))}`,
@@ -391,38 +204,69 @@ describe("server runtime", () => {
 	});
 
 	test("optional structured query and headers resolve to undefined when transport slots are absent", async () => {
-		let optionalQueryValue: { count: number } | undefined;
-		let optionalHeaderValue: { trace: string } | undefined;
-
-		const optionalHandlers: ContractHandlerTree<typeof contracts, unknown> = {
-			...handlers,
+		const shape = {
 			SHAPE: {
-				...handlers.SHAPE,
+				queryOptional: { CONTRACT: true },
+				headersOptional: { CONTRACT: true },
+			},
+		} as const satisfies ApiShape;
+
+		const contracts = {
+			SHAPE: {
 				queryOptional: {
-					HANDLER: {
-						get: (data) => {
-							optionalQueryValue = data.query;
-							return { status: 200, type: "JSON", data: { ok: true } };
+					CONTRACT: {
+						get: {
+							query: {
+								type: "JSON",
+								schema: z.object({ count: z.number() }).optional(),
+							},
+							responses: {
+								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+							},
 						},
 					},
 				},
 				headersOptional: {
-					HANDLER: {
-						get: (data) => {
-							optionalHeaderValue = data.headers;
-							return { status: 200, type: "JSON", data: { ok: true } };
+					CONTRACT: {
+						get: {
+							headers: {
+								type: "JSON",
+								schema: z.object({ trace: z.string() }).optional(),
+							},
+							responses: {
+								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+							},
 						},
 					},
 				},
 			},
-		};
+		} as const satisfies ContractTreeFor<typeof shape>;
+
+		let optionalQueryValue: { count: number } | undefined;
+		let optionalHeaderValue: { trace: string } | undefined;
 
 		const app = new Hono();
 		initHono<typeof shape, unknown>(app, {
-			contracts: createHonoContractHandlers<typeof contracts, unknown>(
-				contracts,
-				optionalHandlers,
-			),
+			contracts: createHonoContractHandlers(contracts, {
+				SHAPE: {
+					queryOptional: {
+						HANDLER: {
+							get: (data) => {
+								optionalQueryValue = data.query;
+								return { status: 200, type: "JSON", data: { ok: true } };
+							},
+						},
+					},
+					headersOptional: {
+						HANDLER: {
+							get: (data) => {
+								optionalHeaderValue = data.headers;
+								return { status: 200, type: "JSON", data: { ok: true } };
+							},
+						},
+					},
+				},
+			}),
 			errorMode: "public",
 			createContext: () => ({}),
 		});
@@ -437,7 +281,598 @@ describe("server runtime", () => {
 		expect(optionalHeaderValue).toBeUndefined();
 	});
 
-	test("middleware short-circuits and error mode public/private differ", async () => {
+	test("returns 400 public errors for invalid query and header payloads", async () => {
+		const shape = {
+			SHAPE: {
+				query: { CONTRACT: true },
+				headers: { CONTRACT: true },
+			},
+		} as const satisfies ApiShape;
+
+		const contracts = {
+			SHAPE: {
+				query: {
+					CONTRACT: {
+						get: {
+							query: {
+								type: "JSON",
+								schema: z.object({
+									count: z.number().refine(async (count) => count > 0),
+								}),
+							},
+							responses: {
+								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+							},
+						},
+					},
+				},
+				headers: {
+					CONTRACT: {
+						get: {
+							headers: {
+								type: "JSON",
+								schema: z.object({ trace: z.string() }),
+							},
+							responses: {
+								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+							},
+						},
+					},
+				},
+			},
+		} as const satisfies ContractTreeFor<typeof shape>;
+
+		const handlers: ContractHandlerTree<typeof contracts, unknown> = {
+			SHAPE: {
+				query: {
+					HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
+				},
+				headers: {
+					HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
+				},
+			},
+		};
+
+		const app = new Hono();
+		initHono<typeof shape, unknown>(app, {
+			contracts: createHonoContractHandlers(contracts, handlers),
+			errorMode: "public",
+			createContext: () => ({}),
+		});
+
+		const base = startServer(app);
+
+		const badQuery = await fetch(`${base}/query?${ZONO_QUERY_DATA_KEY}=oops`);
+		expect(badQuery.status).toBe(400);
+		const badQueryParsed = await parseSerializedResponse(badQuery);
+		expect(badQueryParsed.source).toBe("error");
+		expect((badQueryParsed.data as { message: string }).message).toBe(
+			"Query validation failed",
+		);
+
+		const badHeaders = await fetch(`${base}/headers`, {
+			headers: {},
+		});
+		expect(badHeaders.status).toBe(400);
+		const badHeadersParsed = await parseSerializedResponse(badHeaders);
+		expect((badHeadersParsed.data as { message: string }).message).toBe(
+			"Headers validation failed",
+		);
+	});
+
+	test("returns 400 when path params fail schema validation", async () => {
+		const shape = {
+			SHAPE: {
+				users: {
+					SHAPE: {
+						$userId: { CONTRACT: true },
+					},
+				},
+			},
+		} as const satisfies ApiShape;
+
+		const contracts = {
+			SHAPE: {
+				users: {
+					SHAPE: {
+						$userId: {
+							CONTRACT: {
+								get: {
+									pathParams: z.object({ userId: z.uuid() }),
+									responses: {
+										200: { type: "JSON", schema: z.object({ id: z.string() }) },
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		} as const satisfies ContractTreeFor<typeof shape>;
+
+		const app = new Hono();
+		initHono<typeof shape, unknown>(app, {
+			contracts: createHonoContractHandlers(contracts, {
+				SHAPE: {
+					users: {
+						SHAPE: {
+							$userId: {
+								HANDLER: {
+									get: (data) => ({
+										status: 200,
+										type: "JSON",
+										data: { id: data.pathParams.userId },
+									}),
+								},
+							},
+						},
+					},
+				},
+			}),
+			errorMode: "public",
+			createContext: () => ({}),
+		});
+
+		const response = await fetch(`${startServer(app)}/users/not-a-uuid`);
+		const parsed = await parseSerializedResponse(response);
+
+		expect(response.status).toBe(400);
+		expect(parsed.data).toEqual({
+			message: "Path params validation failed",
+			issues: expect.any(Array),
+		});
+	});
+
+	test("returns 400 when JSON or SuperJSON bodies cannot be parsed", async () => {
+		const shape = {
+			SHAPE: {
+				jsonBody: { CONTRACT: true },
+				superBody: { CONTRACT: true },
+			},
+		} as const satisfies ApiShape;
+
+		const contracts = {
+			SHAPE: {
+				jsonBody: {
+					CONTRACT: {
+						post: {
+							body: { type: "JSON", schema: z.object({ name: z.string() }) },
+							responses: {
+								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+							},
+						},
+					},
+				},
+				superBody: {
+					CONTRACT: {
+						post: {
+							body: { type: "SuperJSON", schema: z.object({ createdAt: z.date() }) },
+							responses: {
+								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+							},
+						},
+					},
+				},
+			},
+		} as const satisfies ContractTreeFor<typeof shape>;
+
+		const handlers: ContractHandlerTree<typeof contracts, unknown> = {
+			SHAPE: {
+				jsonBody: {
+					HANDLER: { post: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
+				},
+				superBody: {
+					HANDLER: { post: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
+				},
+			},
+		};
+
+		const app = new Hono();
+		initHono<typeof shape, unknown>(app, {
+			contracts: createHonoContractHandlers(contracts, handlers),
+			errorMode: "public",
+			createContext: () => ({}),
+		});
+
+		const base = startServer(app);
+		const badJson = await fetch(`${base}/jsonBody`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: "{",
+		});
+		const badSuper = await fetch(`${base}/superBody`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: "not valid",
+		});
+
+		expect(badJson.status).toBe(400);
+		expect((await parseSerializedResponse(badJson)).data).toEqual({
+			message: "Body validation failed",
+			issues: [{ message: expect.any(String) }],
+		});
+
+		expect(badSuper.status).toBe(400);
+		expect((await parseSerializedResponse(badSuper)).data).toEqual({
+			message: "Body validation failed",
+			issues: [{ message: expect.any(String) }],
+		});
+	});
+
+	test("returns 400 when body schema validation fails", async () => {
+		const shape = {
+			SHAPE: {
+				jsonBody: { CONTRACT: true },
+			},
+		} as const satisfies ApiShape;
+
+		const contracts = {
+			SHAPE: {
+				jsonBody: {
+					CONTRACT: {
+						post: {
+							body: { type: "JSON", schema: z.object({ name: z.string() }) },
+							responses: {
+								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+							},
+						},
+					},
+				},
+			},
+		} as const satisfies ContractTreeFor<typeof shape>;
+
+		const app = new Hono();
+		initHono<typeof shape, unknown>(app, {
+			contracts: createHonoContractHandlers(contracts, {
+				SHAPE: {
+					jsonBody: {
+						HANDLER: {
+							post: () => ({ status: 200, type: "JSON", data: { ok: true } }),
+						},
+					},
+				},
+			}),
+			errorMode: "public",
+			createContext: () => ({}),
+		});
+
+		const response = await fetch(`${startServer(app)}/jsonBody`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ name: 123 }),
+		});
+		const parsed = await parseSerializedResponse(response);
+
+		expect(response.status).toBe(400);
+		expect(parsed.data).toEqual({
+			message: "Body validation failed",
+			issues: expect.any(Array),
+		});
+	});
+
+	test("preserves headers on serialized contract responses", async () => {
+		const shape = {
+			SHAPE: {
+				json: { CONTRACT: true },
+			},
+		} as const satisfies ApiShape;
+
+		const contracts = {
+			SHAPE: {
+				json: {
+					CONTRACT: {
+						get: {
+							responses: {
+								200: {
+									type: "JSON",
+									schema: z.object({ ok: z.boolean() }),
+									headers: {
+										type: "Standard",
+										schema: z.object({ "x-handler": z.string() }),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		} as const satisfies ContractTreeFor<typeof shape>;
+
+		const app = new Hono();
+		initHono<typeof shape, unknown>(app, {
+			contracts: createHonoContractHandlers(contracts, {
+				SHAPE: {
+					json: {
+						HANDLER: {
+							get: () => ({
+								status: 200,
+								type: "JSON",
+								headers: { "x-handler": "1" },
+								data: { ok: true },
+							}),
+						},
+					},
+				},
+			}),
+			errorMode: "public",
+			createContext: () => ({}),
+		});
+
+		const response = await fetch(`${startServer(app)}/json`);
+		const parsed = await parseSerializedResponse(response);
+
+		expect(response.status).toBe(200);
+		expect(response.headers.get("x-handler")).toBe("1");
+		expect(parsed.data).toEqual({ ok: true });
+	});
+
+	test("returns 500 when handlers violate the declared response contract", async () => {
+		const shape = {
+			SHAPE: {
+				invalidStatus: { CONTRACT: true },
+				invalidType: { CONTRACT: true },
+				invalidData: { CONTRACT: true },
+			},
+		} as const satisfies ApiShape;
+
+		const contracts = {
+			SHAPE: {
+				invalidStatus: {
+					CONTRACT: {
+						get: {
+							responses: {
+								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+							},
+						},
+					},
+				},
+				invalidType: {
+					CONTRACT: {
+						get: {
+							responses: {
+								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+							},
+						},
+					},
+				},
+				invalidData: {
+					CONTRACT: {
+						get: {
+							responses: {
+								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+							},
+						},
+					},
+				},
+			},
+		} as const satisfies ContractTreeFor<typeof shape>;
+
+		const app = new Hono();
+		initHono<typeof shape, unknown>(app, {
+			contracts: createHonoContractHandlers(contracts, {
+				SHAPE: {
+					invalidStatus: {
+						HANDLER: { get: () => ({ status: 201, type: "JSON", data: { ok: true } }) },
+					},
+					invalidType: {
+						HANDLER: { get: () => ({ status: 200, type: "Text", data: "nope" }) },
+					},
+					invalidData: {
+						HANDLER: {
+							get: () => ({ status: 200, type: "JSON", data: { ok: "nope" } }),
+						},
+					},
+				},
+			} as unknown as ContractHandlerTree<typeof contracts, unknown>),
+			errorMode: "public",
+			createContext: () => ({}),
+		});
+
+		const base = startServer(app);
+		const invalidStatus = await parseSerializedResponse(await fetch(`${base}/invalidStatus`));
+		const invalidType = await parseSerializedResponse(await fetch(`${base}/invalidType`));
+		const invalidData = await parseSerializedResponse(await fetch(`${base}/invalidData`));
+
+		expect(invalidStatus.data).toEqual({
+			message: "Handler returned undeclared status: 201",
+		});
+		expect(invalidType.data).toEqual({
+			message: "Handler returned mismatched response type. Expected JSON, received Text",
+		});
+		expect(invalidData.data).toEqual({
+			message: "Handler response data validation failed",
+		});
+	});
+
+	test("returns 400 private validation payload with issueCount", async () => {
+		const shape = {
+			SHAPE: {
+				query: { CONTRACT: true },
+			},
+		} as const satisfies ApiShape;
+
+		const contracts = {
+			SHAPE: {
+				query: {
+					CONTRACT: {
+						get: {
+							query: {
+								type: "JSON",
+								schema: z.object({ count: z.number() }),
+							},
+							responses: {
+								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+							},
+						},
+					},
+				},
+			},
+		} as const satisfies ContractTreeFor<typeof shape>;
+
+		const app = new Hono();
+		initHono<typeof shape, unknown>(app, {
+			contracts: createHonoContractHandlers(contracts, {
+				SHAPE: {
+					query: {
+						HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
+					},
+				},
+			}),
+			errorMode: "private",
+			createContext: () => ({}),
+		});
+
+		const badQuery = await fetch(`${startServer(app)}/query?${ZONO_QUERY_DATA_KEY}=oops`);
+		const parsed = await parseSerializedResponse(badQuery);
+
+		expect(badQuery.status).toBe(400);
+		expect(parsed.data).toEqual({
+			message: "Query validation failed",
+			issueCount: expect.any(Number),
+		});
+	});
+
+	test("returns JSON 404 for unmatched routes", async () => {
+		const shape = {
+			SHAPE: {
+				json: { CONTRACT: true },
+			},
+		} as const satisfies ApiShape;
+
+		const contracts = {
+			SHAPE: {
+				json: {
+					CONTRACT: {
+						get: {
+							responses: {
+								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+							},
+						},
+					},
+				},
+			},
+		} as const satisfies ContractTreeFor<typeof shape>;
+
+		const app = new Hono();
+		initHono<typeof shape, unknown>(app, {
+			contracts: createHonoContractHandlers(contracts, {
+				SHAPE: {
+					json: {
+						HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
+					},
+				},
+			}),
+			errorMode: "public",
+			createContext: () => ({}),
+		});
+
+		const notFound = await fetch(`${startServer(app)}/not-a-route`);
+		const parsed = await parseSerializedResponse(notFound);
+
+		expect(notFound.status).toBe(404);
+		expect(parsed.source).toBe("error");
+		expect(parsed.data).toEqual({ message: "Not Found" });
+	});
+
+	test("middleware raw Response pass-through bypasses serialization", async () => {
+		const shape = {
+			SHAPE: {
+				middleware: { CONTRACT: true },
+			},
+		} as const satisfies ApiShape;
+
+		const contracts = {
+			SHAPE: {
+				middleware: {
+					CONTRACT: {
+						get: {
+							responses: {
+								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+							},
+						},
+					},
+				},
+			},
+		} as const satisfies ContractTreeFor<typeof shape>;
+
+		const middlewares = {
+			MIDDLEWARE: {
+				gate: {
+					401: { type: "JSON", schema: z.object({ message: z.string() }) },
+				},
+			},
+		} as const satisfies MiddlewareTreeFor<typeof shape>;
+
+		let handlerCalled = false;
+		const app = new Hono();
+		initHono<typeof shape, unknown, typeof middlewares>(app, {
+			contracts: createHonoContractHandlers(contracts, {
+				SHAPE: {
+					middleware: {
+						HANDLER: {
+							get: () => {
+								handlerCalled = true;
+								return { status: 200, type: "JSON", data: { ok: true } };
+							},
+						},
+					},
+				},
+			}),
+			middlewares: createHonoMiddlewareHandlers(middlewares, {
+				MIDDLEWARE: {
+					gate: () =>
+						new Response("blocked", {
+							status: 401,
+							headers: {
+								"content-type": "text/plain",
+								"x-raw": "1",
+							},
+						}),
+				},
+			}),
+			errorMode: "public",
+			createContext: () => ({}),
+		});
+
+		const response = await fetch(`${startServer(app)}/middleware`);
+
+		expect(response.status).toBe(401);
+		expect(response.headers.get("x-raw")).toBe("1");
+		expect(await response.text()).toBe("blocked");
+		expect(handlerCalled).toBe(false);
+	});
+
+	test("middleware short-circuits and public/private errors differ", async () => {
+		const shape = {
+			SHAPE: {
+				middleware: { CONTRACT: true },
+				boom: { CONTRACT: true },
+			},
+		} as const satisfies ApiShape;
+
+		const contracts = {
+			SHAPE: {
+				middleware: {
+					CONTRACT: {
+						get: {
+							responses: {
+								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+							},
+						},
+					},
+				},
+				boom: {
+					CONTRACT: {
+						get: {
+							responses: {
+								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+							},
+						},
+					},
+				},
+			},
+		} as const satisfies ContractTreeFor<typeof shape>;
+
 		const middlewares = {
 			MIDDLEWARE: {
 				gate: {
@@ -446,10 +881,25 @@ describe("server runtime", () => {
 			},
 		} as const satisfies MiddlewareTreeFor<typeof shape>;
 
+		const handlers: ContractHandlerTree<typeof contracts, unknown> = {
+			SHAPE: {
+				middleware: {
+					HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
+				},
+				boom: {
+					HANDLER: {
+						get: () => {
+							throw new Error("boom");
+						},
+					},
+				},
+			},
+		};
+
 		const publicApp = new Hono();
 		initHono<typeof shape, unknown, typeof middlewares>(publicApp, {
-			contracts: createHonoContractHandlers<typeof contracts, unknown>(contracts, handlers),
-			middlewares: createHonoMiddlewareHandlers<typeof middlewares, unknown>(middlewares, {
+			contracts: createHonoContractHandlers(contracts, handlers),
+			middlewares: createHonoMiddlewareHandlers(middlewares, {
 				MIDDLEWARE: {
 					gate: (ctx, next) => {
 						if (new URL(ctx.req.url).searchParams.get("deny") === "1") {
@@ -475,7 +925,7 @@ describe("server runtime", () => {
 
 		const privateApp = new Hono();
 		initHono<typeof shape, unknown>(privateApp, {
-			contracts: createHonoContractHandlers<typeof contracts, unknown>(contracts, handlers),
+			contracts: createHonoContractHandlers(contracts, handlers),
 			errorMode: "private",
 			createContext: () => ({}),
 		});
@@ -485,84 +935,6 @@ describe("server runtime", () => {
 		expect(privateBoom.status).toBe(500);
 		expect((privateBoomParsed.data as { message: string }).message).toBe("boom");
 		expect(privateBoomParsed.data).toHaveProperty("stack");
-	});
-
-	test("prepared routes still read the current handler from the resolved handler node", async () => {
-		const app = new Hono();
-		const mutableHandlers: ContractHandlerTree<typeof contracts, unknown> = {
-			SHAPE: {
-				json: {
-					HANDLER: {
-						post: () => ({ status: 200, type: "JSON", data: { ok: true } }),
-					},
-				},
-				query: {
-					HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
-				},
-				headers: {
-					HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
-				},
-				queryOptional: {
-					HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
-				},
-				headersOptional: {
-					HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
-				},
-				querySuper: {
-					HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
-				},
-				headersSuper: {
-					HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
-				},
-				text: { HANDLER: { post: () => ({ status: 200, type: "Text", data: "ok" }) } },
-				blob: {
-					HANDLER: {
-						post: () => ({
-							status: 200,
-							type: "Bytes",
-							data: new Uint8Array([1, 2, 3]),
-						}),
-					},
-				},
-				form: {
-					HANDLER: { post: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
-				},
-				urlencoded: {
-					HANDLER: { post: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
-				},
-				middleware: {
-					HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
-				},
-				boom: {
-					HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
-				},
-			},
-		};
-
-		initHono<typeof shape, unknown>(app, {
-			contracts: createHonoContractHandlers<typeof contracts, unknown>(
-				contracts,
-				mutableHandlers,
-			),
-			errorMode: "public",
-			createContext: () => ({}),
-		});
-
-		mutableHandlers.SHAPE.json.HANDLER.post = () => ({
-			status: 200,
-			type: "JSON",
-			data: { ok: false },
-		});
-
-		const response = await fetch(`${startServer(app)}/json`, {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ name: "alice" }),
-		});
-		const parsed = await parseSerializedResponse(response);
-
-		expect(response.status).toBe(200);
-		expect(parsed.data).toEqual({ ok: false });
 	});
 });
 
@@ -978,47 +1350,47 @@ describe("server scoped middleware runtime", () => {
 	});
 });
 
-const typed = createHonoContractHandlers<typeof contracts, { requestId: string }>(contracts, {
+const typedShape = {
+	SHAPE: {
+		json: { CONTRACT: true },
+	},
+} as const satisfies ApiShape;
+
+const typedContracts = {
 	SHAPE: {
 		json: {
-			HANDLER: {
-				post: (_data, _ctx, ourContext) => {
-					const id: string = ourContext.requestId;
-					void id;
-					return { status: 200, type: "JSON", data: { ok: true } };
+			CONTRACT: {
+				post: {
+					body: { type: "JSON", schema: z.object({ name: z.string() }) },
+					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
 				},
 			},
 		},
-		query: { HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) } },
-		headers: { HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) } },
-		queryOptional: {
-			HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
-		},
-		headersOptional: {
-			HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
-		},
-		querySuper: { HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) } },
-		headersSuper: {
-			HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
-		},
-		text: { HANDLER: { post: () => ({ status: 200, type: "Text", data: "ok" }) } },
-		blob: {
-			HANDLER: { post: () => ({ status: 200, type: "Bytes", data: new Uint8Array([1]) }) },
-		},
-		form: { HANDLER: { post: () => ({ status: 200, type: "JSON", data: { ok: true } }) } },
-		urlencoded: {
-			HANDLER: { post: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
-		},
-		middleware: { HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) } },
-		boom: { HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) } },
 	},
-});
+} as const satisfies ContractTreeFor<typeof typedShape>;
+
+const typed = createHonoContractHandlers<typeof typedContracts, { requestId: string }>(
+	typedContracts,
+	{
+		SHAPE: {
+			json: {
+				HANDLER: {
+					post: (_data, _ctx, ourContext) => {
+						const id: string = ourContext.requestId;
+						void id;
+						return { status: 200, type: "JSON", data: { ok: true } };
+					},
+				},
+			},
+		},
+	},
+);
 void typed;
 
 const typeOnly = (_cb: () => void): void => {};
 
 typeOnly(() => {
-	void createHonoContractHandlers<typeof contracts, { requestId: string }>(contracts, {
+	void createHonoContractHandlers<typeof typedContracts, { requestId: string }>(typedContracts, {
 		SHAPE: {
 			json: {
 				HANDLER: {
@@ -1030,36 +1402,6 @@ typeOnly(() => {
 					},
 				},
 			},
-			query: { HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) } },
-			headers: {
-				HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
-			},
-			queryOptional: {
-				HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
-			},
-			headersOptional: {
-				HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
-			},
-			querySuper: {
-				HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
-			},
-			headersSuper: {
-				HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
-			},
-			text: { HANDLER: { post: () => ({ status: 200, type: "Text", data: "ok" }) } },
-			blob: {
-				HANDLER: {
-					post: () => ({ status: 200, type: "Bytes", data: new Uint8Array([1]) }),
-				},
-			},
-			form: { HANDLER: { post: () => ({ status: 200, type: "JSON", data: { ok: true } }) } },
-			urlencoded: {
-				HANDLER: { post: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
-			},
-			middleware: {
-				HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
-			},
-			boom: { HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) } },
 		},
 	});
 });

@@ -134,8 +134,9 @@ export type MiddlewareHandler<TDefinition extends MiddlewareSpec, TContext = unk
 	next: () => Promise<void>,
 	ourContext: TContext,
 ) =>
-	| Promise<void | InferMiddlewareResponseUnion<TDefinition>>
+	| Promise<void | Response | InferMiddlewareResponseUnion<TDefinition>>
 	| void
+	| Response
 	| InferMiddlewareResponseUnion<TDefinition>;
 
 type HasKey<T, TKey extends PropertyKey> = TKey extends keyof T ? true : false;
@@ -455,7 +456,7 @@ const normalizeMiddlewareResponse = (response: InferMiddlewareResponseUnion<Midd
 		status: response.status,
 		type: response.type,
 		data: response.data,
-		headers: undefined,
+		headers: response.headers,
 	} satisfies RuntimeHandlerResponse;
 };
 
@@ -550,6 +551,7 @@ export const initHono = <
 				status: (rawResponse as { status: number }).status,
 				type: (rawResponse as { type: RuntimeHandlerResponse["type"] }).type,
 				data: (rawResponse as { data: unknown }).data,
+				headers: (rawResponse as { headers?: HeadersInit }).headers,
 			};
 			return validateAndSerializeResponse(
 				route.methodDefinition.responses,

@@ -344,7 +344,7 @@ const normalizeMiddlewareResponse = (response: InferMiddlewareResponseUnion<Midd
 		status: response.status,
 		type: response.type,
 		data: response.data,
-		headers: undefined,
+		headers: response.headers,
 	};
 };
 

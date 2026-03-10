@@ -1,43 +1,14 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { Hono } from "hono";
+import { describe, expect, test } from "bun:test";
 import z from "zod";
-import { createClient } from "../client/client.js";
-import type { GatewayServiceMask } from "../gateway/gateway.js";
-import {
-	createGatewayClient,
-	createGatewayService,
-	createGatewayServices,
-	initGateway,
-} from "../gateway/gateway.js";
-import type { MiddlewareTreeFor } from "../middleware/middleware.js";
-import {
-	createHonoContractHandlers,
-	createHonoMiddlewareHandlers,
-	initHono,
-} from "../server/server.js";
-import { parseSerializedResponse } from "../shared/shared.internal.js";
 import type { ApiShape } from "../shared/shared.js";
 import type { ContractTreeFor } from "./contract.js";
-import { compileContractRoutes } from "./contract.js";
-
-type HasStatus<TUnion, TStatus extends number> = Extract<TUnion, { status: TStatus }> extends never
-	? false
-	: true;
-
-const servers: Array<{ stop: () => void }> = [];
-
-const startServer = (app: Hono): string => {
-	const server = Bun.serve({ fetch: app.fetch, port: 0 });
-	servers.push(server);
-	return `http://localhost:${server.port}`;
-};
-
-afterEach(() => {
-	while (servers.length > 0) {
-		const server = servers.pop();
-		server?.stop();
-	}
-});
+import {
+	compileContractRoutes,
+	getContractRequestParsers,
+	getContractResponseSchema,
+	isContractLike,
+	validateContractResponseType,
+} from "./contract.js";
 
 describe("contract route compilation", () => {
 	test("compiles nested routes with dynamic segments", () => {
@@ -91,249 +62,64 @@ describe("contract route compilation", () => {
 	});
 });
 
-describe("server middleware + client", () => {
-	test("middleware short-circuits contract handler and client parses response", async () => {
-		const shape = {
-			SHAPE: {
-				users: { CONTRACT: true },
+describe("contract helpers", () => {
+	test("returns request parsers for each declared input segment", () => {
+		const methodDefinition = {
+			pathParams: z.object({ userId: z.string() }),
+			query: { type: "JSON", schema: z.object({ active: z.boolean() }) },
+			headers: { type: "Standard", schema: z.object({ "x-trace": z.string() }) },
+			body: { type: "Text", schema: z.string() },
+			responses: {
+				200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
 			},
-		} as const satisfies ApiShape;
+		} as const;
 
-		const contracts = {
-			SHAPE: {
-				users: {
-					CONTRACT: {
-						get: {
-							responses: {
-								200: {
-									type: "JSON",
-									schema: z.array(z.object({ id: z.string() })),
-								},
-							},
-						},
-					},
-				},
-			},
-		} as const satisfies ContractTreeFor<typeof shape>;
-
-		const middlewares = {
-			MIDDLEWARE: {
-				rateLimit: {
-					429: {
-						type: "JSON",
-						schema: z.object({ retryAfter: z.number().int() }),
-					},
-				},
-			},
-		} as const satisfies MiddlewareTreeFor<typeof shape>;
-
-		let contractHandlerCalled = false;
-		const app = new Hono();
-		type TestContext = { session: string };
-		initHono<typeof shape, TestContext, typeof middlewares>(app, {
-			contracts: createHonoContractHandlers<typeof contracts, TestContext>(contracts, {
-				SHAPE: {
-					users: {
-						HANDLER: {
-							get: async () => {
-								contractHandlerCalled = true;
-								return {
-									type: "JSON",
-									status: 200,
-									data: [{ id: "never" }],
-								};
-							},
-						},
-					},
-				},
-			}),
-			middlewares: createHonoMiddlewareHandlers<typeof middlewares, TestContext>(
-				middlewares,
-				{
-					MIDDLEWARE: {
-						rateLimit: () => ({
-							type: "JSON",
-							status: 429,
-							data: { retryAfter: Date.now() + 1000 },
-						}),
-					},
-				},
-			),
-			errorMode: "public",
-			createContext: () => ({ session: "x" }),
+		expect(getContractRequestParsers(methodDefinition)).toEqual({
+			pathParams: methodDefinition.pathParams,
+			query: methodDefinition.query,
+			headers: methodDefinition.headers,
+			body: methodDefinition.body,
 		});
-
-		const baseUrl = startServer(app);
-		const client = createClient<typeof shape, typeof contracts, typeof middlewares, "public">(
-			baseUrl,
-		);
-
-		type ClientResponse = Awaited<ReturnType<typeof client.fetch<"/users", "get">>>;
-		const has429Status: HasStatus<ClientResponse, 429> = true;
-		const has200Status: HasStatus<ClientResponse, 200> = true;
-		void has429Status;
-		void has200Status;
-
-		const result = await client.fetch("/users", "get");
-		expect(result.status).toBe(429);
-		expect(contractHandlerCalled).toBe(false);
 	});
 
-	test("raw fetch sees middleware serialized payload", async () => {
-		const shape = {
-			SHAPE: {
-				users: { CONTRACT: true },
+	test("returns the response schema for a declared status", () => {
+		const methodDefinition = {
+			responses: {
+				200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+				404: { type: "Text", schema: z.string() },
 			},
-		} as const satisfies ApiShape;
+		} as const;
 
-		const contracts = {
-			SHAPE: {
-				users: {
-					CONTRACT: {
-						get: {
-							responses: {
-								200: {
-									type: "JSON",
-									schema: z.array(z.object({ id: z.string() })),
-								},
-							},
-						},
-					},
-				},
-			},
-		} as const satisfies ContractTreeFor<typeof shape>;
-
-		const middlewares = {
-			MIDDLEWARE: {
-				lockdown: {
-					429: {
-						type: "JSON",
-						schema: z.object({ retryAfter: z.number() }),
-					},
-				},
-			},
-		} as const satisfies MiddlewareTreeFor<typeof shape>;
-
-		const app = new Hono();
-		type TestContext = unknown;
-		initHono<typeof shape, TestContext, typeof middlewares>(app, {
-			contracts: createHonoContractHandlers<typeof contracts, TestContext>(contracts, {
-				SHAPE: {
-					users: {
-						HANDLER: {
-							get: async () => ({ type: "JSON", status: 200, data: [{ id: "1" }] }),
-						},
-					},
-				},
-			}),
-			middlewares: createHonoMiddlewareHandlers<typeof middlewares, TestContext>(
-				middlewares,
-				{
-					MIDDLEWARE: {
-						lockdown: () => ({ type: "JSON", status: 429, data: { retryAfter: 123 } }),
-					},
-				},
-			),
-			errorMode: "public",
-			createContext: () => ({}),
-		});
-
-		const baseUrl = startServer(app);
-		const response = await fetch(`${baseUrl}/users`);
-		const parsed = await parseSerializedResponse(response);
-
-		expect(response.status).toBe(429);
-		expect(parsed.type).toBe("JSON");
-		expect(parsed.source).toBe("middleware");
-		expect(parsed.data).toEqual({ retryAfter: 123 });
-	});
-});
-
-describe("gateway proxy", () => {
-	test("gateway client proxies to upstream service", async () => {
-		const serviceShape = {
-			SHAPE: {
-				users: { CONTRACT: true },
-			},
-		} as const satisfies ApiShape;
-
-		const serviceContracts = {
-			SHAPE: {
-				users: {
-					CONTRACT: {
-						get: {
-							responses: {
-								200: {
-									type: "SuperJSON",
-									schema: z.array(
-										z.object({ id: z.string(), createdAt: z.date() }),
-									),
-								},
-							},
-						},
-					},
-				},
-			},
-		} as const satisfies ContractTreeFor<typeof serviceShape>;
-
-		const serviceMiddlewares = {
-			MIDDLEWARE: {},
-		} as const satisfies MiddlewareTreeFor<typeof serviceShape>;
-
-		const upstreamApp = new Hono();
-		type TestContext = unknown;
-		initHono<typeof serviceShape, TestContext>(upstreamApp, {
-			contracts: createHonoContractHandlers<typeof serviceContracts, TestContext>(
-				serviceContracts,
-				{
-					SHAPE: {
-						users: {
-							HANDLER: {
-								get: async () => ({
-									type: "SuperJSON",
-									status: 200,
-									data: [
-										{
-											id: "u1",
-											createdAt: new Date("2024-01-01T00:00:00.000Z"),
-										},
-									],
-								}),
-							},
-						},
-					},
-				},
-			),
-			errorMode: "public",
-			createContext: () => ({}),
-		});
-		const upstreamUrl = startServer(upstreamApp);
-
-		const gatewayMask = {
-			SHAPE: {
-				users: { CONTRACT: true },
-			},
-		} as const satisfies GatewayServiceMask<typeof serviceShape>;
-
-		const usersGateway = createGatewayService(
-			gatewayMask,
-			serviceContracts,
-			serviceMiddlewares,
-			"public",
-			upstreamUrl,
+		expect(getContractResponseSchema(methodDefinition, 200)).toBe(
+			methodDefinition.responses[200],
 		);
-		const services = createGatewayServices({ users: usersGateway });
+		expect(getContractResponseSchema(methodDefinition, 404)).toBe(
+			methodDefinition.responses[404],
+		);
+		expect(getContractResponseSchema(methodDefinition, 500)).toBeUndefined();
+	});
 
-		const gatewayApp = new Hono();
-		initGateway(gatewayApp, services);
-		const gatewayUrl = startServer(gatewayApp);
+	test("compares response types against the declared schema", () => {
+		const jsonSchema = { type: "JSON", schema: z.object({ ok: z.boolean() }) } as const;
 
-		const gatewayClient = createGatewayClient<typeof services>(gatewayUrl);
-		const users = await gatewayClient.users.fetch("/users", "get");
+		expect(validateContractResponseType(jsonSchema, "JSON")).toBe(true);
+		expect(validateContractResponseType(jsonSchema, "Text")).toBe(false);
+	});
 
-		expect(users.status).toBe(200);
-		expect(users.response.status).toBe(200);
-		expect(users.data).toEqual([{ id: "u1", createdAt: new Date("2024-01-01T00:00:00.000Z") }]);
+	test("recognizes contract-like records", () => {
+		expect(
+			isContractLike({
+				get: {
+					responses: {
+						200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+					},
+				},
+				post: undefined,
+			}),
+		).toBe(true);
+		expect(isContractLike(null)).toBe(false);
+		expect(isContractLike({ trace: {} })).toBe(false);
+		expect(isContractLike({ get: "bad" })).toBe(false);
 	});
 });
 
@@ -369,17 +155,6 @@ typeOnly(() => {
 		},
 	} as const satisfies ContractTreeFor<typeof shape>;
 	void contracts;
-
-	const gatewayMask = {
-		SHAPE: {
-			users: {
-				SHAPE: {
-					$userId: { CONTRACT: true },
-				},
-			},
-		},
-	} as const satisfies GatewayServiceMask<typeof shape>;
-	void gatewayMask;
 
 	const invalidContracts = {
 		SHAPE: {

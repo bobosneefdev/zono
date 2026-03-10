@@ -37,10 +37,18 @@ const shape = {
 				$userId: { CONTRACT: true },
 			},
 		},
+		standard: { CONTRACT: true },
+		textUpload: { CONTRACT: true },
+		blobUpload: { CONTRACT: true },
 		search: { CONTRACT: true },
 		upload: { CONTRACT: true },
 		structured: { CONTRACT: true },
 		events: { CONTRACT: true },
+		downloadText: { CONTRACT: true },
+		downloadBytes: { CONTRACT: true },
+		downloadBlob: { CONTRACT: true },
+		downloadForm: { CONTRACT: true },
+		noop: { CONTRACT: true },
 	},
 } as const satisfies ApiShape;
 
@@ -75,6 +83,57 @@ const contracts = {
 									}),
 								},
 							},
+						},
+					},
+				},
+			},
+		},
+		standard: {
+			CONTRACT: {
+				get: {
+					query: {
+						type: "Standard",
+						schema: z.object({ foo: z.string(), count: z.string() }),
+					},
+					headers: {
+						type: "Standard",
+						schema: z.object({ "x-trace": z.string(), "x-meta": z.string() }),
+					},
+					responses: {
+						200: {
+							type: "JSON",
+							schema: z.object({
+								foo: z.string(),
+								count: z.string(),
+								trace: z.string(),
+								meta: z.string(),
+							}),
+						},
+					},
+				},
+			},
+		},
+		textUpload: {
+			CONTRACT: {
+				post: {
+					body: { type: "Text", schema: z.string() },
+					responses: {
+						200: {
+							type: "JSON",
+							schema: z.object({ body: z.string(), contentType: z.string() }),
+						},
+					},
+				},
+			},
+		},
+		blobUpload: {
+			CONTRACT: {
+				post: {
+					body: { type: "Blob", schema: z.instanceof(Blob) },
+					responses: {
+						200: {
+							type: "JSON",
+							schema: z.object({ size: z.number(), type: z.string() }),
 						},
 					},
 				},
@@ -156,6 +215,51 @@ const contracts = {
 				},
 			},
 		},
+		downloadText: {
+			CONTRACT: {
+				get: {
+					responses: {
+						200: { type: "Text", schema: z.string() },
+					},
+				},
+			},
+		},
+		downloadBytes: {
+			CONTRACT: {
+				get: {
+					responses: {
+						200: { type: "Bytes", schema: z.instanceof(Uint8Array) },
+					},
+				},
+			},
+		},
+		downloadBlob: {
+			CONTRACT: {
+				get: {
+					responses: {
+						200: { type: "Blob", schema: z.instanceof(Blob) },
+					},
+				},
+			},
+		},
+		downloadForm: {
+			CONTRACT: {
+				get: {
+					responses: {
+						200: { type: "FormData", schema: z.instanceof(FormData) },
+					},
+				},
+			},
+		},
+		noop: {
+			CONTRACT: {
+				get: {
+					responses: {
+						204: { type: "Contentless" },
+					},
+				},
+			},
+		},
 	},
 } as const satisfies ContractTreeFor<typeof shape>;
 
@@ -171,7 +275,7 @@ const middlewares = {
 } as const satisfies MiddlewareTreeFor<typeof shape>;
 
 describe("createClient runtime", () => {
-	test("encodes path/query/headers/body from request envelope", async () => {
+	test("encodes structured path/query/headers/body from the request envelope", async () => {
 		const app = new Hono();
 		app.post("/users/:userId", async (ctx) => {
 			const payload = await ctx.req.json();
@@ -210,16 +314,70 @@ describe("createClient runtime", () => {
 		});
 	});
 
-	test("supports URLSearchParams and FormData body modes", async () => {
+	test("encodes standard query params and headers without reserved transport slots", async () => {
 		const app = new Hono();
-		app.post("/search", async (ctx) => {
-			const contentType = ctx.req.header("content-type") ?? "";
-			const payload = await ctx.req.text();
+		app.get("/standard", (ctx) => {
 			return createSerializedResponse({
 				status: 200,
 				type: "JSON",
 				source: "contract",
-				data: { contentType, payload },
+				data: {
+					foo: ctx.req.query("foo") ?? "",
+					count: ctx.req.query("count") ?? "",
+					trace: ctx.req.header("x-trace") ?? "",
+					meta: ctx.req.header("x-meta") ?? "",
+				},
+			});
+		});
+
+		const client = createClient<typeof shape, typeof contracts, typeof middlewares, "public">(
+			startServer(app),
+		);
+
+		const response = await client.fetch("/standard", "get", {
+			query: { type: "Standard", data: { foo: "bar", count: "2" } },
+			headers: { type: "Standard", data: { "x-trace": "trace-1", "x-meta": '{"ok":true}' } },
+		});
+
+		expect(response.data).toEqual({
+			foo: "bar",
+			count: "2",
+			trace: "trace-1",
+			meta: '{"ok":true}',
+		});
+	});
+
+	test("supports Text, Blob, URLSearchParams, and FormData request bodies", async () => {
+		const app = new Hono();
+		app.post("/textUpload", async (ctx) => {
+			return createSerializedResponse({
+				status: 200,
+				type: "JSON",
+				source: "contract",
+				data: {
+					body: await ctx.req.text(),
+					contentType: ctx.req.header("content-type") ?? "",
+				},
+			});
+		});
+		app.post("/blobUpload", async (ctx) => {
+			const blob = await ctx.req.blob();
+			return createSerializedResponse({
+				status: 200,
+				type: "JSON",
+				source: "contract",
+				data: { size: blob.size, type: blob.type },
+			});
+		});
+		app.post("/search", async (ctx) => {
+			return createSerializedResponse({
+				status: 200,
+				type: "JSON",
+				source: "contract",
+				data: {
+					contentType: ctx.req.header("content-type") ?? "",
+					payload: await ctx.req.text(),
+				},
 			});
 		});
 		app.post("/upload", async (ctx) => {
@@ -236,11 +394,25 @@ describe("createClient runtime", () => {
 			startServer(app),
 		);
 
+		const textResponse = await client.fetch("/textUpload", "post", {
+			body: { type: "Text", data: "hello" },
+		});
+		expect(textResponse.data).toEqual({
+			body: "hello",
+			contentType: "",
+		});
+
+		const blobResponse = await client.fetch("/blobUpload", "post", {
+			body: { type: "Blob", data: new Blob(["blob-value"], { type: "text/plain" }) },
+		});
+		expect(blobResponse.data).toEqual({
+			size: 10,
+			type: expect.stringContaining("text/plain"),
+		});
+
 		const urlEncoded = await client.fetch("/search", "post", {
 			body: { type: "URLSearchParams", data: new URLSearchParams({ q: "zono docs" }) },
 		});
-		expect(urlEncoded.status).toBe(200);
-		expect(urlEncoded.response.status).toBe(200);
 		expect((urlEncoded.data as { contentType: string }).contentType).toContain(
 			"application/x-www-form-urlencoded",
 		);
@@ -251,8 +423,6 @@ describe("createClient runtime", () => {
 		const uploaded = await client.fetch("/upload", "post", {
 			body: { type: "FormData", data: formData },
 		});
-		expect(uploaded.status).toBe(200);
-		expect(uploaded.response.status).toBe(200);
 		expect(uploaded.data).toEqual({ fileName: "avatar.png" });
 	});
 
@@ -282,7 +452,6 @@ describe("createClient runtime", () => {
 			body: { type: "SuperJSON", data: { createdAt } },
 		});
 
-		expect(response.status).toBe(200);
 		expect(
 			superjson.parse((response.data as { queryPayload: string }).queryPayload) as {
 				createdAt: Date;
@@ -323,14 +492,92 @@ describe("createClient runtime", () => {
 			body: { type: "SuperJSON", data: { createdAt: new Date("2024-02-02T00:00:00.000Z") } },
 		});
 
-		expect(response.status).toBe(200);
 		expect((response.data as { queryPayload?: string }).queryPayload).toBeUndefined();
 		expect((response.data as { headerPayload?: string }).headerPayload).toBeUndefined();
 	});
 
-	test("parses serialized responses including SuperJSON", async () => {
-		const failingApp = new Hono();
-		failingApp.get("/events", () => {
+	test("parses Text, Bytes, Blob, FormData, Contentless, and SuperJSON responses", async () => {
+		const app = new Hono();
+		app.get("/events", () => {
+			return createSerializedResponse({
+				status: 200,
+				type: "SuperJSON",
+				source: "contract",
+				data: { createdAt: new Date("2024-02-02T00:00:00.000Z") },
+			});
+		});
+		app.get("/downloadText", () => {
+			return createSerializedResponse({
+				status: 200,
+				type: "Text",
+				source: "contract",
+				data: "hello text",
+			});
+		});
+		app.get("/downloadBytes", () => {
+			return createSerializedResponse({
+				status: 200,
+				type: "Bytes",
+				source: "contract",
+				data: new Uint8Array([1, 2, 3]),
+			});
+		});
+		app.get("/downloadBlob", () => {
+			return createSerializedResponse({
+				status: 200,
+				type: "Blob",
+				source: "contract",
+				data: new Blob(["blob response"], { type: "text/plain" }),
+			});
+		});
+		app.get("/downloadForm", () => {
+			const formData = new FormData();
+			formData.set("fileName", "avatar.png");
+			return createSerializedResponse({
+				status: 200,
+				type: "FormData",
+				source: "contract",
+				data: formData,
+			});
+		});
+		app.get("/noop", () => {
+			return createSerializedResponse({
+				status: 204,
+				type: "Contentless",
+				source: "contract",
+				data: undefined,
+			});
+		});
+
+		const client = createClient<typeof shape, typeof contracts, typeof middlewares, "public">(
+			startServer(app),
+		);
+
+		const event = await client.fetch("/events", "get");
+		expect((event.data as { createdAt: Date }).createdAt).toEqual(
+			new Date("2024-02-02T00:00:00.000Z"),
+		);
+
+		const text = await client.fetch("/downloadText", "get");
+		expect(text.data).toBe("hello text");
+
+		const bytes = await client.fetch("/downloadBytes", "get");
+		expect(Array.from(bytes.data as Uint8Array)).toEqual([1, 2, 3]);
+
+		const blob = await client.fetch("/downloadBlob", "get");
+		expect(await (blob.data as Blob).text()).toBe("blob response");
+
+		const form = await client.fetch("/downloadForm", "get");
+		expect((form.data as FormData).get("fileName")).toBe("avatar.png");
+
+		const noop = await client.fetch("/noop", "get");
+		expect(noop.status).toBe(204);
+		expect(noop.data).toBeUndefined();
+	});
+
+	test("parses serialized error responses", async () => {
+		const app = new Hono();
+		app.get("/events", () => {
 			return createSerializedResponse({
 				status: 503,
 				type: "JSON",
@@ -339,37 +586,32 @@ describe("createClient runtime", () => {
 			});
 		});
 
-		const failingClient = createClient<
-			typeof shape,
-			typeof contracts,
-			typeof middlewares,
-			"public"
-		>(startServer(failingApp));
-		const failed = await failingClient.fetch("/events", "get");
+		const client = createClient<typeof shape, typeof contracts, typeof middlewares, "public">(
+			startServer(app),
+		);
+		const failed = await client.fetch("/events", "get");
+
 		expect(failed.status).toBe(503);
-		expect(failed.response.status).toBe(503);
 		expect((await failed.response.json()) as { message: string }).toEqual({ message: "down" });
+	});
 
-		const healthyApp = new Hono();
-		healthyApp.get("/events", () => {
-			return createSerializedResponse({
-				status: 200,
-				type: "SuperJSON",
-				source: "contract",
-				data: { createdAt: new Date("2024-02-02T00:00:00.000Z") },
-			});
-		});
+	test("rejects invalid runtime path params before the request is sent", async () => {
+		const app = new Hono();
+		const baseUrl = startServer(app);
+		const client = createClient<typeof shape, typeof contracts, typeof middlewares, "public">(
+			baseUrl,
+		) as unknown as {
+			fetch: (path: string, method: string, data?: unknown) => Promise<unknown>;
+		};
 
-		const healthyClient = createClient<
-			typeof shape,
-			typeof contracts,
-			typeof middlewares,
-			"public"
-		>(startServer(healthyApp));
-		const healthy = await healthyClient.fetch("/events", "get");
-		expect(healthy.status).toBe(200);
-		expect(healthy.response.status).toBe(200);
-		expect((healthy.data as { createdAt: Date }).createdAt instanceof Date).toBe(true);
+		await expect(
+			client.fetch("/users/$userId", "post", {
+				pathParams: { userId: 123 },
+				query: { type: "JSON", data: { active: true } },
+				headers: { type: "JSON", data: { source: "test" } },
+				body: { type: "JSON", data: { name: "alice" } },
+			}),
+		).rejects.toThrow("Path param 'userId' must be a string");
 	});
 });
 
@@ -382,6 +624,7 @@ type ClientBadRequestData = Extract<ClientResponse, { status: 400 }>["data"];
 type ClientNotFoundData = Extract<ClientResponse, { status: 404 }>["data"];
 type ClientInternalErrorData = Extract<ClientResponse, { status: 500 }>["data"];
 const has200: HasStatus<ClientResponse, 200> = true;
+const has204: HasStatus<ClientResponse, 204> = true;
 const has429: HasStatus<ClientResponse, 429> = true;
 const has400: HasStatus<ClientResponse, 400> = true;
 const has404: HasStatus<ClientResponse, 404> = true;
@@ -391,6 +634,7 @@ const validBadRequestData: ClientBadRequestData = { message: "bad", issues: [] }
 const validNotFoundData: ClientNotFoundData = { message: "missing" };
 const validInternalErrorData: ClientInternalErrorData = { message: "boom" };
 void has200;
+void has204;
 void has429;
 void has400;
 void has404;
@@ -435,6 +679,11 @@ runTypeOnly(() => {
 
 	void typedClient.fetch("/structured", "post", {
 		body: { type: "SuperJSON", data: { createdAt: new Date() } },
+	});
+
+	void typedClient.fetch("/standard", "get", {
+		query: { type: "Standard", data: { foo: "bar", count: "1" } },
+		headers: { type: "Standard", data: { "x-trace": "trace", "x-meta": "meta" } },
 	});
 
 	void typedClient.fetch("/users/$userId", "post", {

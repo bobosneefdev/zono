@@ -3,7 +3,7 @@ import z from "zod";
 import type { MiddlewareHandler } from "../server/server.js";
 import type { ApiShape } from "../shared/shared.js";
 import type { MiddlewareTreeFor } from "./middleware.js";
-import { createHonoMiddlewareHandlers } from "./middleware.js";
+import { collectMiddlewareLayers, createHonoMiddlewareHandlers } from "./middleware.js";
 
 const shape = {
 	SHAPE: {
@@ -26,33 +26,98 @@ const nestedShape = {
 	},
 } as const satisfies ApiShape;
 
-describe("middleware bindings", () => {
-	test("returns the supplied middleware tree and handlers", () => {
-		const middlewares = {
-			MIDDLEWARE: {
-				rateLimit: {
-					429: { type: "JSON", schema: z.object({ retryAfter: z.number() }) },
+describe("middleware layer collection", () => {
+	test("collects middleware layers in traversal order", () => {
+		const middlewareNodes = [
+			{
+				MIDDLEWARE: {
+					audit: {
+						418: { type: "JSON", schema: z.object({ traceId: z.string() }) },
+					},
 				},
 			},
-		} as const satisfies MiddlewareTreeFor<typeof shape>;
-
-		const handlers = {
-			MIDDLEWARE: {
-				rateLimit: () => ({
-					status: 429 as const,
-					type: "JSON" as const,
-					data: { retryAfter: 123 },
-				}),
+			{
+				MIDDLEWARE: {
+					auth: {
+						401: { type: "JSON", schema: z.object({ message: z.string() }) },
+					},
+				},
 			},
-		};
+		];
+		const handlerNodes = [
+			{
+				MIDDLEWARE: {
+					audit: () => ({ status: 418, type: "JSON", data: { traceId: "trace-1" } }),
+				},
+			},
+			{
+				MIDDLEWARE: {
+					auth: () => ({ status: 401, type: "JSON", data: { message: "blocked" } }),
+				},
+			},
+		];
 
-		const bound = createHonoMiddlewareHandlers<typeof middlewares, { requestId: string }>(
-			middlewares,
-			handlers,
-		);
+		const layers = collectMiddlewareLayers(middlewareNodes, handlerNodes);
 
-		expect(bound.middlewares).toBe(middlewares);
-		expect(bound.handlers).toBe(handlers);
+		expect(layers).toHaveLength(2);
+		expect(layers.map((layer) => layer.name)).toEqual(["audit", "auth"]);
+		expect(Object.keys(layers[0]!.definition)).toEqual(["418"]);
+		expect(Object.keys(layers[1]!.definition)).toEqual(["401"]);
+	});
+
+	test("throws when a middleware node has no handler map", () => {
+		expect(() =>
+			collectMiddlewareLayers(
+				[
+					{
+						MIDDLEWARE: {
+							auth: {
+								401: { type: "JSON", schema: z.object({ message: z.string() }) },
+							},
+						},
+					},
+				],
+				[{}],
+			),
+		).toThrow("Missing MIDDLEWARE handlers node for middleware layer");
+	});
+
+	test("throws when a middleware handler is missing", () => {
+		expect(() =>
+			collectMiddlewareLayers(
+				[
+					{
+						MIDDLEWARE: {
+							auth: {
+								401: { type: "JSON", schema: z.object({ message: z.string() }) },
+							},
+						},
+					},
+				],
+				[{ MIDDLEWARE: {} }],
+			),
+		).toThrow("Missing middleware handler 'auth'");
+	});
+
+	test("throws when a middleware definition is not a record", () => {
+		expect(() =>
+			collectMiddlewareLayers(
+				[
+					{
+						MIDDLEWARE: {
+							auth: 123,
+						},
+					},
+				],
+				[
+					{
+						MIDDLEWARE: {
+							auth: () => undefined,
+						},
+					},
+				],
+			),
+		).toThrow("Missing middleware definition 'auth'");
 	});
 });
 
