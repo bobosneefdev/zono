@@ -17,9 +17,11 @@ import type {
 	MiddlewareTree,
 	MiddlewareTreeFor,
 } from "../middleware/middleware.js";
-import { runMiddlewareHandlers } from "../middleware/middleware.js";
+import { resolveMiddlewareBindings, runMiddlewareHandlers } from "../middleware/middleware.js";
 import {
 	type ApiShape,
+	collectShapePathNodes,
+	type EmptyObject,
 	findExactShapePathNode,
 	isRecordObject,
 	parseBodyInput,
@@ -134,47 +136,73 @@ export type MiddlewareHandler<TDefinition extends MiddlewareSpec, TContext = unk
 	| void
 	| InferMiddlewareResponseUnion<TDefinition>;
 
+type HasKey<T, TKey extends PropertyKey> = TKey extends keyof T ? true : false;
+
+type IsRequiredKey<T, TKey extends keyof T> = EmptyObject extends Pick<T, TKey> ? false : true;
+
+type MiddlewareMapAtNode<TNode> = TNode extends { MIDDLEWARE?: infer TMiddlewareMap }
+	? TMiddlewareMap extends Record<string, MiddlewareSpec>
+		? TMiddlewareMap
+		: EmptyObject
+	: EmptyObject;
+
+type MiddlewareShapeAtNode<TNode> = TNode extends { SHAPE?: infer TShapeNode }
+	? TShapeNode extends Record<string, unknown>
+		? TShapeNode
+		: EmptyObject
+	: EmptyObject;
+
 type MiddlewareHandlerShape<TShapeNode, TContext> =
 	TShapeNode extends Record<string, unknown>
 		? {
-				[K in keyof TShapeNode]-?: MiddlewareHandlerTree<
+				[K in keyof TShapeNode]: MiddlewareHandlerTree<
 					NonNullable<TShapeNode[K]>,
 					TContext
 				>;
 			}
 		: never;
 
-type MiddlewareHandlerTreeFromNode<TMiddlewaresNode, TContext> = TMiddlewaresNode extends {
-	MIDDLEWARE: infer TMiddlewareMap;
-	SHAPE: infer TShapeNode;
-}
-	? {
-			MIDDLEWARE: TMiddlewareMap extends Record<string, MiddlewareSpec>
+type MiddlewareHandlerMap<TMiddlewareMap extends Record<string, MiddlewareSpec>, TContext> = {
+	[TName in keyof TMiddlewareMap]: MiddlewareHandler<TMiddlewareMap[TName], TContext>;
+};
+
+type MiddlewareHandlerTreeFromNode<TMiddlewaresNode, TContext> = (HasKey<
+	TMiddlewaresNode,
+	"MIDDLEWARE"
+> extends true
+	? "MIDDLEWARE" extends keyof TMiddlewaresNode
+		? IsRequiredKey<TMiddlewaresNode, "MIDDLEWARE"> extends true
+			? {
+					MIDDLEWARE: MiddlewareHandlerMap<
+						MiddlewareMapAtNode<TMiddlewaresNode>,
+						TContext
+					>;
+				}
+			: {
+					MIDDLEWARE?: MiddlewareHandlerMap<
+						MiddlewareMapAtNode<TMiddlewaresNode>,
+						TContext
+					>;
+				}
+		: never
+	: EmptyObject) &
+	(HasKey<TMiddlewaresNode, "SHAPE"> extends true
+		? "SHAPE" extends keyof TMiddlewaresNode
+			? IsRequiredKey<TMiddlewaresNode, "SHAPE"> extends true
 				? {
-						[TName in keyof TMiddlewareMap]: MiddlewareHandler<
-							TMiddlewareMap[TName],
+						SHAPE: MiddlewareHandlerShape<
+							MiddlewareShapeAtNode<TMiddlewaresNode>,
 							TContext
 						>;
 					}
-				: never;
-			SHAPE: MiddlewareHandlerShape<TShapeNode, TContext>;
-		}
-	: TMiddlewaresNode extends { MIDDLEWARE: infer TMiddlewareMap }
-		? {
-				MIDDLEWARE: TMiddlewareMap extends Record<string, MiddlewareSpec>
-					? {
-							[TName in keyof TMiddlewareMap]: MiddlewareHandler<
-								TMiddlewareMap[TName],
-								TContext
-							>;
-						}
-					: never;
-			}
-		: TMiddlewaresNode extends { SHAPE: infer TShapeNode }
-			? {
-					SHAPE: MiddlewareHandlerShape<TShapeNode, TContext>;
-				}
-			: never;
+				: {
+						SHAPE?: MiddlewareHandlerShape<
+							MiddlewareShapeAtNode<TMiddlewaresNode>,
+							TContext
+						>;
+					}
+			: never
+		: EmptyObject);
 
 export type MiddlewareHandlerTree<
 	TMiddlewares extends MiddlewareTree,
@@ -191,9 +219,13 @@ export type MiddlewareBindings<TMiddlewares extends MiddlewareTree, TContext> = 
 	handlers: MiddlewareHandlerTree<TMiddlewares, TContext>;
 };
 
-export type ServerOptions<TShape extends ApiShape, TContext = unknown> = {
+export type ServerOptions<
+	TShape extends ApiShape,
+	TContext = unknown,
+	TMiddlewares extends MiddlewareTreeFor<TShape> = MiddlewareTreeFor<TShape>,
+> = {
 	contracts: ContractBindings<ContractTreeFor<TShape>, TContext>;
-	middlewares?: MiddlewareBindings<MiddlewareTreeFor<TShape>, TContext>;
+	middlewares?: MiddlewareBindings<TMiddlewares, TContext>;
 	errorMode: ErrorMode;
 	createContext: ContextFactory<TContext>;
 };
@@ -301,16 +333,17 @@ const getHandlerNodeAtPath = (
 	return current.HANDLER;
 };
 
-type PreparedContractRoute = {
+type PreparedContractRoute<TContext> = {
 	pathTemplate: string;
 	method: HTTPMethod;
 	methodDefinition: ContractMethod;
 	handlerNode: Record<string, unknown>;
 	requestParsers: ReturnType<typeof getContractRequestParsers>;
+	middlewares?: MiddlewareBindings<{ MIDDLEWARE: Record<string, MiddlewareSpec> }, TContext>;
 };
 
-const getPreparedHandler = (
-	route: PreparedContractRoute,
+const getPreparedHandler = <TContext>(
+	route: PreparedContractRoute<TContext>,
 ): ((...args: Array<unknown>) => unknown) => {
 	const handler = route.handlerNode[route.method];
 	if (typeof handler !== "function") {
@@ -402,23 +435,35 @@ const parseRequestData = async (
 	return inputData;
 };
 
-export const initHono = <TShape extends ApiShape, TContext = unknown>(
+export const initHono = <
+	TShape extends ApiShape,
+	TContext = unknown,
+	TMiddlewares extends MiddlewareTreeFor<TShape> = MiddlewareTreeFor<TShape>,
+>(
 	app: Hono,
-	options: ServerOptions<TShape, TContext>,
+	options: ServerOptions<TShape, TContext, TMiddlewares>,
 ): void => {
 	app.notFound(() => {
 		return toSerializedRuntimeResponse(makeNotFoundResponse(), "error");
 	});
 
-	const preparedRoutes: Array<PreparedContractRoute> = compileContractRoutes(
+	const preparedRoutes: Array<PreparedContractRoute<TContext>> = compileContractRoutes(
 		options.contracts.contracts,
 	).map((route) => {
+		const middlewares = options.middlewares
+			? resolveMiddlewareBindings<TContext>(
+					collectShapePathNodes(options.middlewares.middlewares, route.pathTemplate),
+					collectShapePathNodes(options.middlewares.handlers, route.pathTemplate),
+				)
+			: undefined;
+
 		return {
 			pathTemplate: route.pathTemplate,
 			method: route.method,
 			methodDefinition: route.methodDefinition,
 			handlerNode: getHandlerNodeAtPath(options.contracts.handlers, route.pathTemplate),
 			requestParsers: getContractRequestParsers(route.methodDefinition),
+			middlewares,
 		};
 	});
 
@@ -444,11 +489,11 @@ export const initHono = <TShape extends ApiShape, TContext = unknown>(
 			};
 
 			try {
-				if (options.middlewares) {
+				if (route.middlewares) {
 					return await runMiddlewareHandlers(
 						ctx,
 						ourContext,
-						options.middlewares,
+						route.middlewares,
 						executeHandler,
 					);
 				}

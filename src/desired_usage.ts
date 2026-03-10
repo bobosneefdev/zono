@@ -175,7 +175,7 @@ const usersServiceMiddlewareHandlers = createHonoMiddlewareHandlers<
 });
 
 const usersServiceApp = new Hono();
-initHono<UsersServiceShape, UsersServiceContext>(usersServiceApp, {
+initHono<UsersServiceShape, UsersServiceContext, UsersServiceMiddlewares>(usersServiceApp, {
 	contracts: usersServiceContractHandlers,
 	middlewares: usersServiceMiddlewareHandlers,
 	createContext: createUsersServiceContext,

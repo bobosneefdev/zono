@@ -130,7 +130,7 @@ describe("server middleware + client", () => {
 		let contractHandlerCalled = false;
 		const app = new Hono();
 		type TestContext = { session: string };
-		initHono<typeof shape, TestContext>(app, {
+		initHono<typeof shape, TestContext, typeof middlewares>(app, {
 			contracts: createHonoContractHandlers<typeof contracts, TestContext>(contracts, {
 				SHAPE: {
 					users: {
@@ -216,7 +216,7 @@ describe("server middleware + client", () => {
 
 		const app = new Hono();
 		type TestContext = unknown;
-		initHono<typeof shape, TestContext>(app, {
+		initHono<typeof shape, TestContext, typeof middlewares>(app, {
 			contracts: createHonoContractHandlers<typeof contracts, TestContext>(contracts, {
 				SHAPE: {
 					users: {

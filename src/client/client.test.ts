@@ -448,4 +448,129 @@ runTypeOnly(() => {
 	// @ts-expect-error middleware status 429 must keep its declared payload shape
 	const invalidRateLimitData: ClientRateLimitData = { retryAfter: "soon" };
 	void invalidRateLimitData;
+
+	const scopedShape = {
+		SHAPE: {
+			users: {
+				CONTRACT: true,
+				SHAPE: {
+					$userId: { CONTRACT: true },
+				},
+			},
+			events: { CONTRACT: true },
+		},
+	} as const satisfies ApiShape;
+
+	const scopedContracts = {
+		SHAPE: {
+			users: {
+				CONTRACT: {
+					get: {
+						responses: {
+							200: { type: "JSON", schema: z.object({ users: z.array(z.string()) }) },
+						},
+					},
+				},
+				SHAPE: {
+					$userId: {
+						CONTRACT: {
+							get: {
+								pathParams: z.object({ userId: z.string() }),
+								responses: {
+									200: { type: "JSON", schema: z.object({ id: z.string() }) },
+								},
+							},
+						},
+					},
+				},
+			},
+			events: {
+				CONTRACT: {
+					get: {
+						responses: {
+							200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+						},
+					},
+				},
+			},
+		},
+	} as const satisfies ContractTreeFor<typeof scopedShape>;
+
+	const scopedMiddlewares = {
+		MIDDLEWARE: {
+			auth: {
+				401: { type: "JSON", schema: z.object({ scope: z.literal("root") }) },
+			},
+			audit: {
+				418: { type: "JSON", schema: z.object({ traceId: z.string() }) },
+			},
+		},
+		SHAPE: {
+			users: {
+				MIDDLEWARE: {
+					auth: {
+						403: { type: "JSON", schema: z.object({ scope: z.literal("users") }) },
+					},
+				},
+				SHAPE: {
+					$userId: {
+						MIDDLEWARE: {
+							rateLimit: {
+								429: { type: "JSON", schema: z.object({ retryAfter: z.number() }) },
+							},
+						},
+					},
+				},
+			},
+		},
+	} as const satisfies MiddlewareTreeFor<typeof scopedShape>;
+
+	const scopedClient = createClient<
+		typeof scopedShape,
+		typeof scopedContracts,
+		typeof scopedMiddlewares,
+		"public"
+	>("http://localhost");
+
+	const userResponsePromise = scopedClient.fetch("/users/$userId", "get", {
+		pathParams: { userId: "u1" },
+	});
+	type UserResponse = Awaited<typeof userResponsePromise>;
+	const userScopedAuth: Extract<UserResponse, { status: 403 }>["data"] = { scope: "users" };
+	const userRateLimit: Extract<UserResponse, { status: 429 }>["data"] = { retryAfter: 1 };
+	const userAudit: Extract<UserResponse, { status: 418 }>["data"] = { traceId: "trace-1" };
+	void userScopedAuth;
+	void userRateLimit;
+	void userAudit;
+
+	// @ts-expect-error nested route should use scoped auth override, not root auth
+	const userRootAuth: Extract<UserResponse, { status: 401 }> = {
+		status: 401,
+		data: { scope: "root" },
+		response: new Response(),
+	};
+	void userRootAuth;
+
+	const eventsResponsePromise = scopedClient.fetch("/events", "get");
+	type EventsResponse = Awaited<typeof eventsResponsePromise>;
+	const eventsRootAuth: Extract<EventsResponse, { status: 401 }>["data"] = { scope: "root" };
+	const eventsAudit: Extract<EventsResponse, { status: 418 }>["data"] = { traceId: "trace-2" };
+	void eventsRootAuth;
+	void eventsAudit;
+
+	// @ts-expect-error unrelated route should not include /users scoped auth
+	const eventsScopedAuth: Extract<EventsResponse, { status: 403 }> = {
+		status: 403,
+		data: { scope: "users" },
+		response: new Response(),
+	};
+	void eventsScopedAuth;
+
+	// @ts-expect-error unrelated route should not include /users/$userId rate limit
+	const eventsRateLimit: Extract<EventsResponse, { status: 429 }> = {
+		status: 429,
+		data: { retryAfter: 1 },
+		response: new Response(),
+	};
+	void eventsRateLimit;
 });

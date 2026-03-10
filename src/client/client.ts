@@ -6,7 +6,11 @@ import type {
 	ContractTreeFor,
 	HTTPMethod,
 } from "../contract/contract.js";
-import type { MiddlewareSpec, MiddlewareTreeFor } from "../middleware/middleware.js";
+import type {
+	InferMiddlewareResponseUnionAtPath,
+	MiddlewareTree,
+	MiddlewareTreeFor,
+} from "../middleware/middleware.js";
 import type { ErrorMode } from "../server/server.js";
 import {
 	type ApiShape,
@@ -25,18 +29,18 @@ import {
 
 type ClientFetchRoutes<
 	TContracts extends ContractTree,
-	TMiddlewares extends { MIDDLEWARE: Record<string, MiddlewareSpec> },
+	TMiddlewares extends MiddlewareTree,
 	TErrorMode extends ErrorMode,
 > = ContractCallRoutes<TContracts> extends infer TRoute
 	? TRoute extends {
-			path: infer _TPath extends string;
+			path: infer TPath extends string;
 			method: infer _TMethod extends HTTPMethod;
 			request: infer _TRequest;
 			response: infer _TResponse;
 		}
 		? MapFetchRouteResponse<
 				TRoute,
-				| import("../middleware/middleware.js").InferAllMiddlewareResponseUnion<TMiddlewares>
+				| InferMiddlewareResponseUnionAtPath<TMiddlewares, TPath>
 				| import("../server/server.js").ErrorResponse<TErrorMode>
 			>
 		: never
@@ -44,13 +48,13 @@ type ClientFetchRoutes<
 
 export type ClientFetchMethod<
 	TContracts extends ContractTree,
-	TMiddlewares extends { MIDDLEWARE: Record<string, MiddlewareSpec> },
+	TMiddlewares extends MiddlewareTree,
 	TErrorMode extends ErrorMode,
 > = TypedFetch<ClientFetchRoutes<TContracts, TMiddlewares, TErrorMode>>;
 
 export type Client<
 	TContracts extends ContractTree,
-	TMiddlewares extends { MIDDLEWARE: Record<string, MiddlewareSpec> },
+	TMiddlewares extends MiddlewareTree,
 	TErrorMode extends ErrorMode,
 > = {
 	fetch: ClientFetchMethod<TContracts, TMiddlewares, TErrorMode>;

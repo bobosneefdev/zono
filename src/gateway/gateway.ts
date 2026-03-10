@@ -8,18 +8,18 @@ import type {
 } from "../contract/contract.js";
 import { compileContractRoutes } from "../contract/contract.js";
 import type {
-	InferAllMiddlewareResponseUnion,
+	InferMiddlewareResponseUnionAtPath,
+	MiddlewareMapAtNode,
 	MiddlewareSpec,
 	MiddlewareTree,
 	MiddlewareTreeFor,
 } from "../middleware/middleware.js";
-import { runMiddlewareHandlers } from "../middleware/middleware.js";
+import { resolveMiddlewareBindings, runMiddlewareHandlers } from "../middleware/middleware.js";
 import type {
 	ContextFactory,
 	ErrorMode,
 	ErrorResponse,
 	MiddlewareBindings,
-	MiddlewareHandler,
 } from "../server/server.js";
 import {
 	type ApiShape,
@@ -95,7 +95,7 @@ export type GatewayService<
 type AnyGatewayService = {
 	mask: GatewayServiceMask<ApiShape>;
 	contracts: ContractTree;
-	middlewares: { MIDDLEWARE: Record<string, MiddlewareSpec> };
+	middlewares: MiddlewareTree;
 	errorMode: ErrorMode;
 	baseUrl: string;
 };
@@ -124,29 +124,6 @@ export type GatewayMiddlewares<TServices extends GatewayServices> = {
 	};
 };
 
-type SplitPath<TPath extends string> = TPath extends ""
-	? []
-	: TPath extends `${infer THead}/${infer TRest}`
-		? [THead, ...SplitPath<TRest>]
-		: [TPath];
-
-type PathSegments<TPath extends string> = TPath extends `/${infer TTrimmed}`
-	? SplitPath<TTrimmed>
-	: SplitPath<TPath>;
-
-type MiddlewareMapAtNode<TNode> = TNode extends {
-	MIDDLEWARE: infer TDefinitions;
-}
-	? TDefinitions extends Record<string, MiddlewareSpec>
-		? TDefinitions
-		: EmptyObject
-	: EmptyObject;
-
-type MergeMiddlewareMaps<
-	TBase extends Record<string, MiddlewareSpec>,
-	TNext extends Record<string, MiddlewareSpec>,
-> = Omit<TBase, keyof TNext> & TNext;
-
 type GatewayServiceMiddlewareTree<
 	TGatewayMiddlewares,
 	TService extends PropertyKey,
@@ -156,35 +133,15 @@ type GatewayServiceMiddlewareTree<
 		: never
 	: never;
 
-type MergeMiddlewareDefinitionsAlongPath<
-	TNode,
-	TSegments extends Array<string>,
-	TAcc extends Record<string, MiddlewareSpec> = EmptyObject,
-> = [TNode] extends [never]
-	? TAcc
-	: TNode extends { SHAPE: infer TShape extends Record<string, MiddlewareTree> }
-		? TSegments extends [infer THead extends string, ...infer TTail extends Array<string>]
-			? THead extends keyof TShape
-				? MergeMiddlewareDefinitionsAlongPath<
-						TShape[THead],
-						TTail,
-						MergeMiddlewareMaps<TAcc, MiddlewareMapAtNode<TNode>>
-					>
-				: MergeMiddlewareMaps<TAcc, MiddlewareMapAtNode<TNode>>
-			: MergeMiddlewareMaps<TAcc, MiddlewareMapAtNode<TNode>>
-		: MergeMiddlewareMaps<TAcc, MiddlewareMapAtNode<TNode>>;
-
 type InferGatewayMiddlewareResponseUnionAtPath<
 	TGatewayMiddlewares,
 	TService extends PropertyKey,
 	TPath extends string,
-> = InferAllMiddlewareResponseUnion<{
-	MIDDLEWARE: MergeMiddlewareDefinitionsAlongPath<
-		GatewayServiceMiddlewareTree<TGatewayMiddlewares, TService>,
-		PathSegments<TPath>,
-		MiddlewareMapAtNode<TGatewayMiddlewares>
-	>;
-}>;
+> = InferMiddlewareResponseUnionAtPath<
+	GatewayServiceMiddlewareTree<TGatewayMiddlewares, TService>,
+	TPath,
+	MiddlewareMapAtNode<TGatewayMiddlewares>
+>;
 
 type GatewayClientRoutes<
 	TService extends AnyGatewayService,
@@ -199,7 +156,7 @@ type GatewayClientRoutes<
 		}
 		? MapFetchRouteResponse<
 				TRoute,
-				| InferAllMiddlewareResponseUnion<TService["middlewares"]>
+				| InferMiddlewareResponseUnionAtPath<TService["middlewares"], TPath>
 				| InferGatewayMiddlewareResponseUnionAtPath<TGatewayMiddlewares, TServiceKey, TPath>
 				| ErrorResponse<TService["errorMode"]>
 			>
@@ -292,72 +249,6 @@ const applyGatewayServiceMask = (mask: unknown, contracts: unknown): ContractTre
 	return maskedContracts;
 };
 
-const resolveRouteMiddlewares = <TContext>(
-	middlewareNodes: Array<unknown>,
-	handlerNodes: Array<unknown>,
-): MiddlewareBindings<{ MIDDLEWARE: Record<string, MiddlewareSpec> }, TContext> | undefined => {
-	if (middlewareNodes.length === 0) {
-		return undefined;
-	}
-
-	const mergedDefinitions: Record<string, MiddlewareSpec> = {};
-	const mergedHandlers: Record<string, MiddlewareHandler<MiddlewareSpec, TContext>> = {};
-
-	for (let index = 0; index < middlewareNodes.length; index += 1) {
-		const middlewareNode = middlewareNodes[index];
-		const handlersNode = handlerNodes[index];
-		if (!isRecordObject(middlewareNode) || !isRecordObject(middlewareNode.MIDDLEWARE)) {
-			continue;
-		}
-		if (!isRecordObject(handlersNode) || !isRecordObject(handlersNode.MIDDLEWARE)) {
-			throw new Error("Missing MIDDLEWARE handlers node for gateway middleware layer");
-		}
-		const middlewareMap = middlewareNode.MIDDLEWARE as Record<string, unknown>;
-		const handlerMap = handlersNode.MIDDLEWARE as Record<string, unknown>;
-		for (const [middlewareName, _definition] of Object.entries(middlewareMap)) {
-			const handler = handlerMap[middlewareName];
-			if (typeof handler !== "function") {
-				throw new Error(`Missing gateway middleware handler '${middlewareName}'`);
-			}
-			Object.defineProperty(mergedDefinitions, middlewareName, {
-				configurable: true,
-				enumerable: true,
-				get: () => {
-					const currentDefinition = middlewareMap[middlewareName];
-					if (!isRecordObject(currentDefinition)) {
-						throw new Error(
-							`Missing gateway middleware definition '${middlewareName}'`,
-						);
-					}
-					return currentDefinition as MiddlewareSpec;
-				},
-			});
-			Object.defineProperty(mergedHandlers, middlewareName, {
-				configurable: true,
-				enumerable: true,
-				get: () => {
-					const currentHandler = handlerMap[middlewareName];
-					if (typeof currentHandler !== "function") {
-						throw new Error(`Missing gateway middleware handler '${middlewareName}'`);
-					}
-					return currentHandler as MiddlewareHandler<MiddlewareSpec, TContext>;
-				},
-			});
-		}
-	}
-
-	if (Object.keys(mergedDefinitions).length === 0) {
-		return undefined;
-	}
-
-	return {
-		middlewares: { MIDDLEWARE: mergedDefinitions },
-		handlers: {
-			MIDDLEWARE: mergedHandlers,
-		},
-	};
-};
-
 type PreparedGatewayRoute<TContext> = {
 	pathTemplate: string;
 	method: HTTPMethod;
@@ -421,7 +312,7 @@ export const initGateway = <
 								serviceName,
 								route.pathTemplate,
 							);
-						return resolveRouteMiddlewares<TContext>(middlewareNodes, handlerNodes);
+						return resolveMiddlewareBindings<TContext>(middlewareNodes, handlerNodes);
 					})()
 				: undefined;
 

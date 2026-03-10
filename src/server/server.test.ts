@@ -447,7 +447,7 @@ describe("server runtime", () => {
 		} as const satisfies MiddlewareTreeFor<typeof shape>;
 
 		const publicApp = new Hono();
-		initHono<typeof shape, unknown>(publicApp, {
+		initHono<typeof shape, unknown, typeof middlewares>(publicApp, {
 			contracts: createHonoContractHandlers<typeof contracts, unknown>(contracts, handlers),
 			middlewares: createHonoMiddlewareHandlers<typeof middlewares, unknown>(middlewares, {
 				MIDDLEWARE: {
@@ -563,6 +563,411 @@ describe("server runtime", () => {
 
 		expect(response.status).toBe(200);
 		expect(parsed.data).toEqual({ ok: false });
+	});
+});
+
+describe("server scoped middleware runtime", () => {
+	test("runs root-to-leaf middleware only on matching routes and threads context", async () => {
+		const scopedShape = {
+			SHAPE: {
+				users: {
+					CONTRACT: true,
+					SHAPE: {
+						$userId: { CONTRACT: true },
+					},
+				},
+				plain: { CONTRACT: true },
+			},
+		} as const satisfies ApiShape;
+
+		const scopedContracts = {
+			SHAPE: {
+				users: {
+					CONTRACT: {
+						get: {
+							responses: {
+								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+							},
+						},
+					},
+					SHAPE: {
+						$userId: {
+							CONTRACT: {
+								get: {
+									pathParams: z.object({ userId: z.string() }),
+									responses: {
+										200: { type: "JSON", schema: z.object({ id: z.string() }) },
+									},
+								},
+							},
+						},
+					},
+				},
+				plain: {
+					CONTRACT: {
+						get: {
+							responses: {
+								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+							},
+						},
+					},
+				},
+			},
+		} as const satisfies ContractTreeFor<typeof scopedShape>;
+
+		const scopedMiddlewares = {
+			MIDDLEWARE: {
+				audit: {
+					418: { type: "JSON", schema: z.object({ traceId: z.string() }) },
+				},
+			},
+			SHAPE: {
+				users: {
+					MIDDLEWARE: {
+						auth: {
+							403: { type: "JSON", schema: z.object({ message: z.string() }) },
+						},
+					},
+					SHAPE: {
+						$userId: {
+							MIDDLEWARE: {
+								rateLimit: {
+									429: {
+										type: "JSON",
+										schema: z.object({ retryAfter: z.number() }),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		} as const satisfies MiddlewareTreeFor<typeof scopedShape>;
+
+		const steps: Array<string> = [];
+		const app = new Hono();
+		initHono<typeof scopedShape, { requestId: string }, typeof scopedMiddlewares>(app, {
+			contracts: createHonoContractHandlers(scopedContracts, {
+				SHAPE: {
+					users: {
+						HANDLER: {
+							get: (_data, _ctx, ourContext) => {
+								steps.push(`handler:users:${ourContext.requestId}`);
+								return { status: 200, type: "JSON", data: { ok: true } };
+							},
+						},
+						SHAPE: {
+							$userId: {
+								HANDLER: {
+									get: (data, _ctx, ourContext) => {
+										steps.push(`handler:user:${ourContext.requestId}`);
+										return {
+											status: 200,
+											type: "JSON",
+											data: { id: data.pathParams.userId },
+										};
+									},
+								},
+							},
+						},
+					},
+					plain: {
+						HANDLER: {
+							get: (_data, _ctx, ourContext) => {
+								steps.push(`handler:plain:${ourContext.requestId}`);
+								return { status: 200, type: "JSON", data: { ok: true } };
+							},
+						},
+					},
+				},
+			}),
+			middlewares: createHonoMiddlewareHandlers(scopedMiddlewares, {
+				MIDDLEWARE: {
+					audit: async (_ctx, next, ourContext) => {
+						steps.push(`audit:before:${ourContext.requestId}`);
+						await next();
+						steps.push("audit:after");
+					},
+				},
+				SHAPE: {
+					users: {
+						MIDDLEWARE: {
+							auth: async (_ctx, next, ourContext) => {
+								steps.push(`auth:before:${ourContext.requestId}`);
+								await next();
+								steps.push("auth:after");
+							},
+						},
+						SHAPE: {
+							$userId: {
+								MIDDLEWARE: {
+									rateLimit: async (_ctx, next, ourContext) => {
+										steps.push(`rate:before:${ourContext.requestId}`);
+										await next();
+										steps.push("rate:after");
+									},
+								},
+							},
+						},
+					},
+				},
+			}),
+			errorMode: "public",
+			createContext: () => ({ requestId: "ctx-1" }),
+		});
+
+		const base = startServer(app);
+
+		steps.length = 0;
+		const usersResponse = await fetch(`${base}/users`);
+		expect(usersResponse.status).toBe(200);
+		expect(steps).toEqual([
+			"audit:before:ctx-1",
+			"auth:before:ctx-1",
+			"handler:users:ctx-1",
+			"auth:after",
+			"audit:after",
+		]);
+
+		steps.length = 0;
+		const userResponse = await fetch(`${base}/users/u1`);
+		expect(userResponse.status).toBe(200);
+		expect(steps).toEqual([
+			"audit:before:ctx-1",
+			"auth:before:ctx-1",
+			"rate:before:ctx-1",
+			"handler:user:ctx-1",
+			"rate:after",
+			"auth:after",
+			"audit:after",
+		]);
+
+		steps.length = 0;
+		const plainResponse = await fetch(`${base}/plain`);
+		expect(plainResponse.status).toBe(200);
+		expect(steps).toEqual(["audit:before:ctx-1", "handler:plain:ctx-1", "audit:after"]);
+	});
+
+	test("deeper middleware overrides ancestor middleware with the same name", async () => {
+		const scopedShape = {
+			SHAPE: {
+				users: { CONTRACT: true },
+			},
+		} as const satisfies ApiShape;
+
+		const scopedContracts = {
+			SHAPE: {
+				users: {
+					CONTRACT: {
+						get: {
+							responses: {
+								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+							},
+						},
+					},
+				},
+			},
+		} as const satisfies ContractTreeFor<typeof scopedShape>;
+
+		const scopedMiddlewares = {
+			MIDDLEWARE: {
+				auth: {
+					401: { type: "JSON", schema: z.object({ message: z.string() }) },
+				},
+			},
+			SHAPE: {
+				users: {
+					MIDDLEWARE: {
+						auth: {
+							403: { type: "JSON", schema: z.object({ message: z.string() }) },
+						},
+					},
+				},
+			},
+		} as const satisfies MiddlewareTreeFor<typeof scopedShape>;
+
+		const app = new Hono();
+		initHono<typeof scopedShape, unknown, typeof scopedMiddlewares>(app, {
+			contracts: createHonoContractHandlers(scopedContracts, {
+				SHAPE: {
+					users: {
+						HANDLER: {
+							get: () => ({ status: 200, type: "JSON", data: { ok: true } }),
+						},
+					},
+				},
+			}),
+			middlewares: createHonoMiddlewareHandlers(scopedMiddlewares, {
+				MIDDLEWARE: {
+					auth: () => ({
+						status: 401,
+						type: "JSON",
+						data: { message: "root" },
+					}),
+				},
+				SHAPE: {
+					users: {
+						MIDDLEWARE: {
+							auth: () => ({
+								status: 403,
+								type: "JSON",
+								data: { message: "scoped" },
+							}),
+						},
+					},
+				},
+			}),
+			errorMode: "public",
+			createContext: () => ({}),
+		});
+
+		const response = await fetch(`${startServer(app)}/users`);
+		const parsed = await parseSerializedResponse(response);
+
+		expect(response.status).toBe(403);
+		expect(parsed.source).toBe("middleware");
+		expect(parsed.data).toEqual({ message: "scoped" });
+	});
+
+	test("nested short-circuit stops deeper middleware and handler execution", async () => {
+		const scopedShape = {
+			SHAPE: {
+				users: {
+					CONTRACT: true,
+					SHAPE: {
+						$userId: { CONTRACT: true },
+					},
+				},
+			},
+		} as const satisfies ApiShape;
+
+		const scopedContracts = {
+			SHAPE: {
+				users: {
+					CONTRACT: {
+						get: {
+							responses: {
+								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+							},
+						},
+					},
+					SHAPE: {
+						$userId: {
+							CONTRACT: {
+								get: {
+									pathParams: z.object({ userId: z.string() }),
+									responses: {
+										200: { type: "JSON", schema: z.object({ id: z.string() }) },
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		} as const satisfies ContractTreeFor<typeof scopedShape>;
+
+		const scopedMiddlewares = {
+			MIDDLEWARE: {
+				audit: {
+					418: { type: "JSON", schema: z.object({ traceId: z.string() }) },
+				},
+			},
+			SHAPE: {
+				users: {
+					MIDDLEWARE: {
+						auth: {
+							403: { type: "JSON", schema: z.object({ message: z.string() }) },
+						},
+					},
+					SHAPE: {
+						$userId: {
+							MIDDLEWARE: {
+								rateLimit: {
+									429: {
+										type: "JSON",
+										schema: z.object({ retryAfter: z.number() }),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		} as const satisfies MiddlewareTreeFor<typeof scopedShape>;
+
+		const steps: Array<string> = [];
+		const app = new Hono();
+		initHono<typeof scopedShape, { requestId: string }, typeof scopedMiddlewares>(app, {
+			contracts: createHonoContractHandlers(scopedContracts, {
+				SHAPE: {
+					users: {
+						HANDLER: {
+							get: () => {
+								steps.push("handler:users");
+								return { status: 200, type: "JSON", data: { ok: true } };
+							},
+						},
+						SHAPE: {
+							$userId: {
+								HANDLER: {
+									get: () => {
+										steps.push("handler:user");
+										return { status: 200, type: "JSON", data: { id: "u1" } };
+									},
+								},
+							},
+						},
+					},
+				},
+			}),
+			middlewares: createHonoMiddlewareHandlers(scopedMiddlewares, {
+				MIDDLEWARE: {
+					audit: async (_ctx, next, ourContext) => {
+						steps.push(`audit:${ourContext.requestId}`);
+						await next();
+					},
+				},
+				SHAPE: {
+					users: {
+						MIDDLEWARE: {
+							auth: (_ctx, _next, ourContext) => {
+								steps.push(`auth:block:${ourContext.requestId}`);
+								return {
+									status: 403,
+									type: "JSON",
+									data: { message: "blocked" },
+								};
+							},
+						},
+						SHAPE: {
+							$userId: {
+								MIDDLEWARE: {
+									rateLimit: () => {
+										steps.push("rate:block");
+										return {
+											status: 429,
+											type: "JSON",
+											data: { retryAfter: 1 },
+										};
+									},
+								},
+							},
+						},
+					},
+				},
+			}),
+			errorMode: "public",
+			createContext: () => ({ requestId: "ctx-2" }),
+		});
+
+		const response = await fetch(`${startServer(app)}/users/u1`);
+		const parsed = await parseSerializedResponse(response);
+
+		expect(response.status).toBe(403);
+		expect(parsed.source).toBe("middleware");
+		expect(parsed.data).toEqual({ message: "blocked" });
+		expect(steps).toEqual(["audit:ctx-2", "auth:block:ctx-2"]);
 	});
 });
 

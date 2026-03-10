@@ -27,6 +27,21 @@ const shape = {
 	},
 } as const satisfies ApiShape;
 
+const nestedShape = {
+	SHAPE: {
+		api: {
+			SHAPE: {
+				users: {
+					CONTRACT: true,
+					SHAPE: {
+						$userId: { CONTRACT: true },
+					},
+				},
+			},
+		},
+	},
+} as const satisfies ApiShape;
+
 describe("middleware runtime", () => {
 	test("middleware short-circuits and emits serialized middleware source", async () => {
 		const middlewares = {
@@ -256,6 +271,66 @@ void typedMiddlewares;
 const typeOnly = (_cb: () => void): void => {};
 
 typeOnly(() => {
+	const rootlessMiddlewares = {
+		SHAPE: {
+			api: {
+				MIDDLEWARE: {
+					auth: {
+						401: { type: "JSON", schema: z.object({ message: z.string() }) },
+					},
+				},
+				SHAPE: {
+					users: {
+						SHAPE: {
+							$userId: {
+								MIDDLEWARE: {
+									rateLimit: {
+										429: {
+											type: "JSON",
+											schema: z.object({ retryAfter: z.number() }),
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	} as const satisfies MiddlewareTreeFor<typeof nestedShape>;
+	void rootlessMiddlewares;
+
+	const intermediateMiddlewares = {
+		SHAPE: {
+			api: {
+				MIDDLEWARE: {
+					audit: {
+						418: { type: "JSON", schema: z.object({ traceId: z.string() }) },
+					},
+				},
+			},
+		},
+	} as const satisfies MiddlewareTreeFor<typeof nestedShape>;
+	void intermediateMiddlewares;
+
+	const invalidShapeMiddlewares = {
+		SHAPE: {
+			api: {
+				SHAPE: {
+					// @ts-expect-error unknown middleware shape key should fail
+					admin: {
+						MIDDLEWARE: {
+							auth: {
+								401: { type: "JSON", schema: z.object({ message: z.string() }) },
+							},
+						},
+					},
+				},
+			},
+		},
+	} as const satisfies MiddlewareTreeFor<typeof nestedShape>;
+	void invalidShapeMiddlewares;
+
 	const validHandler: MiddlewareHandler<
 		typeof middlewaresType.MIDDLEWARE.rateLimit,
 		{ requestId: string }

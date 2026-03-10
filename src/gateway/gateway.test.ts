@@ -894,4 +894,139 @@ typeOnly(() => {
 	void maskedClient.usersService.fetch("/users/$userId", "get", {
 		pathParams: { userId: "user-1" },
 	});
+
+	const serviceShapeWithScopedMiddleware = {
+		SHAPE: {
+			users: {
+				CONTRACT: true,
+				SHAPE: {
+					$userId: { CONTRACT: true },
+				},
+			},
+			plain: { CONTRACT: true },
+		},
+	} as const satisfies ApiShape;
+
+	const serviceContractsWithScopedMiddleware = {
+		SHAPE: {
+			users: {
+				CONTRACT: {
+					get: {
+						responses: {
+							200: { type: "JSON", schema: z.object({ users: z.array(z.string()) }) },
+						},
+					},
+				},
+				SHAPE: {
+					$userId: {
+						CONTRACT: {
+							get: {
+								pathParams: z.object({ userId: z.string() }),
+								responses: {
+									200: { type: "JSON", schema: z.object({ id: z.string() }) },
+								},
+							},
+						},
+					},
+				},
+			},
+			plain: {
+				CONTRACT: {
+					get: {
+						responses: {
+							200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+						},
+					},
+				},
+			},
+		},
+	} as const satisfies ContractTreeFor<typeof serviceShapeWithScopedMiddleware>;
+
+	const serviceMiddlewaresWithScopedRoutes = {
+		MIDDLEWARE: {
+			auth: {
+				401: { type: "JSON", schema: z.object({ scope: z.literal("root") }) },
+			},
+		},
+		SHAPE: {
+			users: {
+				MIDDLEWARE: {
+					auth: {
+						403: { type: "JSON", schema: z.object({ scope: z.literal("users") }) },
+					},
+				},
+				SHAPE: {
+					$userId: {
+						MIDDLEWARE: {
+							rateLimit: {
+								429: { type: "JSON", schema: z.object({ retryAfter: z.number() }) },
+							},
+						},
+					},
+				},
+			},
+		},
+	} as const satisfies MiddlewareTreeFor<typeof serviceShapeWithScopedMiddleware>;
+
+	const scopedService = createGatewayService(
+		{
+			SHAPE: {
+				users: {
+					CONTRACT: true,
+					SHAPE: {
+						$userId: { CONTRACT: true },
+					},
+				},
+				plain: { CONTRACT: true },
+			},
+		},
+		serviceContractsWithScopedMiddleware,
+		serviceMiddlewaresWithScopedRoutes,
+		"public",
+		"http://localhost",
+	);
+	const scopedServices = createGatewayServices({ scoped: scopedService });
+	const scopedGatewayClient = createGatewayClient<typeof scopedServices>("http://localhost");
+
+	const scopedUserResponsePromise = scopedGatewayClient.scoped.fetch("/users/$userId", "get", {
+		pathParams: { userId: "u1" },
+	});
+	type ScopedUserResponse = Awaited<typeof scopedUserResponsePromise>;
+	const scopedUserAuth: ExtractStatus<ScopedUserResponse, 403>["data"] = { scope: "users" };
+	const scopedUserRateLimit: ExtractStatus<ScopedUserResponse, 429>["data"] = {
+		retryAfter: 1,
+	};
+	void scopedUserAuth;
+	void scopedUserRateLimit;
+
+	// @ts-expect-error nested service route should use scoped auth override, not root auth
+	const scopedUserRootAuth: ExtractStatus<ScopedUserResponse, 401> = {
+		status: 401,
+		data: { scope: "root" },
+		response: new Response(),
+	};
+	void scopedUserRootAuth;
+
+	const scopedPlainResponsePromise = scopedGatewayClient.scoped.fetch("/plain", "get");
+	type ScopedPlainResponse = Awaited<typeof scopedPlainResponsePromise>;
+	const scopedPlainRootAuth: ExtractStatus<ScopedPlainResponse, 401>["data"] = {
+		scope: "root",
+	};
+	void scopedPlainRootAuth;
+
+	// @ts-expect-error /plain should not include /users scoped auth
+	const scopedPlainUsersAuth: ExtractStatus<ScopedPlainResponse, 403> = {
+		status: 403,
+		data: { scope: "users" },
+		response: new Response(),
+	};
+	void scopedPlainUsersAuth;
+
+	// @ts-expect-error /plain should not include /users/$userId scoped rate limit
+	const scopedPlainRateLimit: ExtractStatus<ScopedPlainResponse, 429> = {
+		status: 429,
+		data: { retryAfter: 1 },
+		response: new Response(),
+	};
+	void scopedPlainRateLimit;
 });
