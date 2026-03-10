@@ -531,7 +531,7 @@ describe("gateway runtime", () => {
 		expect(steps).toEqual(["gateway:block"]);
 	});
 
-	test("deeper gateway middleware overrides root middleware with the same name", async () => {
+	test("same-name gateway middleware composes in ancestor-to-descendant order", async () => {
 		const upstreamApp = new Hono();
 		upstreamApp.get("/users", () => {
 			return createSerializedResponse({
@@ -576,24 +576,27 @@ describe("gateway runtime", () => {
 			},
 		} as const satisfies GatewayMiddlewares<typeof services>;
 
+		const steps: Array<string> = [];
 		const boundGatewayMiddlewares = createHonoMiddlewareHandlers(gatewayMiddlewares, {
 			MIDDLEWARE: {
-				auth: () => ({
-					status: 401,
-					type: "JSON",
-					data: { message: "Global" },
-				}),
+				auth: async (_ctx, next) => {
+					steps.push("global");
+					await next();
+				},
 			},
 			SHAPE: {
 				usersService: {
 					SHAPE: {
 						users: {
 							MIDDLEWARE: {
-								auth: () => ({
-									status: 403,
-									type: "JSON",
-									data: { message: "Scoped" },
-								}),
+								auth: () => {
+									steps.push("scoped");
+									return {
+										status: 403,
+										type: "JSON",
+										data: { message: "Scoped" },
+									};
+								},
 							},
 						},
 					},
@@ -612,9 +615,10 @@ describe("gateway runtime", () => {
 		expect(response.status).toBe(403);
 		expect(parsed.source).toBe("middleware");
 		expect(parsed.data).toEqual({ message: "Scoped" });
+		expect(steps).toEqual(["global", "scoped"]);
 	});
 
-	test("prepared gateway middleware bindings still read current handlers", async () => {
+	test("registered gateway middleware keeps the init-time handler", async () => {
 		const upstreamApp = new Hono();
 		upstreamApp.get("/users", () => {
 			return createSerializedResponse({
@@ -692,7 +696,7 @@ describe("gateway runtime", () => {
 
 		expect(response.status).toBe(403);
 		expect(parsed.source).toBe("middleware");
-		expect(parsed.data).toEqual({ message: "after" });
+		expect(parsed.data).toEqual({ message: "before" });
 	});
 
 	test("createGatewayClient caches service clients", () => {
@@ -833,7 +837,6 @@ typeOnly(() => {
 	};
 	void plainRateLimit;
 
-	// @ts-expect-error /users auth overrides root auth with the same middleware name
 	const usersGlobalAuth: ExtractStatus<UsersResponse, 401> = {
 		status: 401,
 		data: { scope: "global" },
@@ -999,7 +1002,6 @@ typeOnly(() => {
 	void scopedUserAuth;
 	void scopedUserRateLimit;
 
-	// @ts-expect-error nested service route should use scoped auth override, not root auth
 	const scopedUserRootAuth: ExtractStatus<ScopedUserResponse, 401> = {
 		status: 401,
 		data: { scope: "root" },

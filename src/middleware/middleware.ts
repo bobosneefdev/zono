@@ -1,20 +1,17 @@
-import type { Context } from "hono";
 import type { ResponseSpec } from "../contract/contract.js";
 import type {
 	MiddlewareBindings,
 	MiddlewareHandler,
 	MiddlewareHandlerTree,
-	RuntimeHandlerResponse,
 } from "../server/server.js";
-import {
-	type ApiShape,
-	type EmptyObject,
-	type Expand,
-	type InferSchemaData,
-	isRecordObject,
-	type StatusMapToResponseUnion,
-	validateAndSerializeResponse,
+import type {
+	ApiShape,
+	EmptyObject,
+	Expand,
+	InferSchemaData,
+	StatusMapToResponseUnion,
 } from "../shared/shared.internal.js";
+import { isRecordObject } from "../shared/shared.internal.js";
 
 export type MiddlewareResponseSchema = ResponseSpec;
 
@@ -53,34 +50,30 @@ export type MiddlewareMapAtNode<TNode> = TNode extends { MIDDLEWARE?: infer TDef
 		: EmptyObject
 	: EmptyObject;
 
-export type MergeMiddlewareMaps<
-	TBase extends Record<string, MiddlewareSpec>,
-	TNext extends Record<string, MiddlewareSpec>,
-> = Omit<TBase, keyof TNext> & TNext;
+type MiddlewareSpecUnionAtNode<TNode> =
+	MiddlewareMapAtNode<TNode>[keyof MiddlewareMapAtNode<TNode>];
 
-export type MergeMiddlewareDefinitionsAlongPath<
+type CollectMiddlewareSpecUnionAlongPath<TNode, TSegments extends Array<string>, TAcc = never> = [
 	TNode,
-	TSegments extends Array<string>,
-	TAcc extends Record<string, MiddlewareSpec> = EmptyObject,
-> = [TNode] extends [never]
+] extends [never]
 	? TAcc
 	: TNode extends { SHAPE?: infer TShape extends Record<string, MiddlewareTree> }
 		? TSegments extends [infer THead extends string, ...infer TTail extends Array<string>]
 			? THead extends keyof TShape
-				? MergeMiddlewareDefinitionsAlongPath<
+				? CollectMiddlewareSpecUnionAlongPath<
 						TShape[THead],
 						TTail,
-						MergeMiddlewareMaps<TAcc, MiddlewareMapAtNode<TNode>>
+						TAcc | MiddlewareSpecUnionAtNode<TNode>
 					>
-				: MergeMiddlewareMaps<TAcc, MiddlewareMapAtNode<TNode>>
-			: MergeMiddlewareMaps<TAcc, MiddlewareMapAtNode<TNode>>
-		: MergeMiddlewareMaps<TAcc, MiddlewareMapAtNode<TNode>>;
+				: TAcc | MiddlewareSpecUnionAtNode<TNode>
+			: TAcc | MiddlewareSpecUnionAtNode<TNode>
+		: TAcc | MiddlewareSpecUnionAtNode<TNode>;
 
-export type MiddlewareDefinitionsAtPath<
+export type MiddlewareSpecUnionAtPath<
 	TMiddlewares,
 	TPath extends string,
-	TBase extends Record<string, MiddlewareSpec> = EmptyObject,
-> = MergeMiddlewareDefinitionsAlongPath<TMiddlewares, PathSegments<TPath>, TBase>;
+	TBase = never,
+> = CollectMiddlewareSpecUnionAlongPath<TMiddlewares, PathSegments<TPath>, TBase>;
 
 export type MiddlewareName<TMiddlewares extends { MIDDLEWARE: Record<string, MiddlewareSpec> }> =
 	keyof TMiddlewares["MIDDLEWARE"] & string;
@@ -96,7 +89,7 @@ export type InferMiddlewareResponseData<TSchema extends MiddlewareResponseSchema
 	InferSchemaData<TSchema>;
 
 export type InferMiddlewareResponseUnion<TDefinition extends MiddlewareSpec> =
-	StatusMapToResponseUnion<TDefinition>;
+	TDefinition extends MiddlewareSpec ? StatusMapToResponseUnion<TDefinition> : never;
 
 export type InferAllMiddlewareResponseUnion<
 	TMiddlewares extends { MIDDLEWARE: Record<string, MiddlewareSpec> },
@@ -109,10 +102,12 @@ export type InferAllMiddlewareResponseUnion<
 export type InferMiddlewareResponseUnionAtPath<
 	TMiddlewares,
 	TPath extends string,
-	TBase extends Record<string, MiddlewareSpec> = EmptyObject,
-> = InferAllMiddlewareResponseUnion<{
-	MIDDLEWARE: MiddlewareDefinitionsAtPath<TMiddlewares, TPath, TBase>;
-}>;
+	TBase = never,
+> = MiddlewareSpecUnionAtPath<TMiddlewares, TPath, TBase> extends infer TDefinition
+	? TDefinition extends MiddlewareSpec
+		? InferMiddlewareResponseUnion<TDefinition>
+		: never
+	: never;
 
 export const createHonoMiddlewareHandlers = <
 	const TMiddlewares extends MiddlewareTree,
@@ -127,20 +122,17 @@ export const createHonoMiddlewareHandlers = <
 	};
 };
 
-type ResolvedMiddlewareTree = {
-	MIDDLEWARE: Record<string, MiddlewareSpec>;
+export type MiddlewareLayer<TContext> = {
+	name: string;
+	definition: MiddlewareSpec;
+	handler: MiddlewareHandler<MiddlewareSpec, TContext>;
 };
 
-export const resolveMiddlewareBindings = <TContext>(
+export const collectMiddlewareLayers = <TContext>(
 	middlewareNodes: Array<unknown>,
 	handlerNodes: Array<unknown>,
-): MiddlewareBindings<ResolvedMiddlewareTree, TContext> | undefined => {
-	if (middlewareNodes.length === 0) {
-		return undefined;
-	}
-
-	const mergedDefinitions: Record<string, MiddlewareSpec> = {};
-	const mergedHandlers: Record<string, MiddlewareHandler<MiddlewareSpec, TContext>> = {};
+): Array<MiddlewareLayer<TContext>> => {
+	const layers: Array<MiddlewareLayer<TContext>> = [];
 
 	for (let index = 0; index < middlewareNodes.length; index += 1) {
 		const middlewareNode = middlewareNodes[index];
@@ -154,124 +146,21 @@ export const resolveMiddlewareBindings = <TContext>(
 
 		const middlewareMap = middlewareNode.MIDDLEWARE as Record<string, unknown>;
 		const handlerMap = handlersNode.MIDDLEWARE as Record<string, unknown>;
-		for (const [middlewareName] of Object.entries(middlewareMap)) {
-			const handler = handlerMap[middlewareName];
-			if (typeof handler !== "function") {
+		for (const [middlewareName, candidateDefinition] of Object.entries(middlewareMap)) {
+			const candidateHandler = handlerMap[middlewareName];
+			if (!isRecordObject(candidateDefinition)) {
+				throw new Error(`Missing middleware definition '${middlewareName}'`);
+			}
+			if (typeof candidateHandler !== "function") {
 				throw new Error(`Missing middleware handler '${middlewareName}'`);
 			}
-
-			Object.defineProperty(mergedDefinitions, middlewareName, {
-				configurable: true,
-				enumerable: true,
-				get: () => {
-					const currentDefinition = middlewareMap[middlewareName];
-					if (!isRecordObject(currentDefinition)) {
-						throw new Error(`Missing middleware definition '${middlewareName}'`);
-					}
-					return currentDefinition as MiddlewareSpec;
-				},
-			});
-			Object.defineProperty(mergedHandlers, middlewareName, {
-				configurable: true,
-				enumerable: true,
-				get: () => {
-					const currentHandler = handlerMap[middlewareName];
-					if (typeof currentHandler !== "function") {
-						throw new Error(`Missing middleware handler '${middlewareName}'`);
-					}
-					return currentHandler as MiddlewareHandler<MiddlewareSpec, TContext>;
-				},
+			layers.push({
+				name: middlewareName,
+				definition: candidateDefinition as MiddlewareSpec,
+				handler: candidateHandler as MiddlewareHandler<MiddlewareSpec, TContext>,
 			});
 		}
 	}
 
-	if (Object.keys(mergedDefinitions).length === 0) {
-		return undefined;
-	}
-
-	return {
-		middlewares: { MIDDLEWARE: mergedDefinitions },
-		handlers: {
-			MIDDLEWARE: mergedHandlers,
-		},
-	};
-};
-
-type PreparedMiddlewareEntry<TContext> = {
-	definition: MiddlewareSpec;
-	handler: MiddlewareHandler<MiddlewareSpec, TContext>;
-};
-
-const middlewareEntryCache = new WeakMap<object, Array<PreparedMiddlewareEntry<unknown>>>();
-
-const getPreparedMiddlewareEntries = <TMiddlewares extends ResolvedMiddlewareTree, TContext>(
-	boundMiddlewares: MiddlewareBindings<TMiddlewares, TContext>,
-): Array<PreparedMiddlewareEntry<TContext>> => {
-	const cachedEntries = middlewareEntryCache.get(boundMiddlewares as object);
-	if (cachedEntries) {
-		return cachedEntries as Array<PreparedMiddlewareEntry<TContext>>;
-	}
-
-	const entries: Array<PreparedMiddlewareEntry<TContext>> = [];
-	const handlers = boundMiddlewares.handlers as {
-		MIDDLEWARE: Record<string, MiddlewareHandler<MiddlewareSpec, TContext>>;
-	};
-	for (const middlewareName of Object.keys(boundMiddlewares.middlewares.MIDDLEWARE)) {
-		const definition = boundMiddlewares.middlewares.MIDDLEWARE[middlewareName];
-		const handler = handlers.MIDDLEWARE[middlewareName];
-		entries.push({
-			definition,
-			handler: handler as MiddlewareHandler<MiddlewareSpec, TContext>,
-		});
-	}
-
-	middlewareEntryCache.set(
-		boundMiddlewares as object,
-		entries as Array<PreparedMiddlewareEntry<unknown>>,
-	);
-	return entries;
-};
-
-export const runMiddlewareHandlers = async <TMiddlewares extends ResolvedMiddlewareTree, TContext>(
-	ctx: Context,
-	ourContext: Awaited<TContext>,
-	boundMiddlewares: MiddlewareBindings<TMiddlewares, TContext>,
-	resolveTerminal: () => Promise<Response>,
-): Promise<Response> => {
-	const middlewareEntries = getPreparedMiddlewareEntries(boundMiddlewares);
-
-	const dispatch = async (index: number): Promise<Response> => {
-		if (index >= middlewareEntries.length) {
-			return resolveTerminal();
-		}
-
-		const { definition, handler } = middlewareEntries[index];
-
-		let nextResult: Response | undefined;
-		const returned = await handler(
-			ctx,
-			async () => {
-				nextResult = await dispatch(index + 1);
-			},
-			ourContext,
-		);
-
-		if (returned !== undefined) {
-			const normalized: RuntimeHandlerResponse = {
-				status: returned.status,
-				type: returned.type,
-				data: returned.data,
-				headers: undefined,
-			};
-			return validateAndSerializeResponse(definition, normalized, "Middleware", "middleware");
-		}
-
-		if (nextResult) {
-			return nextResult;
-		}
-
-		return resolveTerminal();
-	};
-
-	return dispatch(0);
+	return layers;
 };

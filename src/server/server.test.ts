@@ -748,7 +748,7 @@ describe("server scoped middleware runtime", () => {
 		expect(steps).toEqual(["audit:before:ctx-1", "handler:plain:ctx-1", "audit:after"]);
 	});
 
-	test("deeper middleware overrides ancestor middleware with the same name", async () => {
+	test("same-name middleware composes in ancestor-to-descendant order", async () => {
 		const scopedShape = {
 			SHAPE: {
 				users: { CONTRACT: true },
@@ -786,33 +786,39 @@ describe("server scoped middleware runtime", () => {
 			},
 		} as const satisfies MiddlewareTreeFor<typeof scopedShape>;
 
+		const steps: Array<string> = [];
 		const app = new Hono();
 		initHono<typeof scopedShape, unknown, typeof scopedMiddlewares>(app, {
 			contracts: createHonoContractHandlers(scopedContracts, {
 				SHAPE: {
 					users: {
 						HANDLER: {
-							get: () => ({ status: 200, type: "JSON", data: { ok: true } }),
+							get: () => {
+								steps.push("handler");
+								return { status: 200, type: "JSON", data: { ok: true } };
+							},
 						},
 					},
 				},
 			}),
 			middlewares: createHonoMiddlewareHandlers(scopedMiddlewares, {
 				MIDDLEWARE: {
-					auth: () => ({
-						status: 401,
-						type: "JSON",
-						data: { message: "root" },
-					}),
+					auth: async (_ctx, next) => {
+						steps.push("root");
+						await next();
+					},
 				},
 				SHAPE: {
 					users: {
 						MIDDLEWARE: {
-							auth: () => ({
-								status: 403,
-								type: "JSON",
-								data: { message: "scoped" },
-							}),
+							auth: () => {
+								steps.push("scoped");
+								return {
+									status: 403,
+									type: "JSON",
+									data: { message: "scoped" },
+								};
+							},
 						},
 					},
 				},
@@ -827,6 +833,7 @@ describe("server scoped middleware runtime", () => {
 		expect(response.status).toBe(403);
 		expect(parsed.source).toBe("middleware");
 		expect(parsed.data).toEqual({ message: "scoped" });
+		expect(steps).toEqual(["root", "scoped"]);
 	});
 
 	test("nested short-circuit stops deeper middleware and handler execution", async () => {

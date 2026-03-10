@@ -1,4 +1,4 @@
-import type { Hono } from "hono";
+import type { Context, Hono } from "hono";
 import { createClient } from "../client/client.js";
 import type {
 	ContractCallRoutes,
@@ -8,13 +8,15 @@ import type {
 } from "../contract/contract.js";
 import { compileContractRoutes } from "../contract/contract.js";
 import type {
+	InferMiddlewareResponseUnion,
 	InferMiddlewareResponseUnionAtPath,
+	MiddlewareLayer,
 	MiddlewareMapAtNode,
 	MiddlewareSpec,
 	MiddlewareTree,
 	MiddlewareTreeFor,
 } from "../middleware/middleware.js";
-import { resolveMiddlewareBindings, runMiddlewareHandlers } from "../middleware/middleware.js";
+import { collectMiddlewareLayers } from "../middleware/middleware.js";
 import type {
 	ContextFactory,
 	ErrorMode,
@@ -29,6 +31,9 @@ import {
 	type MapFetchRouteResponse,
 	registerHonoRoute,
 	type TypedFetch,
+	toHonoPath,
+	toSerializedRuntimeResponse,
+	validateAndSerializeResponse,
 } from "../shared/shared.internal.js";
 
 export type GatewayServiceMask<TShape extends ApiShape> = {} & (TShape extends { CONTRACT: true }
@@ -140,7 +145,7 @@ type InferGatewayMiddlewareResponseUnionAtPath<
 > = InferMiddlewareResponseUnionAtPath<
 	GatewayServiceMiddlewareTree<TGatewayMiddlewares, TService>,
 	TPath,
-	MiddlewareMapAtNode<TGatewayMiddlewares>
+	MiddlewareMapAtNode<TGatewayMiddlewares>[keyof MiddlewareMapAtNode<TGatewayMiddlewares>]
 >;
 
 type GatewayClientRoutes<
@@ -249,13 +254,13 @@ const applyGatewayServiceMask = (mask: unknown, contracts: unknown): ContractTre
 	return maskedContracts;
 };
 
-type PreparedGatewayRoute<TContext> = {
+type PreparedGatewayRoute = {
 	pathTemplate: string;
 	method: HTTPMethod;
 	serializedMethod: string;
 	shouldSendBody: boolean;
 	baseUrl: string;
-	middlewares?: MiddlewareBindings<{ MIDDLEWARE: Record<string, MiddlewareSpec> }, TContext>;
+	errorMode: ErrorMode;
 };
 
 const collectGatewayRouteMiddlewareNodes = (
@@ -289,6 +294,93 @@ const collectGatewayRouteMiddlewareNodes = (
 	};
 };
 
+const ZONO_GATEWAY_CONTEXT_KEY = "__zono_gateway_context";
+const ZONO_GATEWAY_ERROR_MODE_KEY = "__zono_gateway_error_mode";
+
+const setContextValue = (ctx: Context, key: string, value: unknown): void => {
+	(ctx as unknown as { set: (name: string, data: unknown) => void }).set(key, value);
+};
+
+const getContextValue = (ctx: Context, key: string): unknown => {
+	return (ctx as unknown as { get: (name: string) => unknown }).get(key);
+};
+
+const getGatewayContext = <TContext>(ctx: Context): Awaited<TContext> => {
+	return getContextValue(ctx, ZONO_GATEWAY_CONTEXT_KEY) as Awaited<TContext>;
+};
+
+const getGatewayErrorMode = (ctx: Context): ErrorMode => {
+	return (getContextValue(ctx, ZONO_GATEWAY_ERROR_MODE_KEY) as ErrorMode | undefined) ?? "public";
+};
+
+const makeGatewayErrorResponse = (error: unknown, errorMode: ErrorMode) => {
+	if (errorMode === "public") {
+		return {
+			status: 500,
+			type: "JSON" as const,
+			data: {
+				message: error instanceof Error ? error.message : "Internal server error",
+			},
+		};
+	}
+
+	return {
+		status: 500,
+		type: "JSON" as const,
+		data: {
+			message: error instanceof Error ? error.message : "Internal server error",
+			issues: error,
+			stack: error instanceof Error ? error.stack : undefined,
+		},
+	};
+};
+
+const getUniquePathTemplates = (routes: Array<{ pathTemplate: string }>): Array<string> => {
+	return Array.from(new Set(routes.map((route) => route.pathTemplate)));
+};
+
+const normalizeMiddlewareResponse = (response: InferMiddlewareResponseUnion<MiddlewareSpec>) => {
+	return {
+		status: response.status,
+		type: response.type,
+		data: response.data,
+		headers: undefined,
+	};
+};
+
+const isMiddlewareResponse = (
+	value: unknown,
+): value is InferMiddlewareResponseUnion<MiddlewareSpec> => {
+	return (
+		isRecordObject(value) &&
+		typeof value.status === "number" &&
+		typeof value.type === "string" &&
+		"data" in value
+	);
+};
+
+const registerGatewayMiddlewareLayer = <TContext>(
+	app: Hono,
+	pathTemplate: string,
+	layer: MiddlewareLayer<TContext>,
+): void => {
+	app.use(toHonoPath(pathTemplate), async (ctx, next) => {
+		const returned = await layer.handler(ctx, next, getGatewayContext<TContext>(ctx));
+		if (returned instanceof Response) {
+			return returned;
+		}
+		if (isMiddlewareResponse(returned)) {
+			return validateAndSerializeResponse(
+				layer.definition,
+				normalizeMiddlewareResponse(returned),
+				"Middleware",
+				"middleware",
+			);
+		}
+		return returned as Response | undefined;
+	});
+};
+
 export const initGateway = <
 	TServices extends GatewayServices,
 	TGatewayMiddlewares extends GatewayMiddlewares<TServices> = GatewayMiddlewares<TServices>,
@@ -298,65 +390,81 @@ export const initGateway = <
 	services: TServices,
 	options?: GatewayOptions<TServices, TGatewayMiddlewares, TContext>,
 ): void => {
+	const createContext = options?.createContext;
+	if (createContext) {
+		app.use("*", async (ctx, next) => {
+			setContextValue(ctx, ZONO_GATEWAY_CONTEXT_KEY, await createContext(ctx));
+			await next();
+		});
+	}
+
+	app.onError((error, ctx) => {
+		return toSerializedRuntimeResponse(
+			makeGatewayErrorResponse(error, getGatewayErrorMode(ctx)),
+			"error",
+		);
+	});
+
 	for (const [serviceName, service] of Object.entries(services)) {
 		const maskedContracts = applyGatewayServiceMask(service.mask, service.contracts);
-		const preparedRoutes: Array<PreparedGatewayRoute<TContext>> = compileContractRoutes(
+		const preparedRoutes: Array<PreparedGatewayRoute> = compileContractRoutes(
 			maskedContracts,
 		).map((route) => {
-			const mergedMiddlewares = options?.middlewares
-				? (() => {
-						const { middlewareNodes, handlerNodes } =
-							collectGatewayRouteMiddlewareNodes(
-								options.middlewares.middlewares,
-								options.middlewares.handlers,
-								serviceName,
-								route.pathTemplate,
-							);
-						return resolveMiddlewareBindings<TContext>(middlewareNodes, handlerNodes);
-					})()
-				: undefined;
-
 			return {
 				pathTemplate: route.pathTemplate,
 				method: route.method,
 				serializedMethod: route.method.toUpperCase(),
 				shouldSendBody: route.method !== "get" && route.method !== "head",
 				baseUrl: service.baseUrl,
-				middlewares: mergedMiddlewares,
+				errorMode: service.errorMode,
 			};
 		});
+
+		if (options?.middlewares) {
+			for (const pathTemplate of getUniquePathTemplates(preparedRoutes)) {
+				const { middlewareNodes, handlerNodes } = collectGatewayRouteMiddlewareNodes(
+					options.middlewares.middlewares,
+					options.middlewares.handlers,
+					serviceName,
+					pathTemplate,
+				);
+				const layers = collectMiddlewareLayers<TContext>(middlewareNodes, handlerNodes);
+				app.use(toHonoPath(pathTemplate), async (ctx, next) => {
+					setContextValue(ctx, ZONO_GATEWAY_ERROR_MODE_KEY, service.errorMode);
+					await next();
+				});
+				for (const layer of layers) {
+					registerGatewayMiddlewareLayer(app, pathTemplate, layer);
+				}
+			}
+		} else {
+			for (const pathTemplate of getUniquePathTemplates(preparedRoutes)) {
+				app.use(toHonoPath(pathTemplate), async (ctx, next) => {
+					setContextValue(ctx, ZONO_GATEWAY_ERROR_MODE_KEY, service.errorMode);
+					await next();
+				});
+			}
+		}
+
 		for (const route of preparedRoutes) {
 			registerHonoRoute(
 				app,
 				route.method,
 				route.pathTemplate,
 				async (ctx): Promise<Response> => {
-					const ourContext = options?.createContext
-						? await options.createContext(ctx)
-						: (undefined as Awaited<TContext>);
+					void getGatewayContext<TContext>(ctx);
+					const incomingUrl = new URL(ctx.req.url);
+					const upstreamUrl = new URL(
+						incomingUrl.pathname + incomingUrl.search,
+						route.baseUrl,
+					);
+					const body = route.shouldSendBody ? await ctx.req.raw.arrayBuffer() : undefined;
 
-					const executeProxy = async (): Promise<Response> => {
-						const incomingUrl = new URL(ctx.req.url);
-						const upstreamUrl = new URL(
-							incomingUrl.pathname + incomingUrl.search,
-							route.baseUrl,
-						);
-						const body = route.shouldSendBody
-							? await ctx.req.raw.arrayBuffer()
-							: undefined;
-
-						return fetch(upstreamUrl, {
-							method: route.serializedMethod,
-							headers: ctx.req.raw.headers,
-							body,
-						});
-					};
-
-					if (!route.middlewares) {
-						return executeProxy();
-					}
-
-					return runMiddlewareHandlers(ctx, ourContext, route.middlewares, executeProxy);
+					return fetch(upstreamUrl, {
+						method: route.serializedMethod,
+						headers: ctx.req.raw.headers,
+						body,
+					});
 				},
 			);
 		}

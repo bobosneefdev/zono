@@ -543,7 +543,6 @@ runTypeOnly(() => {
 	void userRateLimit;
 	void userAudit;
 
-	// @ts-expect-error nested route should use scoped auth override, not root auth
 	const userRootAuth: Extract<UserResponse, { status: 401 }> = {
 		status: 401,
 		data: { scope: "root" },

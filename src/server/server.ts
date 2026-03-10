@@ -13,11 +13,12 @@ import {
 import type {
 	InferAllMiddlewareResponseUnion,
 	InferMiddlewareResponseUnion,
+	MiddlewareLayer,
 	MiddlewareSpec,
 	MiddlewareTree,
 	MiddlewareTreeFor,
 } from "../middleware/middleware.js";
-import { resolveMiddlewareBindings, runMiddlewareHandlers } from "../middleware/middleware.js";
+import { collectMiddlewareLayers } from "../middleware/middleware.js";
 import {
 	type ApiShape,
 	collectShapePathNodes,
@@ -29,6 +30,7 @@ import {
 	parseQueryInput,
 	type RuntimeResponseLike,
 	registerHonoRoute,
+	toHonoPath,
 	toSerializedRuntimeResponse,
 	validateAndSerializeResponse,
 } from "../shared/shared.internal.js";
@@ -333,17 +335,16 @@ const getHandlerNodeAtPath = (
 	return current.HANDLER;
 };
 
-type PreparedContractRoute<TContext> = {
+type PreparedContractRoute = {
 	pathTemplate: string;
 	method: HTTPMethod;
 	methodDefinition: ContractMethod;
 	handlerNode: Record<string, unknown>;
 	requestParsers: ReturnType<typeof getContractRequestParsers>;
-	middlewares?: MiddlewareBindings<{ MIDDLEWARE: Record<string, MiddlewareSpec> }, TContext>;
 };
 
-const getPreparedHandler = <TContext>(
-	route: PreparedContractRoute<TContext>,
+const getPreparedHandler = (
+	route: PreparedContractRoute,
 ): ((...args: Array<unknown>) => unknown) => {
 	const handler = route.handlerNode[route.method];
 	if (typeof handler !== "function") {
@@ -435,6 +436,66 @@ const parseRequestData = async (
 	return inputData;
 };
 
+const ZONO_CONTEXT_KEY = "__zono_context";
+
+const setContextValue = (ctx: Context, key: string, value: unknown): void => {
+	(ctx as unknown as { set: (name: string, data: unknown) => void }).set(key, value);
+};
+
+const getContextValue = (ctx: Context, key: string): unknown => {
+	return (ctx as unknown as { get: (name: string) => unknown }).get(key);
+};
+
+const getStoredContext = <TContext>(ctx: Context): Awaited<TContext> => {
+	return getContextValue(ctx, ZONO_CONTEXT_KEY) as Awaited<TContext>;
+};
+
+const normalizeMiddlewareResponse = (response: InferMiddlewareResponseUnion<MiddlewareSpec>) => {
+	return {
+		status: response.status,
+		type: response.type,
+		data: response.data,
+		headers: undefined,
+	} satisfies RuntimeHandlerResponse;
+};
+
+const isMiddlewareResponse = (
+	value: unknown,
+): value is InferMiddlewareResponseUnion<MiddlewareSpec> => {
+	return (
+		isRecordObject(value) &&
+		typeof value.status === "number" &&
+		typeof value.type === "string" &&
+		"data" in value
+	);
+};
+
+const registerMiddlewareLayer = <TContext>(
+	app: Hono,
+	pathTemplate: string,
+	layer: MiddlewareLayer<TContext>,
+): void => {
+	app.use(toHonoPath(pathTemplate), async (ctx, next) => {
+		const returned = await layer.handler(ctx, next, getStoredContext<TContext>(ctx));
+		if (returned instanceof Response) {
+			return returned;
+		}
+		if (isMiddlewareResponse(returned)) {
+			return validateAndSerializeResponse(
+				layer.definition,
+				normalizeMiddlewareResponse(returned),
+				"Middleware",
+				"middleware",
+			);
+		}
+		return returned as Response | undefined;
+	});
+};
+
+const getUniquePathTemplates = (routes: Array<{ pathTemplate: string }>): Array<string> => {
+	return Array.from(new Set(routes.map((route) => route.pathTemplate)));
+};
+
 export const initHono = <
 	TShape extends ApiShape,
 	TContext = unknown,
@@ -443,67 +504,59 @@ export const initHono = <
 	app: Hono,
 	options: ServerOptions<TShape, TContext, TMiddlewares>,
 ): void => {
+	app.use("*", async (ctx, next) => {
+		setContextValue(ctx, ZONO_CONTEXT_KEY, await options.createContext(ctx));
+		await next();
+	});
+
+	app.onError((error) => {
+		return toSerializedRuntimeResponse(makeErrorResponse(error, options.errorMode), "error");
+	});
+
 	app.notFound(() => {
 		return toSerializedRuntimeResponse(makeNotFoundResponse(), "error");
 	});
 
-	const preparedRoutes: Array<PreparedContractRoute<TContext>> = compileContractRoutes(
+	const preparedRoutes: Array<PreparedContractRoute> = compileContractRoutes(
 		options.contracts.contracts,
 	).map((route) => {
-		const middlewares = options.middlewares
-			? resolveMiddlewareBindings<TContext>(
-					collectShapePathNodes(options.middlewares.middlewares, route.pathTemplate),
-					collectShapePathNodes(options.middlewares.handlers, route.pathTemplate),
-				)
-			: undefined;
-
 		return {
 			pathTemplate: route.pathTemplate,
 			method: route.method,
 			methodDefinition: route.methodDefinition,
 			handlerNode: getHandlerNodeAtPath(options.contracts.handlers, route.pathTemplate),
 			requestParsers: getContractRequestParsers(route.methodDefinition),
-			middlewares,
 		};
 	});
 
+	if (options.middlewares) {
+		for (const pathTemplate of getUniquePathTemplates(preparedRoutes)) {
+			const layers = collectMiddlewareLayers<TContext>(
+				collectShapePathNodes(options.middlewares.middlewares, pathTemplate),
+				collectShapePathNodes(options.middlewares.handlers, pathTemplate),
+			);
+			for (const layer of layers) {
+				registerMiddlewareLayer(app, pathTemplate, layer);
+			}
+		}
+	}
+
 	for (const route of preparedRoutes) {
 		registerHonoRoute(app, route.method, route.pathTemplate, async (ctx): Promise<Response> => {
-			const ourContext = await options.createContext(ctx);
-
-			const executeHandler = async (): Promise<Response> => {
-				const handler = getPreparedHandler(route);
-				const inputData = await parseRequestData(ctx, route.requestParsers);
-				const rawResponse = await handler(inputData, ctx, ourContext);
-				const normalizedResponse: RuntimeHandlerResponse = {
-					status: (rawResponse as { status: number }).status,
-					type: (rawResponse as { type: RuntimeHandlerResponse["type"] }).type,
-					data: (rawResponse as { data: unknown }).data,
-				};
-				return validateAndSerializeResponse(
-					route.methodDefinition.responses,
-					normalizedResponse,
-					"Handler",
-					"contract",
-				);
+			const handler = getPreparedHandler(route);
+			const inputData = await parseRequestData(ctx, route.requestParsers);
+			const rawResponse = await handler(inputData, ctx, getStoredContext<TContext>(ctx));
+			const normalizedResponse: RuntimeHandlerResponse = {
+				status: (rawResponse as { status: number }).status,
+				type: (rawResponse as { type: RuntimeHandlerResponse["type"] }).type,
+				data: (rawResponse as { data: unknown }).data,
 			};
-
-			try {
-				if (route.middlewares) {
-					return await runMiddlewareHandlers(
-						ctx,
-						ourContext,
-						route.middlewares,
-						executeHandler,
-					);
-				}
-				return await executeHandler();
-			} catch (error) {
-				return toSerializedRuntimeResponse(
-					makeErrorResponse(error, options.errorMode),
-					"error",
-				);
-			}
+			return validateAndSerializeResponse(
+				route.methodDefinition.responses,
+				normalizedResponse,
+				"Handler",
+				"contract",
+			);
 		});
 	}
 };
