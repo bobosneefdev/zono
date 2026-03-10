@@ -17,6 +17,7 @@ import {
 	toHonoPath,
 	validateResponseAgainstStatusMap,
 	ZONO_HEADER_DATA_HEADER,
+	ZONO_HEADER_DATA_TYPE_HEADER,
 	ZONO_QUERY_DATA_KEY,
 	ZONO_RESPONSE_SOURCE_HEADER,
 	ZONO_RESPONSE_TYPE_HEADER,
@@ -130,6 +131,7 @@ describe("shared internal serialized response", () => {
 			type: "JSON",
 			source: "contract",
 			data: { ok: true },
+			headers: undefined,
 		});
 
 		const createdAt = new Date("2024-02-02T00:00:00.000Z");
@@ -143,6 +145,7 @@ describe("shared internal serialized response", () => {
 			type: "SuperJSON",
 			source: "contract",
 			data: { createdAt },
+			headers: undefined,
 		});
 
 		const text = createSerializedResponse({
@@ -155,6 +158,7 @@ describe("shared internal serialized response", () => {
 			type: "Text",
 			source: "contract",
 			data: "hello",
+			headers: undefined,
 		});
 
 		const bytes = createSerializedResponse({
@@ -166,6 +170,7 @@ describe("shared internal serialized response", () => {
 		const parsedBytes = await parseSerializedResponse(bytes);
 		expect(parsedBytes.type).toBe("Bytes");
 		expect(Array.from(parsedBytes.data as Uint8Array)).toEqual([1, 2, 3]);
+		expect(parsedBytes.headers).toBeUndefined();
 
 		const blobValue = new Blob(["hello blob"], { type: "text/plain" });
 		const blob = createSerializedResponse({
@@ -177,6 +182,7 @@ describe("shared internal serialized response", () => {
 		const parsedBlob = await parseSerializedResponse(blob);
 		expect(parsedBlob.type).toBe("Blob");
 		expect(await (parsedBlob.data as Blob).text()).toBe("hello blob");
+		expect(parsedBlob.headers).toBeUndefined();
 
 		const formDataValue = new FormData();
 		formDataValue.set("fileName", "avatar.png");
@@ -189,6 +195,7 @@ describe("shared internal serialized response", () => {
 		const parsedForm = await parseSerializedResponse(form);
 		expect(parsedForm.type).toBe("FormData");
 		expect((parsedForm.data as FormData).get("fileName")).toBe("avatar.png");
+		expect(parsedForm.headers).toBeUndefined();
 
 		const contentless = createSerializedResponse({
 			status: 204,
@@ -200,6 +207,7 @@ describe("shared internal serialized response", () => {
 			type: "Contentless",
 			source: "contract",
 			data: undefined,
+			headers: undefined,
 		});
 	});
 
@@ -211,6 +219,7 @@ describe("shared internal serialized response", () => {
 			type: "Text",
 			source: "contract",
 			data: "hello",
+			headers: undefined,
 		});
 
 		const failedJson = new Response(JSON.stringify({ message: "nope" }), {
@@ -226,6 +235,33 @@ describe("shared internal serialized response", () => {
 			type: "JSON",
 			source: "contract",
 			data: undefined,
+			headers: undefined,
+		});
+	});
+
+	test("parses response header metadata", async () => {
+		const response = new Response(JSON.stringify({ ok: true }), {
+			status: 200,
+			headers: {
+				"content-type": "application/json",
+				[ZONO_RESPONSE_TYPE_HEADER]: "JSON",
+				[ZONO_RESPONSE_SOURCE_HEADER]: "contract",
+				[ZONO_HEADER_DATA_TYPE_HEADER]: "SuperJSON",
+				[ZONO_HEADER_DATA_HEADER]: superjson.stringify({
+					traceId: "trace-1",
+					createdAt: new Date("2024-02-02T00:00:00.000Z"),
+				}),
+			},
+		});
+
+		expect(await parseSerializedResponse(response)).toEqual({
+			type: "JSON",
+			source: "contract",
+			data: { ok: true },
+			headers: {
+				traceId: "trace-1",
+				createdAt: new Date("2024-02-02T00:00:00.000Z"),
+			},
 		});
 	});
 
@@ -378,13 +414,37 @@ describe("shared internal response validation", () => {
 				{
 					200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
 				},
-				{ status: 200, type: "JSON", data: { ok: true }, headers: { "x-test": "1" } },
+				{ status: 200, type: "JSON", data: { ok: true } },
 				"Handler",
 			),
 		).not.toThrow();
 	});
 
-	test("rejects undeclared statuses, mismatched types, and invalid data", () => {
+	test("validates declared response headers", () => {
+		expect(() =>
+			validateResponseAgainstStatusMap(
+				{
+					200: {
+						type: "JSON",
+						schema: z.object({ ok: z.boolean() }),
+						headers: {
+							type: "Standard",
+							schema: z.object({ "x-trace": z.string() }),
+						},
+					},
+				},
+				{
+					status: 200,
+					type: "JSON",
+					data: { ok: true },
+					headers: { "x-trace": "trace-1" },
+				},
+				"Handler",
+			),
+		).not.toThrow();
+	});
+
+	test("rejects undeclared statuses, mismatched types, invalid data, and invalid headers", () => {
 		expect(() =>
 			validateResponseAgainstStatusMap(
 				{
@@ -414,6 +474,33 @@ describe("shared internal response validation", () => {
 				"Handler",
 			),
 		).toThrow("Handler response data validation failed");
+
+		expect(() =>
+			validateResponseAgainstStatusMap(
+				{
+					200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+				},
+				{ status: 200, type: "JSON", data: { ok: true }, headers: { "x-test": "1" } },
+				"Handler",
+			),
+		).toThrow("Handler returned undeclared response headers");
+
+		expect(() =>
+			validateResponseAgainstStatusMap(
+				{
+					200: {
+						type: "JSON",
+						schema: z.object({ ok: z.boolean() }),
+						headers: {
+							type: "Standard",
+							schema: z.object({ "x-trace": z.string() }),
+						},
+					},
+				},
+				{ status: 200, type: "JSON", data: { ok: true }, headers: { "x-trace": 1 } },
+				"Handler",
+			),
+		).toThrow("Handler response headers validation failed");
 	});
 });
 

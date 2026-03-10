@@ -154,6 +154,7 @@ export const createClient = <
 			status: response.status,
 			response: responseCopy,
 			data: parsed.data,
+			headers: parsed.headers,
 		} as Awaited<ReturnType<typeof fetchMethod>>;
 	};
 

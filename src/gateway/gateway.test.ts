@@ -10,7 +10,12 @@ import {
 	initHono,
 } from "../server/server.js";
 import type { ApiShape } from "../shared/shared.js";
-import { createSerializedResponse, parseSerializedResponse } from "../shared/shared.js";
+import {
+	createSerializedResponse,
+	parseSerializedResponse,
+	ZONO_HEADER_DATA_HEADER,
+	ZONO_HEADER_DATA_TYPE_HEADER,
+} from "../shared/shared.js";
 import type { GatewayServiceMask } from "./gateway.js";
 import {
 	createGatewayClient,
@@ -37,6 +42,7 @@ afterEach(() => {
 const serviceShape = {
 	SHAPE: {
 		echo: { CONTRACT: true },
+		headered: { CONTRACT: true },
 		plain: { CONTRACT: true },
 		users: { CONTRACT: true },
 		boom: { CONTRACT: true },
@@ -59,6 +65,22 @@ const serviceContracts = {
 				post: {
 					responses: {
 						201: { type: "Text", schema: z.string() },
+					},
+				},
+			},
+		},
+		headered: {
+			CONTRACT: {
+				get: {
+					responses: {
+						200: {
+							type: "JSON",
+							schema: z.object({ ok: z.boolean() }),
+							headers: {
+								type: "Standard",
+								schema: z.object({ "x-upstream": z.string() }),
+							},
+						},
 					},
 				},
 			},
@@ -912,6 +934,42 @@ describe("gateway error handling", () => {
 			stack: expect.any(String),
 		});
 	});
+
+	test("gateway client round-trips upstream declared response headers", async () => {
+		const upstreamApp = new Hono();
+		upstreamApp.get("/headered", () => {
+			return createSerializedResponse({
+				status: 200,
+				type: "JSON",
+				source: "contract",
+				headers: {
+					"x-upstream": "1",
+					[ZONO_HEADER_DATA_TYPE_HEADER]: "Standard",
+					[ZONO_HEADER_DATA_HEADER]: JSON.stringify({ "x-upstream": "1" }),
+				},
+				data: { ok: true },
+			});
+		});
+
+		const service = createGatewayService(
+			{ SHAPE: { headered: { CONTRACT: true } } },
+			serviceContracts,
+			serviceMiddlewares,
+			"public",
+			startServer(upstreamApp),
+		);
+		const services = createGatewayServices({ upstream: service });
+		const gatewayApp = new Hono();
+		initGateway(gatewayApp, services);
+		const gatewayClient = createGatewayClient<typeof services>(startServer(gatewayApp));
+
+		const response = await gatewayClient.upstream.fetch("/headered", "get");
+
+		expect(response.status).toBe(200);
+		expect(response.data).toEqual({ ok: true });
+		expect(response.headers).toEqual({ "x-upstream": "1" });
+		expect(response.response.headers.get("x-upstream")).toBe("1");
+	});
 });
 
 describe("gateway proxy edge cases", () => {
@@ -951,6 +1009,7 @@ describe("gateway proxy edge cases", () => {
 const gatewayMaskTyped = {
 	SHAPE: {
 		echo: { CONTRACT: true },
+		headered: { CONTRACT: true },
 		plain: { CONTRACT: true },
 		users: { CONTRACT: true },
 	},
@@ -965,6 +1024,7 @@ typeOnly(() => {
 		{
 			SHAPE: {
 				echo: { CONTRACT: true },
+				headered: { CONTRACT: true },
 				plain: { CONTRACT: true },
 				users: { CONTRACT: true },
 			},
@@ -1016,6 +1076,7 @@ typeOnly(() => {
 	);
 
 	void client.usersService.fetch("/echo", "get");
+	void client.usersService.fetch("/headered", "get");
 
 	// @ts-expect-error invalid path for service contracts
 	void client.usersService.fetch("/missing", "get");
@@ -1078,6 +1139,27 @@ typeOnly(() => {
 		response: new Response(),
 	};
 	void usersGlobalAuth;
+
+	const headeredResponsePromise = client.usersService.fetch("/headered", "get");
+	type HeaderedResponse = Awaited<typeof headeredResponsePromise>;
+	const headeredHeaders: ExtractStatus<HeaderedResponse, 200>["headers"] = {
+		"x-upstream": "1",
+	};
+	void headeredHeaders;
+
+	// @ts-expect-error declared gateway client response headers are required
+	const missingHeaderedHeaders: ExtractStatus<HeaderedResponse, 200> = {
+		status: 200,
+		data: { ok: true },
+		response: new Response(),
+	};
+	void missingHeaderedHeaders;
+
+	const invalidHeaderedHeaders: ExtractStatus<HeaderedResponse, 200>["headers"] = {
+		// @ts-expect-error gateway client response headers must match the declared schema
+		"x-upstream": 1,
+	};
+	void invalidHeaderedHeaders;
 
 	// @ts-expect-error /plain should not include /users scoped auth override
 	const plainUsersAuth: ExtractStatus<PlainResponse, 403> = {

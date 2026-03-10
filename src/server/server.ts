@@ -72,16 +72,19 @@ export type ErrorResponse<TErrorMode extends ErrorMode> =
 			status: 400;
 			type: "JSON";
 			data: TErrorMode extends "public" ? Public400ErrorData : Private400ErrorData;
+			headers?: undefined;
 	  }
 	| {
 			status: 404;
 			type: "JSON";
 			data: NotFoundErrorData;
+			headers?: undefined;
 	  }
 	| {
 			status: 500;
 			type: "JSON";
 			data: TErrorMode extends "public" ? Public500ErrorData : Private500ErrorData;
+			headers?: undefined;
 	  };
 
 export type RuntimeHandlerResponse = RuntimeResponseLike;
@@ -551,7 +554,7 @@ export const initHono = <
 				status: (rawResponse as { status: number }).status,
 				type: (rawResponse as { type: RuntimeHandlerResponse["type"] }).type,
 				data: (rawResponse as { data: unknown }).data,
-				headers: (rawResponse as { headers?: HeadersInit }).headers,
+				headers: (rawResponse as { headers?: unknown }).headers,
 			};
 			return validateAndSerializeResponse(
 				route.methodDefinition.responses,

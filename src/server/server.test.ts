@@ -604,6 +604,64 @@ describe("server runtime", () => {
 		expect(response.status).toBe(200);
 		expect(response.headers.get("x-handler")).toBe("1");
 		expect(parsed.data).toEqual({ ok: true });
+		expect(parsed.headers).toEqual({ "x-handler": "1" });
+	});
+
+	test("serializes and parses structured contract response headers", async () => {
+		const shape = {
+			SHAPE: {
+				superHeaders: { CONTRACT: true },
+			},
+		} as const satisfies ApiShape;
+
+		const contracts = {
+			SHAPE: {
+				superHeaders: {
+					CONTRACT: {
+						get: {
+							responses: {
+								200: {
+									type: "JSON",
+									schema: z.object({ ok: z.boolean() }),
+									headers: {
+										type: "SuperJSON",
+										schema: z.object({ createdAt: z.date() }),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		} as const satisfies ContractTreeFor<typeof shape>;
+
+		const createdAt = new Date("2024-02-02T00:00:00.000Z");
+		const app = new Hono();
+		initHono<typeof shape, unknown>(app, {
+			contracts: createHonoContractHandlers(contracts, {
+				SHAPE: {
+					superHeaders: {
+						HANDLER: {
+							get: () => ({
+								status: 200,
+								type: "JSON",
+								headers: { createdAt },
+								data: { ok: true },
+							}),
+						},
+					},
+				},
+			}),
+			errorMode: "public",
+			createContext: () => ({}),
+		});
+
+		const response = await fetch(`${startServer(app)}/superHeaders`);
+		const parsed = await parseSerializedResponse(response);
+
+		expect(response.status).toBe(200);
+		expect(parsed.data).toEqual({ ok: true });
+		expect(parsed.headers).toEqual({ createdAt });
 	});
 
 	test("returns 500 when handlers violate the declared response contract", async () => {
@@ -612,6 +670,7 @@ describe("server runtime", () => {
 				invalidStatus: { CONTRACT: true },
 				invalidType: { CONTRACT: true },
 				invalidData: { CONTRACT: true },
+				invalidHeaders: { CONTRACT: true },
 			},
 		} as const satisfies ApiShape;
 
@@ -644,6 +703,22 @@ describe("server runtime", () => {
 						},
 					},
 				},
+				invalidHeaders: {
+					CONTRACT: {
+						get: {
+							responses: {
+								200: {
+									type: "JSON",
+									schema: z.object({ ok: z.boolean() }),
+									headers: {
+										type: "Standard",
+										schema: z.object({ "x-handler": z.string() }),
+									},
+								},
+							},
+						},
+					},
+				},
 			},
 		} as const satisfies ContractTreeFor<typeof shape>;
 
@@ -662,6 +737,16 @@ describe("server runtime", () => {
 							get: () => ({ status: 200, type: "JSON", data: { ok: "nope" } }),
 						},
 					},
+					invalidHeaders: {
+						HANDLER: {
+							get: () => ({
+								status: 200,
+								type: "JSON",
+								headers: { "x-handler": 1 },
+								data: { ok: true },
+							}),
+						},
+					},
 				},
 			} as unknown as ContractHandlerTree<typeof contracts, unknown>),
 			errorMode: "public",
@@ -672,6 +757,7 @@ describe("server runtime", () => {
 		const invalidStatus = await parseSerializedResponse(await fetch(`${base}/invalidStatus`));
 		const invalidType = await parseSerializedResponse(await fetch(`${base}/invalidType`));
 		const invalidData = await parseSerializedResponse(await fetch(`${base}/invalidData`));
+		const invalidHeaders = await parseSerializedResponse(await fetch(`${base}/invalidHeaders`));
 
 		expect(invalidStatus.data).toEqual({
 			message: "Handler returned undeclared status: 201",
@@ -681,6 +767,9 @@ describe("server runtime", () => {
 		});
 		expect(invalidData.data).toEqual({
 			message: "Handler response data validation failed",
+		});
+		expect(invalidHeaders.data).toEqual({
+			message: "Handler response headers validation failed",
 		});
 	});
 
@@ -935,6 +1024,133 @@ describe("server runtime", () => {
 		expect(privateBoom.status).toBe(500);
 		expect((privateBoomParsed.data as { message: string }).message).toBe("boom");
 		expect(privateBoomParsed.data).toHaveProperty("stack");
+	});
+
+	test("serializes middleware response headers and rejects invalid middleware headers", async () => {
+		const shape = {
+			SHAPE: {
+				middleware: { CONTRACT: true },
+				invalid: { CONTRACT: true },
+			},
+		} as const satisfies ApiShape;
+
+		const contracts = {
+			SHAPE: {
+				middleware: {
+					CONTRACT: {
+						get: {
+							responses: {
+								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+							},
+						},
+					},
+				},
+				invalid: {
+					CONTRACT: {
+						get: {
+							responses: {
+								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+							},
+						},
+					},
+				},
+			},
+		} as const satisfies ContractTreeFor<typeof shape>;
+
+		const middlewares = {
+			SHAPE: {
+				middleware: {
+					MIDDLEWARE: {
+						gate: {
+							429: {
+								type: "JSON",
+								schema: z.object({ retryAfter: z.number() }),
+								headers: {
+									type: "Standard",
+									schema: z.object({ "x-retry-after": z.string() }),
+								},
+							},
+						},
+					},
+				},
+				invalid: {
+					MIDDLEWARE: {
+						gate: {
+							429: {
+								type: "JSON",
+								schema: z.object({ retryAfter: z.number() }),
+								headers: {
+									type: "Standard",
+									schema: z.object({ "x-retry-after": z.string() }),
+								},
+							},
+						},
+					},
+				},
+			},
+		} as const satisfies MiddlewareTreeFor<typeof shape>;
+
+		const app = new Hono();
+		initHono<typeof shape, unknown, typeof middlewares>(app, {
+			contracts: createHonoContractHandlers(contracts, {
+				SHAPE: {
+					middleware: {
+						HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
+					},
+					invalid: {
+						HANDLER: { get: () => ({ status: 200, type: "JSON", data: { ok: true } }) },
+					},
+				},
+			}),
+			middlewares: createHonoMiddlewareHandlers(middlewares, {
+				SHAPE: {
+					middleware: {
+						MIDDLEWARE: {
+							gate: () => ({
+								status: 429,
+								type: "JSON",
+								headers: { "x-retry-after": "5" },
+								data: { retryAfter: 5 },
+							}),
+						},
+					},
+					invalid: {
+						MIDDLEWARE: {
+							gate: () =>
+								({
+									status: 429,
+									type: "JSON",
+									headers: { "x-retry-after": 5 },
+									data: { retryAfter: 5 },
+								}) as unknown as {
+									status: 429;
+									type: "JSON";
+									headers: { "x-retry-after": string };
+									data: { retryAfter: number };
+								},
+						},
+					},
+				},
+			}),
+			errorMode: "public",
+			createContext: () => ({}),
+		});
+
+		const base = startServer(app);
+		const denied = await fetch(`${base}/middleware`);
+		const invalid = await fetch(`${base}/invalid`);
+		const deniedParsed = await parseSerializedResponse(denied);
+		const invalidParsed = await parseSerializedResponse(invalid);
+
+		expect(denied.status).toBe(429);
+		expect(denied.headers.get("x-retry-after")).toBe("5");
+		expect(deniedParsed.headers).toEqual({ "x-retry-after": "5" });
+		expect(deniedParsed.data).toEqual({ retryAfter: 5 });
+
+		expect(invalid.status).toBe(500);
+		expect(invalidParsed.data).toEqual({
+			message: "Middleware response headers validation failed",
+		});
 	});
 });
 
@@ -1362,7 +1578,16 @@ const typedContracts = {
 			CONTRACT: {
 				post: {
 					body: { type: "JSON", schema: z.object({ name: z.string() }) },
-					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
+					responses: {
+						200: {
+							type: "JSON",
+							schema: z.object({ ok: z.boolean() }),
+							headers: {
+								type: "Standard",
+								schema: z.object({ "x-request-id": z.string() }),
+							},
+						},
+					},
 				},
 			},
 		},
@@ -1378,7 +1603,12 @@ const typed = createHonoContractHandlers<typeof typedContracts, { requestId: str
 					post: (_data, _ctx, ourContext) => {
 						const id: string = ourContext.requestId;
 						void id;
-						return { status: 200, type: "JSON", data: { ok: true } };
+						return {
+							status: 200,
+							type: "JSON",
+							headers: { "x-request-id": ourContext.requestId },
+							data: { ok: true },
+						};
 					},
 				},
 			},
@@ -1398,8 +1628,40 @@ typeOnly(() => {
 						// @ts-expect-error requestId is string
 						const bad: number = ourContext.requestId;
 						void bad;
-						return { status: 200, type: "JSON", data: { ok: true } };
+						return {
+							status: 200,
+							type: "JSON",
+							headers: { "x-request-id": ourContext.requestId },
+							data: { ok: true },
+						};
 					},
+				},
+			},
+		},
+	});
+
+	void createHonoContractHandlers<typeof typedContracts, { requestId: string }>(typedContracts, {
+		SHAPE: {
+			json: {
+				HANDLER: {
+					// @ts-expect-error declared response headers are required
+					post: () => ({ status: 200, type: "JSON", data: { ok: true } }),
+				},
+			},
+		},
+	});
+
+	void createHonoContractHandlers<typeof typedContracts, { requestId: string }>(typedContracts, {
+		SHAPE: {
+			json: {
+				HANDLER: {
+					post: () => ({
+						status: 200,
+						type: "JSON",
+						// @ts-expect-error declared response headers must match the schema
+						headers: { "x-request-id": 1 },
+						data: { ok: true },
+					}),
 				},
 			},
 		},

@@ -8,6 +8,7 @@ import type { ApiShape } from "../shared/shared.js";
 import {
 	createSerializedResponse,
 	ZONO_HEADER_DATA_HEADER,
+	ZONO_HEADER_DATA_TYPE_HEADER,
 	ZONO_QUERY_DATA_KEY,
 } from "../shared/shared.js";
 import { createClient } from "./client.js";
@@ -43,6 +44,8 @@ const shape = {
 		search: { CONTRACT: true },
 		upload: { CONTRACT: true },
 		structured: { CONTRACT: true },
+		responseHeadersStandard: { CONTRACT: true },
+		responseHeadersStructured: { CONTRACT: true },
 		events: { CONTRACT: true },
 		downloadText: { CONTRACT: true },
 		downloadBytes: { CONTRACT: true },
@@ -194,6 +197,38 @@ const contracts = {
 								headerPayload: z.string().optional(),
 								bodyPayload: z.string(),
 							}),
+						},
+					},
+				},
+			},
+		},
+		responseHeadersStandard: {
+			CONTRACT: {
+				get: {
+					responses: {
+						200: {
+							type: "JSON",
+							schema: z.object({ ok: z.boolean() }),
+							headers: {
+								type: "Standard",
+								schema: z.object({ "x-trace": z.string(), "x-meta": z.string() }),
+							},
+						},
+					},
+				},
+			},
+		},
+		responseHeadersStructured: {
+			CONTRACT: {
+				get: {
+					responses: {
+						200: {
+							type: "JSON",
+							schema: z.object({ ok: z.boolean() }),
+							headers: {
+								type: "SuperJSON",
+								schema: z.object({ createdAt: z.date() }),
+							},
 						},
 					},
 				},
@@ -573,6 +608,57 @@ describe("createClient runtime", () => {
 		const noop = await client.fetch("/noop", "get");
 		expect(noop.status).toBe(204);
 		expect(noop.data).toBeUndefined();
+		expect(noop.headers).toBeUndefined();
+	});
+
+	test("parses declared response headers and preserves raw response headers", async () => {
+		const app = new Hono();
+		app.get("/responseHeadersStandard", () => {
+			return createSerializedResponse({
+				status: 200,
+				type: "JSON",
+				source: "contract",
+				headers: {
+					"x-trace": "trace-1",
+					"x-meta": "meta-1",
+					[ZONO_HEADER_DATA_TYPE_HEADER]: "Standard",
+					[ZONO_HEADER_DATA_HEADER]: JSON.stringify({
+						"x-trace": "trace-1",
+						"x-meta": "meta-1",
+					}),
+				},
+				data: { ok: true },
+			});
+		});
+		app.get("/responseHeadersStructured", () => {
+			return createSerializedResponse({
+				status: 200,
+				type: "JSON",
+				source: "contract",
+				headers: {
+					[ZONO_HEADER_DATA_TYPE_HEADER]: "SuperJSON",
+					[ZONO_HEADER_DATA_HEADER]: superjson.stringify({
+						createdAt: new Date("2024-02-02T00:00:00.000Z"),
+					}),
+				},
+				data: { ok: true },
+			});
+		});
+
+		const client = createClient<typeof shape, typeof contracts, typeof middlewares, "public">(
+			startServer(app),
+		);
+
+		const standard = await client.fetch("/responseHeadersStandard", "get");
+		expect(standard.headers).toEqual({ "x-trace": "trace-1", "x-meta": "meta-1" });
+		expect(standard.response.headers.get("x-trace")).toBe("trace-1");
+		expect(standard.response.headers.get("x-meta")).toBe("meta-1");
+
+		const structured = await client.fetch("/responseHeadersStructured", "get");
+		expect(structured.headers).toEqual({
+			createdAt: new Date("2024-02-02T00:00:00.000Z"),
+		});
+		expect(structured.response.headers.get("x-trace")).toBeNull();
 	});
 
 	test("parses serialized error responses", async () => {
@@ -821,4 +907,39 @@ runTypeOnly(() => {
 		response: new Response(),
 	};
 	void eventsRateLimit;
+
+	const standardHeadersResponsePromise = typedClient.fetch("/responseHeadersStandard", "get");
+	type StandardHeadersResponse = Awaited<typeof standardHeadersResponsePromise>;
+	const standardHeaders: Extract<StandardHeadersResponse, { status: 200 }>["headers"] = {
+		"x-trace": "trace-1",
+		"x-meta": "meta-1",
+	};
+	void standardHeaders;
+
+	const structuredHeadersResponsePromise = typedClient.fetch("/responseHeadersStructured", "get");
+	type StructuredHeadersResponse = Awaited<typeof structuredHeadersResponsePromise>;
+	const structuredHeaders: Extract<StructuredHeadersResponse, { status: 200 }>["headers"] = {
+		createdAt: new Date(),
+	};
+	void structuredHeaders;
+
+	const eventResponsePromise = typedClient.fetch("/events", "get");
+	type EventResponse = Awaited<typeof eventResponsePromise>;
+	const eventHeaders: Extract<EventResponse, { status: 200 }>["headers"] = undefined;
+	void eventHeaders;
+
+	// @ts-expect-error response headers are required when declared
+	const missingStandardHeaders: Extract<StandardHeadersResponse, { status: 200 }> = {
+		status: 200,
+		data: { ok: true },
+		response: new Response(),
+	};
+	void missingStandardHeaders;
+
+	const invalidStructuredHeaders: Extract<StructuredHeadersResponse, { status: 200 }>["headers"] =
+		{
+			// @ts-expect-error response headers must match the declared schema
+			createdAt: "2024-02-02T00:00:00.000Z",
+		};
+	void invalidStructuredHeaders;
 });

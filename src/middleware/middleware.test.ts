@@ -129,6 +129,21 @@ const middlewaresType = {
 	},
 } as const satisfies MiddlewareTreeFor<typeof shape>;
 
+const middlewaresWithHeadersType = {
+	MIDDLEWARE: {
+		auth: {
+			401: {
+				type: "JSON",
+				schema: z.object({ message: z.string() }),
+				headers: {
+					type: "Standard",
+					schema: z.object({ "x-auth": z.string() }),
+				},
+			},
+		},
+	},
+} as const satisfies MiddlewareTreeFor<typeof shape>;
+
 const typedMiddlewares = createHonoMiddlewareHandlers<
 	typeof middlewaresType,
 	{ requestId: string }
@@ -216,6 +231,19 @@ typeOnly(() => {
 	};
 	void validHandler;
 
+	const validHandlerWithHeaders: MiddlewareHandler<
+		typeof middlewaresWithHeadersType.MIDDLEWARE.auth,
+		{ requestId: string }
+	> = () => {
+		return {
+			status: 401,
+			type: "JSON",
+			headers: { "x-auth": "required" },
+			data: { message: "Unauthorized" },
+		};
+	};
+	void validHandlerWithHeaders;
+
 	void createHonoMiddlewareHandlers<typeof middlewaresType, { requestId: string }>(
 		middlewaresType,
 		{
@@ -256,4 +284,27 @@ typeOnly(() => {
 		return { status: 429, type: "JSON", data: { retryAfter: "1" } };
 	};
 	void invalidData;
+
+	// @ts-expect-error declared middleware response headers are required
+	const missingHeaders: MiddlewareHandler<
+		typeof middlewaresWithHeadersType.MIDDLEWARE.auth,
+		{ requestId: string }
+	> = () => {
+		return { status: 401, type: "JSON", data: { message: "Unauthorized" } };
+	};
+	void missingHeaders;
+
+	// @ts-expect-error middleware response headers must match the declared schema
+	const invalidHeaders: MiddlewareHandler<
+		typeof middlewaresWithHeadersType.MIDDLEWARE.auth,
+		{ requestId: string }
+	> = () => {
+		return {
+			status: 401,
+			type: "JSON",
+			headers: { "x-auth": 1 },
+			data: { message: "Unauthorized" },
+		};
+	};
+	void invalidHeaders;
 });

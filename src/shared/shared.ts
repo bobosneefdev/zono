@@ -6,6 +6,7 @@ export const ZONO_RESPONSE_SOURCE_HEADER = "x-zono-response-source";
 export const ZONO_SUPERJSON_HEADER = "x-zono-superjson";
 export const ZONO_QUERY_DATA_KEY = "_zono";
 export const ZONO_HEADER_DATA_HEADER = "x-zono-data";
+export const ZONO_HEADER_DATA_TYPE_HEADER = "x-zono-data-type";
 
 export type ApiShape = {
 	CONTRACT?: true;
@@ -43,6 +44,14 @@ export type InferSchemaData<TSpec> = TSpec extends { schema: ZodType<infer TOutp
 	? TOutput
 	: undefined;
 
+export type InferResponseHeadersData<TSpec> = TSpec extends { headers: infer THeadersSpec }
+	? InferSchemaData<THeadersSpec>
+	: undefined;
+
+type ResponseHeadersField<TSpec> = TSpec extends { headers: infer THeadersSpec }
+	? { headers: InferSchemaData<THeadersSpec> }
+	: { headers?: undefined };
+
 export type StatusMapToResponseUnion<
 	TStatuses extends Record<number, { type: SerializedResponseType }>,
 > = {
@@ -50,8 +59,7 @@ export type StatusMapToResponseUnion<
 		status: TStatus;
 		type: TStatuses[TStatus]["type"];
 		data: InferSchemaData<TStatuses[TStatus]>;
-		headers?: HeadersInit;
-	};
+	} & ResponseHeadersField<TStatuses[TStatus]>;
 }[keyof TStatuses & number];
 
 export type FetchResponse<TResponse> = TResponse extends unknown
@@ -85,12 +93,16 @@ export type RuntimeResponseLike = {
 	status: number;
 	type: SerializedResponseType;
 	data: unknown;
-	headers?: HeadersInit;
+	headers?: unknown;
 };
 
 type ResponseSpecLike = {
 	type: SerializedResponseType;
 	schema?: ZodTypeAny;
+	headers?: {
+		type: "Standard" | "JSON" | "SuperJSON";
+		schema: ZodTypeAny;
+	};
 };
 
 export type MapFetchRouteResponse<TRoute, TExtraResponse> = TRoute extends {
@@ -107,7 +119,9 @@ export type MapFetchRouteResponse<TRoute, TExtraResponse> = TRoute extends {
 		}
 	: never;
 
-type StructuredDataSpec = { type: "Standard" | "JSON" | "SuperJSON" };
+type StructuredDataType = "Standard" | "JSON" | "SuperJSON";
+
+type StructuredDataSpec = { type: StructuredDataType };
 
 export const toHonoPath = (pathTemplate: string): string => {
 	if (pathTemplate === "/") {
@@ -249,9 +263,37 @@ export const createSerializedResponse = (args: {
 	}
 };
 
+const parseResponseHeadersData = (
+	headers: Headers,
+): { type: "Standard" | "JSON" | "SuperJSON"; data: unknown } | undefined => {
+	const type = headers.get(ZONO_HEADER_DATA_TYPE_HEADER) as
+		| "Standard"
+		| "JSON"
+		| "SuperJSON"
+		| null;
+	if (type !== "Standard" && type !== "JSON" && type !== "SuperJSON") {
+		return undefined;
+	}
+
+	const payload = headers.get(ZONO_HEADER_DATA_HEADER) ?? undefined;
+	if (payload === undefined) {
+		return { type, data: undefined };
+	}
+
+	return {
+		type,
+		data: type === "Standard" ? JSON.parse(payload) : parseStructuredDataValue(type, payload),
+	};
+};
+
 export const parseSerializedResponse = async (
 	response: Response,
-): Promise<{ type: SerializedResponseType; source: SerializedResponseSource; data: unknown }> => {
+): Promise<{
+	type: SerializedResponseType;
+	source: SerializedResponseSource;
+	data: unknown;
+	headers: unknown;
+}> => {
 	const type = inferResponseType(response);
 	const sourceHeader = response.headers.get(ZONO_RESPONSE_SOURCE_HEADER);
 	const source: SerializedResponseSource =
@@ -260,36 +302,48 @@ export const parseSerializedResponse = async (
 			: response.status >= 400
 				? "error"
 				: "contract";
+	const parsedHeaders = parseResponseHeadersData(response.headers);
+	const responseHeaders = parsedHeaders?.data;
 
 	if (type === "Contentless") {
-		return { type, source, data: undefined };
+		return { type, source, data: undefined, headers: responseHeaders };
 	}
 
 	if (type === "Text") {
-		return { type, source, data: await response.text() };
+		return { type, source, data: await response.text(), headers: responseHeaders };
 	}
 
 	if (type === "Bytes") {
-		return { type, source, data: new Uint8Array(await response.arrayBuffer()) };
+		return {
+			type,
+			source,
+			data: new Uint8Array(await response.arrayBuffer()),
+			headers: responseHeaders,
+		};
 	}
 
 	if (type === "Blob") {
-		return { type, source, data: await response.blob() };
+		return { type, source, data: await response.blob(), headers: responseHeaders };
 	}
 
 	if (type === "FormData") {
-		return { type, source, data: await response.formData() };
+		return { type, source, data: await response.formData(), headers: responseHeaders };
 	}
 
 	if (type === "SuperJSON") {
-		return { type, source, data: superjson.parse(await response.text()) };
+		return {
+			type,
+			source,
+			data: superjson.parse(await response.text()),
+			headers: responseHeaders,
+		};
 	}
 
 	const responseText = await response.text();
 	if (responseText.length === 0) {
-		return { type: "JSON", source, data: undefined };
+		return { type: "JSON", source, data: undefined, headers: responseHeaders };
 	}
-	return { type: "JSON", source, data: JSON.parse(responseText) };
+	return { type: "JSON", source, data: JSON.parse(responseText), headers: responseHeaders };
 };
 
 export const isRecordObject = (value: unknown): value is Record<string, unknown> => {
@@ -374,6 +428,16 @@ export const validateResponseAgainstStatusMap = (
 			`${label} returned mismatched response type. Expected ${responseSpec.type}, received ${response.type}`,
 		);
 	}
+	if (!responseSpec.headers) {
+		if (response.headers !== undefined) {
+			throw new Error(`${label} returned undeclared response headers`);
+		}
+	} else {
+		const headersParseResult = responseSpec.headers.schema.safeParse(response.headers);
+		if (!headersParseResult.success) {
+			throw new Error(`${label} response headers validation failed`);
+		}
+	}
 
 	const parser = getResponseSpecParser(responseSpec);
 	if (!parser) {
@@ -432,11 +496,11 @@ export const getRequestHeadersObject = (headers: Headers): Record<string, string
 	return output;
 };
 
-const parseStructuredDataValue = (spec: StructuredDataSpec, value: string): unknown => {
-	if (spec.type === "Standard") {
+const parseStructuredDataValue = (type: StructuredDataType, value: string): unknown => {
+	if (type === "Standard") {
 		return value;
 	}
-	if (spec.type === "SuperJSON") {
+	if (type === "SuperJSON") {
 		return superjson.parse(value);
 	}
 	return JSON.parse(value);
@@ -452,7 +516,8 @@ const parseStructuredRecordInput = (
 
 	const parsedRecord: Record<string, unknown> = {};
 	for (const [key, value] of Object.entries(rawRecord)) {
-		parsedRecord[key] = value === undefined ? undefined : parseStructuredDataValue(spec, value);
+		parsedRecord[key] =
+			value === undefined ? undefined : parseStructuredDataValue(spec.type, value);
 	}
 	return parsedRecord;
 };
@@ -464,7 +529,7 @@ const parseStructuredSlotInput = (
 	if (value === undefined) {
 		return undefined;
 	}
-	return parseStructuredDataValue(spec, value);
+	return parseStructuredDataValue(spec.type, value);
 };
 
 export const parseQueryInput = (
@@ -548,9 +613,31 @@ export const toSerializedRuntimeResponse = (
 		status: response.status,
 		type: response.type,
 		data: response.data,
-		headers: response.headers,
 		source,
 	});
+};
+
+const getSerializedResponseHeaders = (
+	headersSpec: ResponseSpecLike["headers"],
+	headersData: unknown,
+): Headers | undefined => {
+	if (!headersSpec || headersData === undefined) {
+		return undefined;
+	}
+
+	const headers = new Headers();
+
+	if (headersSpec.type === "Standard") {
+		for (const [key, value] of normalizeHeaderValues(
+			headersData as Record<string, unknown>,
+		).entries()) {
+			headers.set(key, value);
+		}
+	}
+
+	headers.set(ZONO_HEADER_DATA_TYPE_HEADER, headersSpec.type);
+	headers.set(ZONO_HEADER_DATA_HEADER, serializeStructuredData(headersSpec.type, headersData));
+	return headers;
 };
 
 export const validateAndSerializeResponse = (
@@ -560,5 +647,14 @@ export const validateAndSerializeResponse = (
 	source: SerializedResponseSource,
 ): Response => {
 	validateResponseAgainstStatusMap(statusMap, response, label);
-	return toSerializedRuntimeResponse(response, source);
+	return createSerializedResponse({
+		status: response.status,
+		type: response.type,
+		data: response.data,
+		headers: getSerializedResponseHeaders(
+			statusMap[response.status]?.headers,
+			response.headers,
+		),
+		source,
+	});
 };

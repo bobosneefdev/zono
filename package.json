@@ -1,6 +1,6 @@
 {
     "name": "@bobosneefdev/zono",
-    "version": "9.0.0",
+    "version": "9.1.0",
     "type": "module",
     "packageManager": "bun@1.3.5",
     "description": "Easily create contract-first HTTP clients, servers, and gateways using Zod schemas.",
