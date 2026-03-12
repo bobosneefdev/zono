@@ -237,6 +237,9 @@ export const createGatewayService = <
 export const createGatewayServices = <TServices extends GatewayServices>(
 	services: TServices,
 ): TServices => {
+	for (const serviceName of Object.keys(services)) {
+		assertValidGatewayServiceKey(serviceName);
+	}
 	return services;
 };
 
@@ -280,11 +283,13 @@ const applyGatewayServiceMask = (mask: unknown, contracts: unknown): ContractTre
 
 type PreparedGatewayRoute = {
 	pathTemplate: string;
+	gatewayPathTemplate: string;
 	method: HTTPMethod;
 	serializedMethod: string;
 	shouldSendBody: boolean;
 	baseUrl: string;
 	errorMode: ServerErrorMode;
+	servicePathPrefix: string;
 };
 
 const collectGatewayRouteMiddlewareNodes = (
@@ -366,6 +371,41 @@ const getUniquePathTemplates = (routes: Array<{ pathTemplate: string }>): Array<
 	return Array.from(new Set(routes.map((route) => route.pathTemplate)));
 };
 
+const assertValidGatewayServiceKey = (serviceName: string): void => {
+	if (serviceName.length === 0) {
+		throw new Error("Gateway service key cannot be empty");
+	}
+	if (serviceName.includes("/")) {
+		throw new Error(`Gateway service key '${serviceName}' cannot contain '/'`);
+	}
+	if (serviceName.startsWith("$")) {
+		throw new Error(`Gateway service key '${serviceName}' cannot start with '$'`);
+	}
+};
+
+const getGatewayServicePathPrefix = (serviceName: string): string => {
+	assertValidGatewayServiceKey(serviceName);
+	return `/${serviceName}`;
+};
+
+const namespaceGatewayPath = (serviceName: string, pathTemplate: string): string => {
+	const servicePathPrefix = getGatewayServicePathPrefix(serviceName);
+	if (pathTemplate === "/") {
+		return servicePathPrefix;
+	}
+	return `${servicePathPrefix}${pathTemplate}`;
+};
+
+const stripGatewayServicePathPrefix = (servicePathPrefix: string, pathname: string): string => {
+	if (pathname === servicePathPrefix) {
+		return "/";
+	}
+	if (pathname.startsWith(`${servicePathPrefix}/`)) {
+		return pathname.slice(servicePathPrefix.length);
+	}
+	throw new Error(`Gateway request path '${pathname}' does not match '${servicePathPrefix}'`);
+};
+
 const normalizeMiddlewareResponse = (response: InferMiddlewareResponseUnion<MiddlewareSpec>) => {
 	return {
 		status: response.status,
@@ -433,22 +473,26 @@ export const initGateway = <
 	});
 
 	for (const [serviceName, service] of Object.entries(services)) {
+		const servicePathPrefix = getGatewayServicePathPrefix(serviceName);
 		const maskedContracts = applyGatewayServiceMask(service.mask, service.contracts);
 		const preparedRoutes: Array<PreparedGatewayRoute> = compileContractRoutes(
 			maskedContracts,
 		).map((route) => {
 			return {
 				pathTemplate: route.pathTemplate,
+				gatewayPathTemplate: namespaceGatewayPath(serviceName, route.pathTemplate),
 				method: route.method,
 				serializedMethod: route.method.toUpperCase(),
 				shouldSendBody: route.method !== "get" && route.method !== "head",
 				baseUrl: service.baseUrl,
 				errorMode: service.errorMode,
+				servicePathPrefix,
 			};
 		});
 
 		if (options?.middlewares) {
 			for (const pathTemplate of getUniquePathTemplates(preparedRoutes)) {
+				const gatewayPathTemplate = namespaceGatewayPath(serviceName, pathTemplate);
 				const { middlewareNodes, handlerNodes } = collectGatewayRouteMiddlewareNodes(
 					options.middlewares.middlewares,
 					options.middlewares.handlers,
@@ -456,16 +500,18 @@ export const initGateway = <
 					pathTemplate,
 				);
 				const layers = collectMiddlewareLayers<TContext>(middlewareNodes, handlerNodes);
-				app.use(toHonoPath(pathTemplate), async (ctx, next) => {
+				app.use(toHonoPath(gatewayPathTemplate), async (ctx, next) => {
 					setContextValue(ctx, ZONO_GATEWAY_ERROR_MODE_KEY, service.errorMode);
 					await next();
 				});
 				for (const layer of layers) {
-					registerGatewayMiddlewareLayer(app, pathTemplate, layer);
+					registerGatewayMiddlewareLayer(app, gatewayPathTemplate, layer);
 				}
 			}
 		} else {
-			for (const pathTemplate of getUniquePathTemplates(preparedRoutes)) {
+			for (const pathTemplate of getUniquePathTemplates(
+				preparedRoutes.map((route) => ({ pathTemplate: route.gatewayPathTemplate })),
+			)) {
 				app.use(toHonoPath(pathTemplate), async (ctx, next) => {
 					setContextValue(ctx, ZONO_GATEWAY_ERROR_MODE_KEY, service.errorMode);
 					await next();
@@ -477,12 +523,16 @@ export const initGateway = <
 			registerHonoRoute(
 				app,
 				route.method,
-				route.pathTemplate,
+				route.gatewayPathTemplate,
 				async (ctx): Promise<Response> => {
 					void getGatewayContext<TContext>(ctx);
 					const incomingUrl = new URL(ctx.req.url);
+					const upstreamPathname = stripGatewayServicePathPrefix(
+						route.servicePathPrefix,
+						incomingUrl.pathname,
+					);
 					const upstreamUrl = new URL(
-						incomingUrl.pathname + incomingUrl.search,
+						upstreamPathname + incomingUrl.search,
 						route.baseUrl,
 					);
 					const body = route.shouldSendBody ? await ctx.req.raw.arrayBuffer() : undefined;
@@ -511,6 +561,7 @@ export const createGatewayClient = <
 			if (typeof serviceKey !== "string") {
 				return undefined;
 			}
+			assertValidGatewayServiceKey(serviceKey);
 			const existing = obj[serviceKey as keyof ServiceMap];
 			if (existing) {
 				return existing;
@@ -521,8 +572,18 @@ export const createGatewayClient = <
 				parseResponse: ServiceMap[keyof ServiceMap]["parseResponse"];
 			};
 			const serviceClient = {
-				fetch: client.fetch,
-				fetchConfig: client.fetchConfig,
+				fetch: ((path, method, data) => {
+					const namespacedPath = namespaceGatewayPath(serviceKey, path) as Parameters<
+						ServiceMap[keyof ServiceMap]["fetch"]
+					>[0];
+					return client.fetch(namespacedPath, method, data);
+				}) as ServiceMap[keyof ServiceMap]["fetch"],
+				fetchConfig: ((path, method, data) => {
+					const namespacedPath = namespaceGatewayPath(serviceKey, path) as Parameters<
+						ServiceMap[keyof ServiceMap]["fetchConfig"]
+					>[0];
+					return client.fetchConfig(namespacedPath, method, data);
+				}) as ServiceMap[keyof ServiceMap]["fetchConfig"],
 				parseResponse: client.parseResponse,
 			} as ServiceMap[keyof ServiceMap];
 			obj[serviceKey as keyof ServiceMap] = serviceClient;

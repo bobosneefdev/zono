@@ -33,6 +33,13 @@ const startServer = (app: Hono): string => {
 	return `http://localhost:${server.port}`;
 };
 
+const getGatewayServiceUrl = (gatewayUrl: string, serviceName: string, path: string): string => {
+	return new URL(
+		path === "/" ? `/${serviceName}` : `/${serviceName}${path}`,
+		gatewayUrl,
+	).toString();
+};
+
 afterEach(() => {
 	while (servers.length > 0) {
 		servers.pop()?.stop();
@@ -167,6 +174,33 @@ const nestedUsersServiceMiddlewares = {
 	MIDDLEWARE: {},
 } as const satisfies MiddlewareTreeFor<typeof nestedUsersServiceShape>;
 
+const heartbeatServiceShape = {
+	SHAPE: {
+		heartbeat: { CONTRACT: true },
+	},
+} as const satisfies ApiShape;
+
+const heartbeatServiceContracts = {
+	SHAPE: {
+		heartbeat: {
+			CONTRACT: {
+				get: {
+					responses: {
+						200: {
+							type: "JSON",
+							schema: z.object({ service: z.string() }),
+						},
+					},
+				},
+			},
+		},
+	},
+} as const satisfies ContractTreeFor<typeof heartbeatServiceShape>;
+
+const heartbeatServiceMiddlewares = {
+	MIDDLEWARE: {},
+} as const satisfies MiddlewareTreeFor<typeof heartbeatServiceShape>;
+
 describe("gateway runtime", () => {
 	test("proxies GET to upstream and preserves status headers serialized body", async () => {
 		const upstreamApp = new Hono();
@@ -199,9 +233,12 @@ describe("gateway runtime", () => {
 
 		const gatewayApp = new Hono();
 		initGateway(gatewayApp, createGatewayServices({ service }));
-		const response = await fetch(`${startServer(gatewayApp)}/echo?q=abc`, {
-			headers: { "x-test": "ok" },
-		});
+		const response = await fetch(
+			`${getGatewayServiceUrl(startServer(gatewayApp), "service", "/echo")}?q=abc`,
+			{
+				headers: { "x-test": "ok" },
+			},
+		);
 		const parsed = await parseSerializedResponse(response);
 
 		expect(response.status).toBe(200);
@@ -233,7 +270,7 @@ describe("gateway runtime", () => {
 		initGateway(gatewayApp, createGatewayServices({ service }));
 		const gatewayUrl = startServer(gatewayApp);
 
-		const post = await fetch(`${gatewayUrl}/echo`, {
+		const post = await fetch(getGatewayServiceUrl(gatewayUrl, "service", "/echo"), {
 			method: "POST",
 			body: "hello",
 			headers: { "content-type": "text/plain" },
@@ -243,6 +280,110 @@ describe("gateway runtime", () => {
 		expect(post.status).toBe(201);
 		expect(parsedPost.type).toBe("Text");
 		expect(parsedPost.data).toBe("body:hello");
+	});
+
+	test("namespaces same-path routes by service key and drops legacy unprefixed routes", async () => {
+		const service1App = new Hono();
+		service1App.get("/heartbeat", () => {
+			return createSerializedResponse({
+				status: 200,
+				type: "JSON",
+				source: "contract",
+				data: { service: "service1" },
+			});
+		});
+
+		const service2App = new Hono();
+		service2App.get("/heartbeat", () => {
+			return createSerializedResponse({
+				status: 200,
+				type: "JSON",
+				source: "contract",
+				data: { service: "service2" },
+			});
+		});
+
+		const services = createGatewayServices({
+			service1: createGatewayService(
+				{ SHAPE: { heartbeat: { CONTRACT: true } } },
+				heartbeatServiceContracts,
+				heartbeatServiceMiddlewares,
+				"public",
+				startServer(service1App),
+			),
+			service2: createGatewayService(
+				{ SHAPE: { heartbeat: { CONTRACT: true } } },
+				heartbeatServiceContracts,
+				heartbeatServiceMiddlewares,
+				"public",
+				startServer(service2App),
+			),
+		});
+
+		const gatewayApp = new Hono();
+		initGateway(gatewayApp, services);
+		const gatewayUrl = startServer(gatewayApp);
+
+		const service1Response = await fetch(
+			getGatewayServiceUrl(gatewayUrl, "service1", "/heartbeat"),
+		);
+		const service2Response = await fetch(
+			getGatewayServiceUrl(gatewayUrl, "service2", "/heartbeat"),
+		);
+		const legacyResponse = await fetch(new URL("/heartbeat", gatewayUrl));
+
+		expect((await parseSerializedResponse(service1Response)).data).toEqual({
+			service: "service1",
+		});
+		expect((await parseSerializedResponse(service2Response)).data).toEqual({
+			service: "service2",
+		});
+		expect(legacyResponse.status).toBe(404);
+	});
+
+	test("rejects invalid service keys used as namespaces", () => {
+		expect(() =>
+			createGatewayServices({
+				"": createGatewayService(
+					{ SHAPE: { heartbeat: { CONTRACT: true } } },
+					heartbeatServiceContracts,
+					heartbeatServiceMiddlewares,
+					"public",
+					"http://localhost",
+				),
+			}),
+		).toThrow("cannot be empty");
+
+		expect(() =>
+			createGatewayServices({
+				invalid: createGatewayService(
+					{ SHAPE: { heartbeat: { CONTRACT: true } } },
+					heartbeatServiceContracts,
+					heartbeatServiceMiddlewares,
+					"public",
+					"http://localhost",
+				),
+				"bad/key": createGatewayService(
+					{ SHAPE: { heartbeat: { CONTRACT: true } } },
+					heartbeatServiceContracts,
+					heartbeatServiceMiddlewares,
+					"public",
+					"http://localhost",
+				),
+			}),
+		).toThrow("cannot contain '/'");
+
+		expect(() =>
+			createGatewayServices({
+				$bad: createGatewayService(
+					{ SHAPE: { heartbeat: { CONTRACT: true } } },
+					heartbeatServiceContracts,
+					heartbeatServiceMiddlewares,
+					"public",
+					"http://localhost",
+				),
+			}),
+		).toThrow("cannot start with '$'");
 	});
 
 	test("does not register masked-out nested routes", async () => {
@@ -286,8 +427,12 @@ describe("gateway runtime", () => {
 		initGateway(gatewayApp, services);
 		const gatewayUrl = startServer(gatewayApp);
 
-		const usersResponse = await fetch(`${gatewayUrl}/users`);
-		const maskedResponse = await fetch(`${gatewayUrl}/users/user-1`);
+		const usersResponse = await fetch(
+			getGatewayServiceUrl(gatewayUrl, "usersService", "/users"),
+		);
+		const maskedResponse = await fetch(
+			getGatewayServiceUrl(gatewayUrl, "usersService", "/users/user-1"),
+		);
 		const parsedUsers = await parseSerializedResponse(usersResponse);
 
 		expect(usersResponse.status).toBe(200);
@@ -390,7 +535,9 @@ describe("gateway runtime", () => {
 			createContext: () => ({ requestId: "ctx-1" }),
 		});
 
-		const response = await fetch(`${startServer(gatewayApp)}/users`);
+		const response = await fetch(
+			getGatewayServiceUrl(startServer(gatewayApp), "usersService", "/users"),
+		);
 		const parsed = await parseSerializedResponse(response);
 
 		expect(response.status).toBe(200);
@@ -466,8 +613,12 @@ describe("gateway runtime", () => {
 		});
 
 		const gatewayUrl = startServer(gatewayApp);
-		const usersResponse = await fetch(`${gatewayUrl}/users`);
-		const plainResponse = await fetch(`${gatewayUrl}/plain`);
+		const usersResponse = await fetch(
+			getGatewayServiceUrl(gatewayUrl, "usersService", "/users"),
+		);
+		const plainResponse = await fetch(
+			getGatewayServiceUrl(gatewayUrl, "usersService", "/plain"),
+		);
 		const usersParsed = await parseSerializedResponse(usersResponse);
 		const plainParsed = await parseSerializedResponse(plainResponse);
 
@@ -476,7 +627,7 @@ describe("gateway runtime", () => {
 		expect(usersParsed.data).toEqual({ users: ["u1"] });
 		expect(plainParsed.data).toEqual({ ok: true });
 		expect(upstreamHitCount).toBe(2);
-		expect(seenPaths).toEqual(["/users", "/plain"]);
+		expect(seenPaths).toEqual(["/usersService/users", "/usersService/plain"]);
 	});
 
 	test("gateway root middleware short-circuits before upstream proxy", async () => {
@@ -567,7 +718,9 @@ describe("gateway runtime", () => {
 			createContext: () => ({ requestId: "ctx-3" }),
 		});
 
-		const response = await fetch(`${startServer(gatewayApp)}/users`);
+		const response = await fetch(
+			getGatewayServiceUrl(startServer(gatewayApp), "usersService", "/users"),
+		);
 		const parsed = await parseSerializedResponse(response);
 
 		expect(response.status).toBe(401);
@@ -626,7 +779,9 @@ describe("gateway runtime", () => {
 			middlewares: boundGatewayMiddlewares,
 		});
 
-		const response = await fetch(`${startServer(gatewayApp)}/users`);
+		const response = await fetch(
+			getGatewayServiceUrl(startServer(gatewayApp), "usersService", "/users"),
+		);
 
 		expect(response.status).toBe(401);
 		expect(response.headers.get("x-raw")).toBe("1");
@@ -712,7 +867,9 @@ describe("gateway runtime", () => {
 			middlewares: boundGatewayMiddlewares,
 		});
 
-		const response = await fetch(`${startServer(gatewayApp)}/users`);
+		const response = await fetch(
+			getGatewayServiceUrl(startServer(gatewayApp), "usersService", "/users"),
+		);
 		const parsed = await parseSerializedResponse(response);
 
 		expect(response.status).toBe(403);
@@ -766,10 +923,10 @@ describe("gateway error handling", () => {
 		};
 
 		const publicParsed = await parseSerializedResponse(
-			await fetch(`${createGateway("public")}/users`),
+			await fetch(getGatewayServiceUrl(createGateway("public"), "usersService", "/users")),
 		);
 		const privateParsed = await parseSerializedResponse(
-			await fetch(`${createGateway("private")}/users`),
+			await fetch(getGatewayServiceUrl(createGateway("private"), "usersService", "/users")),
 		);
 
 		expect(publicParsed.data).toEqual({ message: "explode-public" });
@@ -1040,11 +1197,63 @@ describe("gateway error handling", () => {
 		const rawResponse = await fetch(url, init);
 		const parsed = await gatewayClient.upstream.parseResponse("/users", "get", rawResponse);
 
-		expect(url).toContain("/users");
+		expect(url).toContain("/upstream/users");
 		expect(init.method).toBe("GET");
 		expect(parsed.status).toBe(429);
 		expect(parsed.data).toEqual({ retryAfter: 1 });
 		expect(await parsed.response.json()).toEqual({ retryAfter: 1 });
+	});
+
+	test("gateway client keeps unprefixed call paths while targeting service namespaces", async () => {
+		const service1App = new Hono();
+		service1App.get("/heartbeat", () => {
+			return createSerializedResponse({
+				status: 200,
+				type: "JSON",
+				source: "contract",
+				data: { service: "service1" },
+			});
+		});
+
+		const service2App = new Hono();
+		service2App.get("/heartbeat", () => {
+			return createSerializedResponse({
+				status: 200,
+				type: "JSON",
+				source: "contract",
+				data: { service: "service2" },
+			});
+		});
+
+		const services = createGatewayServices({
+			service1: createGatewayService(
+				{ SHAPE: { heartbeat: { CONTRACT: true } } },
+				heartbeatServiceContracts,
+				heartbeatServiceMiddlewares,
+				"public",
+				startServer(service1App),
+			),
+			service2: createGatewayService(
+				{ SHAPE: { heartbeat: { CONTRACT: true } } },
+				heartbeatServiceContracts,
+				heartbeatServiceMiddlewares,
+				"public",
+				startServer(service2App),
+			),
+		});
+
+		const gatewayApp = new Hono();
+		initGateway(gatewayApp, services);
+		const gatewayClient = createGatewayClient<typeof services>(startServer(gatewayApp));
+
+		const service1Response = await gatewayClient.service1.fetch("/heartbeat", "get");
+		const service2Response = await gatewayClient.service2.fetch("/heartbeat", "get");
+		const [service1Url, service1Init] = gatewayClient.service1.fetchConfig("/heartbeat", "get");
+
+		expect(service1Response.data).toEqual({ service: "service1" });
+		expect(service2Response.data).toEqual({ service: "service2" });
+		expect(service1Url).toContain("/service1/heartbeat");
+		expect(service1Init.method).toBe("GET");
 	});
 });
 
@@ -1072,9 +1281,12 @@ describe("gateway proxy edge cases", () => {
 
 		const gatewayApp = new Hono();
 		initGateway(gatewayApp, services);
-		const response = await fetch(`${startServer(gatewayApp)}/headOnly`, {
-			method: "HEAD",
-		});
+		const response = await fetch(
+			getGatewayServiceUrl(startServer(gatewayApp), "headService", "/headOnly"),
+			{
+				method: "HEAD",
+			},
+		);
 
 		expect(response.status).toBe(204);
 		expect(response.headers.get("x-head")).toBe("1");
