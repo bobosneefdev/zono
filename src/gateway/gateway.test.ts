@@ -1193,7 +1193,7 @@ describe("gateway error handling", () => {
 		initGateway(gatewayApp, services);
 		const gatewayClient = createGatewayClient<typeof services>(startServer(gatewayApp));
 
-		const [url, init] = gatewayClient.upstream.fetchConfig("/users", "get");
+		const [url, init] = await gatewayClient.upstream.fetchConfig("/users", "get");
 		const rawResponse = await fetch(url, init);
 		const parsed = await gatewayClient.upstream.parseResponse("/users", "get", rawResponse);
 
@@ -1248,12 +1248,76 @@ describe("gateway error handling", () => {
 
 		const service1Response = await gatewayClient.service1.fetch("/heartbeat", "get");
 		const service2Response = await gatewayClient.service2.fetch("/heartbeat", "get");
-		const [service1Url, service1Init] = gatewayClient.service1.fetchConfig("/heartbeat", "get");
+		const [service1Url, service1Init] = await gatewayClient.service1.fetchConfig(
+			"/heartbeat",
+			"get",
+		);
 
 		expect(service1Response.data).toEqual({ service: "service1" });
 		expect(service2Response.data).toEqual({ service: "service2" });
 		expect(service1Url).toContain("/service1/heartbeat");
 		expect(service1Init.method).toBe("GET");
+	});
+
+	test("gateway client hooks run after service path namespacing", async () => {
+		const upstreamApp = new Hono();
+		upstreamApp.get("/echo", (ctx) => {
+			return createSerializedResponse({
+				status: 200,
+				type: "JSON",
+				source: "contract",
+				data: {
+					query: ctx.req.query("hooked") ?? "",
+					header: ctx.req.header("x-hooked") ?? "",
+				},
+			});
+		});
+
+		const service = createGatewayService(
+			{ SHAPE: { echo: { CONTRACT: true } } },
+			serviceContracts,
+			serviceMiddlewares,
+			"public",
+			startServer(upstreamApp),
+		);
+		const services = createGatewayServices({ service });
+		const gatewayApp = new Hono();
+		initGateway(gatewayApp, services);
+		const seenPaths: Array<string> = [];
+		const gatewayClient = createGatewayClient<typeof services>(startServer(gatewayApp), {
+			preRequest: (url, init) => {
+				const nextUrl = new URL(url);
+				seenPaths.push(nextUrl.pathname);
+				nextUrl.searchParams.set("hooked", "1");
+				const headers = new Headers(init.headers);
+				headers.set("x-hooked", "1");
+				return [nextUrl.toString(), { ...init, headers }];
+			},
+			postRequest: async (response) => {
+				const parsed = (await parseSerializedResponse(response.clone())) as {
+					data: { query: string; header: string };
+				};
+				return createSerializedResponse({
+					status: 200,
+					type: "JSON",
+					source: "contract",
+					data: { ...parsed.data, post: "1" },
+				});
+			},
+		});
+
+		const [url, init] = await gatewayClient.service.fetchConfig("/echo", "get");
+		const response = await gatewayClient.service.fetch("/echo", "get");
+
+		expect(seenPaths).toEqual(["/service/echo", "/service/echo"]);
+		expect(url).toContain("/service/echo");
+		expect(new URL(url).searchParams.get("hooked")).toBe("1");
+		expect(new Request(url, init).headers.get("x-hooked")).toBe("1");
+		expect(response.data as { query: string; header: string; post: string }).toEqual({
+			query: "1",
+			header: "1",
+			post: "1",
+		});
 	});
 });
 

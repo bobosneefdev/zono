@@ -387,7 +387,7 @@ describe("createClient runtime", () => {
 			"http://localhost:3000/base/",
 		);
 
-		const [standardUrl, standardInit] = client.fetchConfig("/standard", "get", {
+		const [standardUrl, standardInit] = await client.fetchConfig("/standard", "get", {
 			query: { type: "Standard", data: { foo: "bar", count: "2" } },
 			headers: { type: "Standard", data: { "x-trace": "trace-1", "x-meta": '{"ok":true}' } },
 		});
@@ -400,7 +400,7 @@ describe("createClient runtime", () => {
 		expect(standardRequest.headers.get(ZONO_HEADER_DATA_HEADER)).toBeNull();
 
 		const createdAt = new Date("2024-02-02T00:00:00.000Z");
-		const [structuredUrl, structuredInit] = client.fetchConfig("/structured", "post", {
+		const [structuredUrl, structuredInit] = await client.fetchConfig("/structured", "post", {
 			query: { type: "SuperJSON", data: { createdAt } },
 			headers: { type: "SuperJSON", data: { createdAt } },
 			body: { type: "SuperJSON", data: { createdAt } },
@@ -422,6 +422,105 @@ describe("createClient runtime", () => {
 		expect(structuredHeaderData).toEqual({ createdAt });
 		expect(structuredQueryData).toEqual({ createdAt });
 		expect(structuredBodyData).toEqual({ createdAt });
+	});
+
+	test("runs preRequest for fetch and fetchConfig", async () => {
+		const app = new Hono();
+		app.get("/standard", (ctx) => {
+			return createSerializedResponse({
+				status: 200,
+				type: "JSON",
+				source: "contract",
+				data: {
+					foo: ctx.req.query("foo") ?? "",
+					count: ctx.req.query("count") ?? "",
+					trace: ctx.req.header("x-trace") ?? "",
+					meta: ctx.req.header("x-meta") ?? "",
+					hookedQuery: ctx.req.query("hooked") ?? "",
+					hookedHeader: ctx.req.header("x-hooked") ?? "",
+				},
+			});
+		});
+
+		const client = createClient<typeof shape, typeof contracts, typeof middlewares, "public">(
+			startServer(app),
+			{
+				preRequest: (url, init) => {
+					const nextUrl = new URL(url);
+					nextUrl.searchParams.set("hooked", "1");
+					const headers = new Headers(init.headers);
+					headers.set("x-hooked", "1");
+					return [nextUrl.toString(), { ...init, headers }];
+				},
+			},
+		);
+
+		const [url, init] = await client.fetchConfig("/standard", "get", {
+			query: { type: "Standard", data: { foo: "bar", count: "2" } },
+			headers: { type: "Standard", data: { "x-trace": "trace-1", "x-meta": "meta-1" } },
+		});
+		const response = await client.fetch("/standard", "get", {
+			query: { type: "Standard", data: { foo: "bar", count: "2" } },
+			headers: { type: "Standard", data: { "x-trace": "trace-1", "x-meta": "meta-1" } },
+		});
+
+		expect(new URL(url).searchParams.get("hooked")).toBe("1");
+		expect(new Request(url, init).headers.get("x-hooked")).toBe("1");
+		expect(
+			response.data as {
+				foo: string;
+				count: string;
+				trace: string;
+				meta: string;
+				hookedQuery: string;
+				hookedHeader: string;
+			},
+		).toEqual({
+			foo: "bar",
+			count: "2",
+			trace: "trace-1",
+			meta: "meta-1",
+			hookedQuery: "1",
+			hookedHeader: "1",
+		});
+	});
+
+	test("supports async preRequest and postRequest hooks", async () => {
+		const app = new Hono();
+		app.get("/events", () => {
+			return createSerializedResponse({
+				status: 503,
+				type: "JSON",
+				source: "error",
+				data: { message: "original" },
+			});
+		});
+
+		const client = createClient<typeof shape, typeof contracts, typeof middlewares, "public">(
+			startServer(app),
+			{
+				preRequest: async (url, init) => {
+					const nextUrl = new URL(url);
+					nextUrl.searchParams.set("async", "1");
+					return [nextUrl.toString(), init];
+				},
+				postRequest: async () => {
+					return createSerializedResponse({
+						status: 200,
+						type: "SuperJSON",
+						source: "contract",
+						data: { createdAt: new Date("2024-02-02T00:00:00.000Z") },
+					});
+				},
+			},
+		);
+
+		const [url] = await client.fetchConfig("/events", "get");
+		const response = await client.fetch("/events", "get");
+
+		expect(new URL(url).searchParams.get("async")).toBe("1");
+		expect(response.status).toBe(200);
+		expect(response.data).toEqual({ createdAt: new Date("2024-02-02T00:00:00.000Z") });
 	});
 
 	test("supports Text, Blob, URLSearchParams, and FormData request bodies", async () => {
@@ -588,7 +687,7 @@ describe("createClient runtime", () => {
 			startServer(app),
 		);
 
-		const [url, init] = client.fetchConfig("/events", "get");
+		const [url, init] = await client.fetchConfig("/events", "get");
 		const rawResponse = await fetch(url, init);
 		const parsedResponse = await client.parseResponse("/events", "get", rawResponse);
 
@@ -825,6 +924,19 @@ const typedClient = createClient<typeof shape, typeof contracts, typeof middlewa
 const naTypedClient = createClient<typeof shape, typeof contracts, typeof middlewares, "N/A">(
 	"http://localhost",
 );
+const hookedTypedClient = createClient<
+	typeof shape,
+	typeof contracts,
+	typeof middlewares,
+	"public"
+>("http://localhost", {
+	preRequest: (url, init) => {
+		const hookUrl: string = url;
+		void hookUrl;
+		return [url, init];
+	},
+	postRequest: async (response) => response,
+});
 
 const runTypeOnly = (_cb: () => void): void => {};
 
@@ -834,6 +946,21 @@ runTypeOnly(() => {
 		query: { type: "JSON", data: { active: true } },
 		headers: { type: "JSON", data: { source: "dev" } },
 		body: { type: "JSON", data: { name: "alice" } },
+	});
+
+	const hookedFetchConfigPromise = hookedTypedClient.fetchConfig("/events", "get");
+	type HookedFetchConfig = Awaited<typeof hookedFetchConfigPromise>;
+	const hookedFetchConfig: HookedFetchConfig = ["http://localhost/events", {}];
+	void hookedFetchConfig;
+
+	createClient<typeof shape, typeof contracts, typeof middlewares, "public">("http://localhost", {
+		// @ts-expect-error preRequest receives a string URL
+		preRequest: (url: URL, init) => [url.toString(), init],
+	});
+
+	createClient<typeof shape, typeof contracts, typeof middlewares, "public">("http://localhost", {
+		// @ts-expect-error preRequest must return a string URL tuple
+		preRequest: (url, init) => [new URL(url), init],
 	});
 
 	void typedClient.fetchConfig("/users/$userId", "post", {

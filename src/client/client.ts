@@ -13,12 +13,19 @@ import type { ClientErrorMode, ErrorResponse, ServerErrorMode } from "../server/
 import {
 	type ApiShape,
 	createFetchConfig,
+	type FetchConfig,
 	type MapFetchRouteResponse,
+	type MaybePromise,
 	parseFetchResponse,
 	type TypedFetch,
 	type TypedFetchConfig,
 	type TypedParseResponse,
 } from "../shared/shared.js";
+
+export type ClientOptions = {
+	preRequest?: (url: string, init: RequestInit) => MaybePromise<FetchConfig>;
+	postRequest?: (response: Response) => MaybePromise<Response>;
+};
 
 type ClientInferredErrorResponse<TErrorMode extends ClientErrorMode> =
 	TErrorMode extends ServerErrorMode ? ErrorResponse<TErrorMode> : never;
@@ -77,13 +84,15 @@ export const createClient = <
 	TErrorMode extends ClientErrorMode,
 >(
 	baseUrl: string,
+	options?: ClientOptions,
 ): Client<TContracts, TMiddlewares, TErrorMode> => {
 	const fetchConfigMethod: ClientFetchConfigMethod<TContracts, TMiddlewares, TErrorMode> = (
 		path,
 		method,
 		data,
 	) => {
-		return createFetchConfig(baseUrl, path, method, data);
+		const [url, init] = createFetchConfig(baseUrl, path, method, data);
+		return options?.preRequest ? options.preRequest(url, init) : [url, init];
 	};
 
 	const parseResponseMethod: ClientParseResponseMethod<
@@ -99,8 +108,11 @@ export const createClient = <
 		method,
 		data,
 	) => {
-		const [url, init] = fetchConfigMethod(path, method, data);
-		const response = await fetch(url, init);
+		const [url, init] = await fetchConfigMethod(path, method, data);
+		const rawResponse = await fetch(url, init);
+		const response = options?.postRequest
+			? await options.postRequest(rawResponse)
+			: rawResponse;
 		return parseResponseMethod(path, method, response) as Awaited<
 			ReturnType<typeof fetchMethod>
 		>;

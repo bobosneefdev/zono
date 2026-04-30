@@ -1,5 +1,5 @@
 import type { Context, Hono } from "hono";
-import { createClient } from "../client/client.js";
+import { type ClientOptions, createClient } from "../client/client.js";
 import type {
 	ContractCallRoutes,
 	ContractMethods,
@@ -553,6 +553,7 @@ export const createGatewayClient = <
 	TGatewayMiddlewares extends GatewayMiddlewares<TServices> | undefined = undefined,
 >(
 	gatewayBaseUrl: string,
+	options?: ClientOptions,
 ): GatewayClient<TServices, TGatewayMiddlewares> => {
 	type ServiceMap = GatewayClient<TServices, TGatewayMiddlewares>;
 	const target: Partial<ServiceMap> = {};
@@ -566,7 +567,7 @@ export const createGatewayClient = <
 			if (existing) {
 				return existing;
 			}
-			const client = createClient(gatewayBaseUrl) as {
+			const client = createClient(gatewayBaseUrl, options) as {
 				fetch: ServiceMap[keyof ServiceMap]["fetch"];
 				fetchConfig: ServiceMap[keyof ServiceMap]["fetchConfig"];
 				parseResponse: ServiceMap[keyof ServiceMap]["parseResponse"];

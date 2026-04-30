@@ -75,6 +75,9 @@ export type FetchRoute = {
 	response: unknown;
 };
 
+export type MaybePromise<T> = T | Promise<T>;
+export type FetchConfig = [string, RequestInit];
+
 type FetchRouteAtPath<TRoute extends FetchRoute, TPath extends TRoute["path"]> = Extract<
 	TRoute,
 	{ path: TPath }
@@ -102,7 +105,7 @@ export type TypedFetchConfig<TRoute extends FetchRoute> = <
 	path: TPath,
 	method: TMethod,
 	data?: FetchRouteAtPathAndMethod<TRoute, TPath, TMethod>["request"],
-) => [string, RequestInit];
+) => MaybePromise<FetchConfig>;
 
 export type TypedParseResponse<TRoute extends FetchRoute> = <
 	TPath extends TRoute["path"],

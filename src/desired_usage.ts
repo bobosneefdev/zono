@@ -188,7 +188,19 @@ const usersServiceClient = createClient<
 	UsersServiceContracts,
 	UsersServiceMiddlewares,
 	"public"
->("http://localhost:3000");
+>("http://localhost:3000", {
+	preRequest: (
+		url: string,
+		init: RequestInit,
+	): [string, RequestInit] | Promise<[string, RequestInit]> => {
+		// do some magic idk
+		return [url, init];
+	},
+	postRequest: (response: Response): Response | Promise<Response> => {
+		// do some magic idk
+		return response;
+	},
+});
 
 (async () => {
 	const users = await usersServiceClient.fetch("/users/$userId", "get", {
