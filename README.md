@@ -264,6 +264,7 @@ import {
 } from "@bobosneefdev/zono/gateway";
 
 // The mask picks which contract routes the gateway exposes.
+// Use SHAPE: true at any node to include all descendants recursively.
 const searchService = createGatewayService({
     api,
     mask: {

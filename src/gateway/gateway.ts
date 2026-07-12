@@ -46,9 +46,11 @@ export type GatewayServiceMask<TContracts extends ContractTree> = {} & (TContrac
 	: EmptyObject) &
 	(TContracts extends { SHAPE: infer TShape extends Record<string, ContractTree> }
 		? {
-				SHAPE?: {
-					[TKey in keyof TShape]?: GatewayServiceMask<TShape[TKey]>;
-				};
+				SHAPE?:
+					| true
+					| {
+							[TKey in keyof TShape]?: GatewayServiceMask<TShape[TKey]>;
+					  };
 			}
 		: EmptyObject);
 
@@ -60,19 +62,25 @@ type ApplyGatewayServiceMaskToContractTree<
 		? { CONTRACT: TContract }
 		: EmptyObject
 	: EmptyObject) &
-	(TMask extends { SHAPE: infer TMaskShape extends Record<string, unknown> }
+	(TMask extends { SHAPE: true }
 		? TContracts extends { SHAPE: infer TContractShape extends Record<string, ContractTree> }
-			? {
-					SHAPE: {
-						[TKey in keyof TMaskShape &
-							keyof TContractShape]: ApplyGatewayServiceMaskToContractTree<
-							TContractShape[TKey],
-							TMaskShape[TKey]
-						>;
-					};
-				}
+			? { SHAPE: TContractShape }
 			: EmptyObject
-		: EmptyObject);
+		: TMask extends { SHAPE: infer TMaskShape extends Record<string, unknown> }
+			? TContracts extends {
+					SHAPE: infer TContractShape extends Record<string, ContractTree>;
+				}
+				? {
+						SHAPE: {
+							[TKey in keyof TMaskShape &
+								keyof TContractShape]: ApplyGatewayServiceMaskToContractTree<
+								TContractShape[TKey],
+								TMaskShape[TKey]
+							>;
+						};
+					}
+				: EmptyObject
+			: EmptyObject);
 
 export type GatewayService<
 	TApi extends AnyApiDefinition,
@@ -258,6 +266,19 @@ const applyGatewayServiceMask = (mask: unknown, contracts: unknown): ContractTre
 
 	if (mask.CONTRACT === true && isRecordObject(contracts.CONTRACT)) {
 		maskedContracts.CONTRACT = contracts.CONTRACT;
+	}
+	if (mask.SHAPE === true && isRecordObject(contracts.SHAPE)) {
+		const maskedShape: Record<string, ContractTree> = {};
+		for (const [segment, childContracts] of Object.entries(contracts.SHAPE)) {
+			if (isRecordObject(childContracts)) {
+				maskedShape[segment] = applyGatewayServiceMask(
+					{ CONTRACT: true, SHAPE: true },
+					childContracts,
+				);
+			}
+		}
+		maskedContracts.SHAPE = maskedShape;
+		return maskedContracts;
 	}
 
 	if (!isRecordObject(mask.SHAPE) || !isRecordObject(contracts.SHAPE)) {

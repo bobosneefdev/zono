@@ -417,6 +417,34 @@ describe("gateway runtime", () => {
 		expect(userHitCount).toBe(0);
 	});
 
+	test("registers all nested routes when SHAPE is true", async () => {
+		const upstreamApp = new Hono();
+		upstreamApp.get("/users/:userId", (ctx) => {
+			return createSerializedResponse({
+				status: 200,
+				type: "JSON",
+				source: "contract",
+				data: { id: ctx.req.param("userId") },
+			});
+		});
+
+		const services = createGatewayServices({
+			usersService: createGatewayService({
+				api: nestedUsersServiceApi,
+				mask: { SHAPE: { users: { SHAPE: true } } },
+				baseUrl: startServer(upstreamApp),
+			}),
+		});
+		const gatewayApp = new Hono();
+		initGateway(gatewayApp, services);
+		const response = await fetch(
+			getGatewayServiceUrl(startServer(gatewayApp), "usersService", "/users/user-1"),
+		);
+
+		expect(response.status).toBe(200);
+		expect((await parseSerializedResponse(response)).data).toEqual({ id: "user-1" });
+	});
+
 	test("runs layered gateway middlewares in path order and passes gateway context", async () => {
 		const upstreamApp = new Hono();
 		upstreamApp.get("/users", () => {
@@ -1630,6 +1658,17 @@ typeOnly(() => {
 	const maskedClient = createGatewayClient<typeof maskedNestedServices>("http://localhost");
 	void maskedClient.usersService.fetch("/users", "get");
 	void maskedClient.usersService.fetchConfig("/users", "get");
+
+	const recursiveService = createGatewayService({
+		api: nestedUsersServiceApi,
+		mask: { SHAPE: { users: { SHAPE: true } } },
+		baseUrl: "http://localhost",
+	});
+	const recursiveServices = createGatewayServices({ usersService: recursiveService });
+	const recursiveClient = createGatewayClient<typeof recursiveServices>("http://localhost");
+	void recursiveClient.usersService.fetch("/users/$userId", "get", {
+		pathParams: { userId: "user-1" },
+	});
 
 	// @ts-expect-error masked-out nested route should not be exposed on the gateway client
 	void maskedClient.usersService.fetch("/users/$userId", "get", {
