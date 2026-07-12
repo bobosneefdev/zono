@@ -1,30 +1,53 @@
 import { describe, expect, test } from "bun:test";
 import z from "zod";
+import type { ContractTree } from "../contract/contract.js";
 import type { MiddlewareHandler } from "../server/server.js";
-import type { ApiShape } from "../shared/shared.js";
-import type { MiddlewareTreeFor } from "./middleware.js";
-import { collectMiddlewareLayers, createHonoMiddlewareHandlers } from "./middleware.js";
+import type { MiddlewareTreeForContracts } from "./middleware.js";
+import { collectMiddlewareLayers } from "./middleware.js";
 
-const shape = {
+const contracts = {
 	SHAPE: {
-		users: { CONTRACT: true },
-	},
-} as const satisfies ApiShape;
-
-const nestedShape = {
-	SHAPE: {
-		api: {
-			SHAPE: {
-				users: {
-					CONTRACT: true,
-					SHAPE: {
-						$userId: { CONTRACT: true },
+		users: {
+			CONTRACT: {
+				get: {
+					responses: {
+						200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
 					},
 				},
 			},
 		},
 	},
-} as const satisfies ApiShape;
+} as const satisfies ContractTree;
+
+const nestedContracts = {
+	SHAPE: {
+		api: {
+			SHAPE: {
+				users: {
+					CONTRACT: {
+						get: {
+							responses: {
+								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+							},
+						},
+					},
+					SHAPE: {
+						$userId: {
+							CONTRACT: {
+								get: {
+									pathParams: z.object({ userId: z.string() }),
+									responses: {
+										200: { type: "JSON", schema: z.object({ id: z.string() }) },
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	},
+} as const satisfies ContractTree;
 
 describe("middleware layer collection", () => {
 	test("collects middleware layers in traversal order", () => {
@@ -127,7 +150,7 @@ const middlewaresType = {
 			429: { type: "JSON", schema: z.object({ retryAfter: z.number() }) },
 		},
 	},
-} as const satisfies MiddlewareTreeFor<typeof shape>;
+} as const satisfies MiddlewareTreeForContracts<typeof contracts>;
 
 const middlewaresWithHeadersType = {
 	MIDDLEWARE: {
@@ -142,21 +165,7 @@ const middlewaresWithHeadersType = {
 			},
 		},
 	},
-} as const satisfies MiddlewareTreeFor<typeof shape>;
-
-const typedMiddlewares = createHonoMiddlewareHandlers<
-	typeof middlewaresType,
-	{ requestId: string }
->(middlewaresType, {
-	MIDDLEWARE: {
-		rateLimit: (_ctx, _next, ourContext) => {
-			const requestId: string = ourContext.requestId;
-			void requestId;
-			return { status: 429, type: "JSON", data: { retryAfter: 1 } };
-		},
-	},
-});
-void typedMiddlewares;
+} as const satisfies MiddlewareTreeForContracts<typeof contracts>;
 
 const typeOnly = (_cb: () => void): void => {};
 
@@ -187,7 +196,7 @@ typeOnly(() => {
 				},
 			},
 		},
-	} as const satisfies MiddlewareTreeFor<typeof nestedShape>;
+	} as const satisfies MiddlewareTreeForContracts<typeof nestedContracts>;
 	void rootlessMiddlewares;
 
 	const intermediateMiddlewares = {
@@ -200,7 +209,7 @@ typeOnly(() => {
 				},
 			},
 		},
-	} as const satisfies MiddlewareTreeFor<typeof nestedShape>;
+	} as const satisfies MiddlewareTreeForContracts<typeof nestedContracts>;
 	void intermediateMiddlewares;
 
 	const invalidShapeMiddlewares = {
@@ -218,14 +227,14 @@ typeOnly(() => {
 				},
 			},
 		},
-	} as const satisfies MiddlewareTreeFor<typeof nestedShape>;
+	} as const satisfies MiddlewareTreeForContracts<typeof nestedContracts>;
 	void invalidShapeMiddlewares;
 
 	const validHandler: MiddlewareHandler<
 		typeof middlewaresType.MIDDLEWARE.rateLimit,
 		{ requestId: string }
-	> = (_ctx, _next, ourContext) => {
-		const requestId: string = ourContext.requestId;
+	> = (_ctx, _next, appContext) => {
+		const requestId: string = appContext.requestId;
 		void requestId;
 		return { status: 429, type: "JSON", data: { retryAfter: 1 } };
 	};
@@ -244,19 +253,16 @@ typeOnly(() => {
 	};
 	void validHandlerWithHeaders;
 
-	void createHonoMiddlewareHandlers<typeof middlewaresType, { requestId: string }>(
-		middlewaresType,
-		{
-			MIDDLEWARE: {
-				rateLimit: (_ctx, _next, ourContext) => {
-					// @ts-expect-error requestId is string, not number
-					const invalid: number = ourContext.requestId;
-					void invalid;
-					return { status: 429, type: "JSON", data: { retryAfter: 1 } };
-				},
-			},
-		},
-	);
+	const invalidContextUsage: MiddlewareHandler<
+		typeof middlewaresType.MIDDLEWARE.rateLimit,
+		{ requestId: string }
+	> = (_ctx, _next, appContext) => {
+		// @ts-expect-error requestId is string, not number
+		const invalid: number = appContext.requestId;
+		void invalid;
+		return { status: 429, type: "JSON", data: { retryAfter: 1 } };
+	};
+	void invalidContextUsage;
 
 	// @ts-expect-error 418 is not declared by the middleware spec
 	const invalidStatus: MiddlewareHandler<

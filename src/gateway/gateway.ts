@@ -1,10 +1,10 @@
 import type { Context, Hono } from "hono";
 import { type ClientOptions, createClient } from "../client/client.js";
 import type {
+	AnyApiDefinition,
 	ContractCallRoutes,
 	ContractMethods,
 	ContractTree,
-	HTTPMethod,
 } from "../contract/contract.js";
 import { compileContractRoutes } from "../contract/contract.js";
 import type {
@@ -14,37 +14,40 @@ import type {
 	MiddlewareMapAtNode,
 	MiddlewareSpec,
 	MiddlewareTree,
-	MiddlewareTreeFor,
 } from "../middleware/middleware.js";
 import { collectMiddlewareLayers } from "../middleware/middleware.js";
+import type { ContextFactory, MiddlewareHandlerTree, OnError } from "../server/server.js";
+import { invokeOnError } from "../server/server.js";
 import type {
-	ContextFactory,
+	EmptyObject,
+	ErrorMode,
 	ErrorResponse,
-	MiddlewareBindings,
-	ServerErrorMode,
-} from "../server/server.js";
+	HTTPMethod,
+	MapFetchRouteResponse,
+	TypedFetch,
+	TypedFetchConfig,
+	TypedParseResponse,
+} from "../shared/shared.js";
 import {
-	type ApiShape,
 	collectShapePathNodes,
-	type EmptyObject,
 	isRecordObject,
-	type MapFetchRouteResponse,
+	METHODS_WITHOUT_FETCH_BODY,
+	makeErrorRuntimeResponse,
 	registerHonoRoute,
-	type TypedFetch,
-	type TypedFetchConfig,
-	type TypedParseResponse,
 	toHonoPath,
 	toSerializedRuntimeResponse,
 	validateAndSerializeResponse,
 } from "../shared/shared.js";
 
-export type GatewayServiceMask<TShape extends ApiShape> = {} & (TShape extends { CONTRACT: true }
+export type GatewayServiceMask<TContracts extends ContractTree> = {} & (TContracts extends {
+	CONTRACT: ContractMethods;
+}
 	? { CONTRACT?: true }
 	: EmptyObject) &
-	(TShape extends { SHAPE: infer TChildShape extends Record<string, ApiShape> }
+	(TContracts extends { SHAPE: infer TShape extends Record<string, ContractTree> }
 		? {
 				SHAPE?: {
-					[TKey in keyof TChildShape]?: GatewayServiceMask<TChildShape[TKey]>;
+					[TKey in keyof TShape]?: GatewayServiceMask<TShape[TKey]>;
 				};
 			}
 		: EmptyObject);
@@ -71,44 +74,23 @@ type ApplyGatewayServiceMaskToContractTree<
 			: EmptyObject
 		: EmptyObject);
 
-type ApiShapeFromContractTree<TContracts extends ContractTree> = {} & (TContracts extends {
-	CONTRACT: infer TContract;
-}
-	? TContract extends ContractMethods
-		? { CONTRACT: true }
-		: EmptyObject
-	: EmptyObject) &
-	(TContracts extends { SHAPE: infer TShape extends Record<string, ContractTree> }
-		? {
-				SHAPE: {
-					[TKey in keyof TShape]: ApiShapeFromContractTree<TShape[TKey]>;
-				};
-			}
-		: EmptyObject);
-
 export type GatewayService<
-	TContracts extends ContractTree,
-	TMask extends GatewayServiceMask<ApiShapeFromContractTree<TContracts>>,
-	TMiddlewares extends MiddlewareTreeFor<ApiShapeFromContractTree<TContracts>>,
-	TErrorMode extends ServerErrorMode,
+	TApi extends AnyApiDefinition,
+	TMask extends GatewayServiceMask<TApi["contracts"]>,
 > = {
+	api: TApi;
 	mask: TMask;
-	contracts: TContracts;
-	middlewares: TMiddlewares;
-	errorMode: TErrorMode;
 	baseUrl: string;
 };
 
 type AnyGatewayService = {
-	mask: GatewayServiceMask<ApiShape>;
-	contracts: ContractTree;
-	middlewares: MiddlewareTree;
-	errorMode: ServerErrorMode;
+	api: AnyApiDefinition;
+	mask: unknown;
 	baseUrl: string;
 };
 
 type MaskedGatewayServiceContracts<TService extends AnyGatewayService> =
-	ApplyGatewayServiceMaskToContractTree<TService["contracts"], TService["mask"]>;
+	ApplyGatewayServiceMaskToContractTree<TService["api"]["contracts"], TService["mask"]>;
 
 type GatewayMiddlewareTreeFromContracts<TContracts extends ContractTree> = {
 	MIDDLEWARE?: Record<string, MiddlewareSpec>;
@@ -163,9 +145,9 @@ type GatewayClientRoutes<
 		}
 		? MapFetchRouteResponse<
 				TRoute,
-				| InferMiddlewareResponseUnionAtPath<TService["middlewares"], TPath>
+				| InferMiddlewareResponseUnionAtPath<TService["api"]["middlewares"], TPath>
 				| InferGatewayMiddlewareResponseUnionAtPath<TGatewayMiddlewares, TServiceKey, TPath>
-				| ErrorResponse<TService["errorMode"]>
+				| ErrorResponse<TService["api"]["errorMode"]>
 			>
 		: never
 	: never;
@@ -204,33 +186,37 @@ export type GatewayClient<TServices extends GatewayServices, TGatewayMiddlewares
 	};
 };
 
+export type GatewayBinding<TGatewayMiddlewares extends MiddlewareTree, TContext> = {
+	middlewares: TGatewayMiddlewares;
+	createContext: ContextFactory<TContext> | undefined;
+	handlers: MiddlewareHandlerTree<TGatewayMiddlewares, TContext>;
+};
+
 export type GatewayOptions<
 	TServices extends GatewayServices,
-	TGatewayMiddlewares extends GatewayMiddlewares<TServices>,
+	TGatewayMiddlewares extends GatewayMiddlewares<TServices> & MiddlewareTree,
 	TContext,
 > = {
-	middlewares?: MiddlewareBindings<TGatewayMiddlewares, TContext>;
-	createContext?: ContextFactory<TContext>;
+	handlers?: GatewayBinding<TGatewayMiddlewares, TContext>;
+	/**
+	 * Observational hook invoked with the original failure. Its return value
+	 * cannot replace the typed HTTP response.
+	 */
+	onError?: OnError;
 };
 
 export const createGatewayService = <
-	TContracts extends ContractTree,
-	const TMask extends GatewayServiceMask<ApiShapeFromContractTree<TContracts>>,
-	TMiddlewares extends MiddlewareTreeFor<ApiShapeFromContractTree<TContracts>>,
-	TErrorMode extends ServerErrorMode,
->(
-	mask: TMask,
-	contracts: TContracts,
-	middlewares: TMiddlewares,
-	errorMode: TErrorMode,
-	baseUrl: string,
-): GatewayService<TContracts, TMask, TMiddlewares, TErrorMode> => {
+	TApi extends AnyApiDefinition,
+	const TMask extends GatewayServiceMask<TApi["contracts"]>,
+>(config: {
+	api: TApi;
+	mask: TMask;
+	baseUrl: string;
+}): GatewayService<TApi, TMask> => {
 	return {
-		mask,
-		contracts,
-		middlewares,
-		errorMode,
-		baseUrl,
+		api: config.api,
+		mask: config.mask,
+		baseUrl: config.baseUrl,
 	};
 };
 
@@ -241,6 +227,26 @@ export const createGatewayServices = <TServices extends GatewayServices>(
 		assertValidGatewayServiceKey(serviceName);
 	}
 	return services;
+};
+
+/**
+ * Creates the gateway middleware binding. Curried for the same inference
+ * reasons as `createApiHandlers`: the middleware tree must be fixed before the
+ * handlers are contextually typed.
+ */
+export const createGatewayHandlers = <const TGatewayMiddlewares extends MiddlewareTree>(
+	gatewayApi: TGatewayMiddlewares,
+) => {
+	return <TContext = unknown>(handlers: {
+		createContext?: ContextFactory<TContext>;
+		middlewares: MiddlewareHandlerTree<TGatewayMiddlewares, NoInfer<TContext>>;
+	}): GatewayBinding<TGatewayMiddlewares, TContext> => {
+		return {
+			middlewares: gatewayApi,
+			createContext: handlers.createContext,
+			handlers: handlers.middlewares,
+		};
+	};
 };
 
 const applyGatewayServiceMask = (mask: unknown, contracts: unknown): ContractTree => {
@@ -288,7 +294,7 @@ type PreparedGatewayRoute = {
 	serializedMethod: string;
 	shouldSendBody: boolean;
 	baseUrl: string;
-	errorMode: ServerErrorMode;
+	errorMode: ErrorMode;
 	servicePathPrefix: string;
 };
 
@@ -338,33 +344,8 @@ const getGatewayContext = <TContext>(ctx: Context): Awaited<TContext> => {
 	return getContextValue(ctx, ZONO_GATEWAY_CONTEXT_KEY) as Awaited<TContext>;
 };
 
-const getGatewayErrorMode = (ctx: Context): ServerErrorMode => {
-	return (
-		(getContextValue(ctx, ZONO_GATEWAY_ERROR_MODE_KEY) as ServerErrorMode | undefined) ??
-		"public"
-	);
-};
-
-const makeGatewayErrorResponse = (error: unknown, errorMode: ServerErrorMode) => {
-	if (errorMode === "public") {
-		return {
-			status: 500,
-			type: "JSON" as const,
-			data: {
-				message: error instanceof Error ? error.message : "Internal server error",
-			},
-		};
-	}
-
-	return {
-		status: 500,
-		type: "JSON" as const,
-		data: {
-			message: error instanceof Error ? error.message : "Internal server error",
-			issues: error,
-			stack: error instanceof Error ? error.stack : undefined,
-		},
-	};
+const getGatewayErrorMode = (ctx: Context): ErrorMode => {
+	return (getContextValue(ctx, ZONO_GATEWAY_ERROR_MODE_KEY) as ErrorMode | undefined) ?? "opaque";
 };
 
 const getUniquePathTemplates = (routes: Array<{ pathTemplate: string }>): Array<string> => {
@@ -450,14 +431,15 @@ const registerGatewayMiddlewareLayer = <TContext>(
 
 export const initGateway = <
 	TServices extends GatewayServices,
-	TGatewayMiddlewares extends GatewayMiddlewares<TServices> = GatewayMiddlewares<TServices>,
+	TGatewayMiddlewares extends GatewayMiddlewares<TServices> &
+		MiddlewareTree = GatewayMiddlewares<TServices> & MiddlewareTree,
 	TContext = unknown,
 >(
 	app: Hono,
 	services: TServices,
 	options?: GatewayOptions<TServices, TGatewayMiddlewares, TContext>,
 ): void => {
-	const createContext = options?.createContext;
+	const createContext = options?.handlers?.createContext;
 	if (createContext) {
 		app.use("*", async (ctx, next) => {
 			setContextValue(ctx, ZONO_GATEWAY_CONTEXT_KEY, await createContext(ctx));
@@ -465,16 +447,17 @@ export const initGateway = <
 		});
 	}
 
-	app.onError((error, ctx) => {
+	app.onError(async (error, ctx) => {
+		await invokeOnError(options?.onError, error, ctx);
 		return toSerializedRuntimeResponse(
-			makeGatewayErrorResponse(error, getGatewayErrorMode(ctx)),
+			makeErrorRuntimeResponse(error, getGatewayErrorMode(ctx)),
 			"error",
 		);
 	});
 
 	for (const [serviceName, service] of Object.entries(services)) {
 		const servicePathPrefix = getGatewayServicePathPrefix(serviceName);
-		const maskedContracts = applyGatewayServiceMask(service.mask, service.contracts);
+		const maskedContracts = applyGatewayServiceMask(service.mask, service.api.contracts);
 		const preparedRoutes: Array<PreparedGatewayRoute> = compileContractRoutes(
 			maskedContracts,
 		).map((route) => {
@@ -483,25 +466,26 @@ export const initGateway = <
 				gatewayPathTemplate: namespaceGatewayPath(serviceName, route.pathTemplate),
 				method: route.method,
 				serializedMethod: route.method.toUpperCase(),
-				shouldSendBody: route.method !== "get" && route.method !== "head",
+				shouldSendBody: !METHODS_WITHOUT_FETCH_BODY.has(route.method),
 				baseUrl: service.baseUrl,
-				errorMode: service.errorMode,
+				errorMode: service.api.errorMode,
 				servicePathPrefix,
 			};
 		});
 
-		if (options?.middlewares) {
+		if (options?.handlers) {
+			const gatewayBinding = options.handlers;
 			for (const pathTemplate of getUniquePathTemplates(preparedRoutes)) {
 				const gatewayPathTemplate = namespaceGatewayPath(serviceName, pathTemplate);
 				const { middlewareNodes, handlerNodes } = collectGatewayRouteMiddlewareNodes(
-					options.middlewares.middlewares,
-					options.middlewares.handlers,
+					gatewayBinding.middlewares,
+					gatewayBinding.handlers,
 					serviceName,
 					pathTemplate,
 				);
 				const layers = collectMiddlewareLayers<TContext>(middlewareNodes, handlerNodes);
 				app.use(toHonoPath(gatewayPathTemplate), async (ctx, next) => {
-					setContextValue(ctx, ZONO_GATEWAY_ERROR_MODE_KEY, service.errorMode);
+					setContextValue(ctx, ZONO_GATEWAY_ERROR_MODE_KEY, service.api.errorMode);
 					await next();
 				});
 				for (const layer of layers) {
@@ -513,7 +497,7 @@ export const initGateway = <
 				preparedRoutes.map((route) => ({ pathTemplate: route.gatewayPathTemplate })),
 			)) {
 				app.use(toHonoPath(pathTemplate), async (ctx, next) => {
-					setContextValue(ctx, ZONO_GATEWAY_ERROR_MODE_KEY, service.errorMode);
+					setContextValue(ctx, ZONO_GATEWAY_ERROR_MODE_KEY, service.api.errorMode);
 					await next();
 				});
 			}
@@ -573,17 +557,17 @@ export const createGatewayClient = <
 				parseResponse: ServiceMap[keyof ServiceMap]["parseResponse"];
 			};
 			const serviceClient = {
-				fetch: ((path, method, data) => {
+				fetch: ((path, method, ...request) => {
 					const namespacedPath = namespaceGatewayPath(serviceKey, path) as Parameters<
 						ServiceMap[keyof ServiceMap]["fetch"]
 					>[0];
-					return client.fetch(namespacedPath, method, data);
+					return client.fetch(namespacedPath, method, ...request);
 				}) as ServiceMap[keyof ServiceMap]["fetch"],
-				fetchConfig: ((path, method, data) => {
+				fetchConfig: ((path, method, ...request) => {
 					const namespacedPath = namespaceGatewayPath(serviceKey, path) as Parameters<
 						ServiceMap[keyof ServiceMap]["fetchConfig"]
 					>[0];
-					return client.fetchConfig(namespacedPath, method, data);
+					return client.fetchConfig(namespacedPath, method, ...request);
 				}) as ServiceMap[keyof ServiceMap]["fetchConfig"],
 				parseResponse: client.parseResponse,
 			} as ServiceMap[keyof ServiceMap];

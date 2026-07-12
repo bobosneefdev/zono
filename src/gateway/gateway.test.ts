@@ -1,15 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import z from "zod";
-import type { ContractTreeFor } from "../contract/contract.js";
-import type { MiddlewareTreeFor } from "../middleware/middleware.js";
-import { createHonoMiddlewareHandlers } from "../middleware/middleware.js";
-import {
-	createHonoContractHandlers,
-	createHonoMiddlewareHandlers as createServerMiddlewareHandlers,
-	initHono,
-} from "../server/server.js";
-import type { ApiShape } from "../shared/shared.js";
+import { defineApi } from "../contract/contract.js";
+import { createApiHandlers, initHono } from "../server/server.js";
 import {
 	createSerializedResponse,
 	parseSerializedResponse,
@@ -19,6 +12,7 @@ import {
 import type { GatewayServiceMask } from "./gateway.js";
 import {
 	createGatewayClient,
+	createGatewayHandlers,
 	createGatewayService,
 	createGatewayServices,
 	type GatewayMiddlewares,
@@ -46,127 +40,107 @@ afterEach(() => {
 	}
 });
 
-const serviceShape = {
-	SHAPE: {
-		echo: { CONTRACT: true },
-		headered: { CONTRACT: true },
-		plain: { CONTRACT: true },
-		users: { CONTRACT: true },
-		boom: { CONTRACT: true },
-		headOnly: { CONTRACT: true },
-	},
-} as const satisfies ApiShape;
-
-const serviceContracts = {
-	SHAPE: {
-		echo: {
-			CONTRACT: {
-				get: {
-					responses: {
-						200: {
-							type: "JSON",
-							schema: z.object({ query: z.string(), header: z.string() }),
+const serviceApi = defineApi({
+	contracts: {
+		SHAPE: {
+			echo: {
+				CONTRACT: {
+					get: {
+						responses: {
+							200: {
+								type: "JSON",
+								schema: z.object({ query: z.string(), header: z.string() }),
+							},
+						},
+					},
+					post: {
+						responses: {
+							201: { type: "Text", schema: z.string() },
+						},
+					},
+					query: {
+						body: { type: "JSON", schema: z.object({ filter: z.string() }) },
+						responses: {
+							200: { type: "Text", schema: z.string() },
 						},
 					},
 				},
-				post: {
-					responses: {
-						201: { type: "Text", schema: z.string() },
-					},
-				},
-				query: {
-					body: { type: "JSON", schema: z.object({ filter: z.string() }) },
-					responses: {
-						200: { type: "Text", schema: z.string() },
-					},
-				},
 			},
-		},
-		headered: {
-			CONTRACT: {
-				get: {
-					responses: {
-						200: {
-							type: "JSON",
-							schema: z.object({ ok: z.boolean() }),
-							headers: {
-								type: "Standard",
-								schema: z.object({ "x-upstream": z.string() }),
+			headered: {
+				CONTRACT: {
+					get: {
+						responses: {
+							200: {
+								type: "JSON",
+								schema: z.object({ ok: z.boolean() }),
+								headers: {
+									type: "Standard",
+									schema: z.object({ "x-upstream": z.string() }),
+								},
 							},
 						},
 					},
 				},
 			},
-		},
-		plain: {
-			CONTRACT: {
-				get: {
-					responses: { 200: { type: "JSON", schema: z.object({ ok: z.boolean() }) } },
-				},
-			},
-		},
-		users: {
-			CONTRACT: {
-				get: {
-					responses: {
-						200: { type: "JSON", schema: z.object({ users: z.array(z.string()) }) },
+			plain: {
+				CONTRACT: {
+					get: {
+						responses: {
+							200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+						},
 					},
 				},
 			},
-		},
-		boom: {
-			CONTRACT: {
-				get: {
-					responses: {
-						200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+			users: {
+				CONTRACT: {
+					get: {
+						responses: {
+							200: { type: "JSON", schema: z.object({ users: z.array(z.string()) }) },
+						},
 					},
 				},
 			},
-		},
-		headOnly: {
-			CONTRACT: {
-				head: {
-					responses: {
-						204: { type: "Contentless" },
+			boom: {
+				CONTRACT: {
+					get: {
+						responses: {
+							200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+						},
+					},
+				},
+			},
+			headOnly: {
+				CONTRACT: {
+					head: {
+						responses: {
+							204: { type: "Contentless" },
+						},
 					},
 				},
 			},
 		},
 	},
-} as const satisfies ContractTreeFor<typeof serviceShape>;
+});
 
-const serviceMiddlewares = {
-	MIDDLEWARE: {},
-} as const satisfies MiddlewareTreeFor<typeof serviceShape>;
-
-const nestedUsersServiceShape = {
-	SHAPE: {
-		users: {
-			CONTRACT: true,
-			SHAPE: {
-				$userId: { CONTRACT: true },
-			},
-		},
-	},
-} as const satisfies ApiShape;
-
-const nestedUsersServiceContracts = {
-	SHAPE: {
-		users: {
-			CONTRACT: {
-				get: {
-					responses: {
-						200: { type: "JSON", schema: z.object({ users: z.array(z.string()) }) },
+const nestedUsersServiceApi = defineApi({
+	contracts: {
+		SHAPE: {
+			users: {
+				CONTRACT: {
+					get: {
+						responses: {
+							200: { type: "JSON", schema: z.object({ users: z.array(z.string()) }) },
+						},
 					},
 				},
-			},
-			SHAPE: {
-				$userId: {
-					CONTRACT: {
-						get: {
-							pathParams: z.object({ userId: z.string() }),
-							responses: {
-								200: { type: "JSON", schema: z.object({ id: z.string() }) },
+				SHAPE: {
+					$userId: {
+						CONTRACT: {
+							get: {
+								pathParams: z.object({ userId: z.string() }),
+								responses: {
+									200: { type: "JSON", schema: z.object({ id: z.string() }) },
+								},
 							},
 						},
 					},
@@ -174,38 +148,26 @@ const nestedUsersServiceContracts = {
 			},
 		},
 	},
-} as const satisfies ContractTreeFor<typeof nestedUsersServiceShape>;
+});
 
-const nestedUsersServiceMiddlewares = {
-	MIDDLEWARE: {},
-} as const satisfies MiddlewareTreeFor<typeof nestedUsersServiceShape>;
-
-const heartbeatServiceShape = {
-	SHAPE: {
-		heartbeat: { CONTRACT: true },
-	},
-} as const satisfies ApiShape;
-
-const heartbeatServiceContracts = {
-	SHAPE: {
-		heartbeat: {
-			CONTRACT: {
-				get: {
-					responses: {
-						200: {
-							type: "JSON",
-							schema: z.object({ service: z.string() }),
+const heartbeatServiceApi = defineApi({
+	contracts: {
+		SHAPE: {
+			heartbeat: {
+				CONTRACT: {
+					get: {
+						responses: {
+							200: {
+								type: "JSON",
+								schema: z.object({ service: z.string() }),
+							},
 						},
 					},
 				},
 			},
 		},
 	},
-} as const satisfies ContractTreeFor<typeof heartbeatServiceShape>;
-
-const heartbeatServiceMiddlewares = {
-	MIDDLEWARE: {},
-} as const satisfies MiddlewareTreeFor<typeof heartbeatServiceShape>;
+});
 
 describe("gateway runtime", () => {
 	test("proxies GET to upstream and preserves status headers serialized body", async () => {
@@ -228,14 +190,12 @@ describe("gateway runtime", () => {
 			SHAPE: {
 				echo: { CONTRACT: true },
 			},
-		} as const satisfies GatewayServiceMask<typeof serviceShape>;
-		const service = createGatewayService(
-			gatewayMask,
-			serviceContracts,
-			serviceMiddlewares,
-			"public",
-			upstreamUrl,
-		);
+		} as const satisfies GatewayServiceMask<typeof serviceApi.contracts>;
+		const service = createGatewayService({
+			api: serviceApi,
+			mask: gatewayMask,
+			baseUrl: upstreamUrl,
+		});
 
 		const gatewayApp = new Hono();
 		initGateway(gatewayApp, createGatewayServices({ service }));
@@ -253,7 +213,7 @@ describe("gateway runtime", () => {
 		expect(parsed.data).toEqual({ query: "abc", header: "ok" });
 	});
 
-	test("forwards POST bodies to the upstream service", async () => {
+	test("forwards POST bodies and content types to the upstream service", async () => {
 		const upstreamApp = new Hono();
 		upstreamApp.post("/echo", async (ctx) => {
 			const body = await ctx.req.text();
@@ -261,17 +221,15 @@ describe("gateway runtime", () => {
 				status: 201,
 				type: "Text",
 				source: "contract",
-				data: `body:${body}`,
+				data: `body:${body}:${ctx.req.header("content-type")}`,
 			});
 		});
 
-		const service = createGatewayService(
-			{ SHAPE: { echo: { CONTRACT: true } } },
-			serviceContracts,
-			serviceMiddlewares,
-			"public",
-			startServer(upstreamApp),
-		);
+		const service = createGatewayService({
+			api: serviceApi,
+			mask: { SHAPE: { echo: { CONTRACT: true } } },
+			baseUrl: startServer(upstreamApp),
+		});
 		const gatewayApp = new Hono();
 		initGateway(gatewayApp, createGatewayServices({ service }));
 		const gatewayUrl = startServer(gatewayApp);
@@ -285,7 +243,7 @@ describe("gateway runtime", () => {
 
 		expect(post.status).toBe(201);
 		expect(parsedPost.type).toBe("Text");
-		expect(parsedPost.data).toBe("body:hello");
+		expect(parsedPost.data).toBe("body:hello:text/plain");
 	});
 
 	test("forwards QUERY bodies through the typed gateway client", async () => {
@@ -299,13 +257,11 @@ describe("gateway runtime", () => {
 				data: `${ctx.req.method}:${ctx.req.header("content-type")}:${body.filter}`,
 			});
 		});
-		const service = createGatewayService(
-			{ SHAPE: { echo: { CONTRACT: true } } },
-			serviceContracts,
-			serviceMiddlewares,
-			"public",
-			startServer(upstreamApp),
-		);
+		const service = createGatewayService({
+			api: serviceApi,
+			mask: { SHAPE: { echo: { CONTRACT: true } } },
+			baseUrl: startServer(upstreamApp),
+		});
 		const gatewayApp = new Hono();
 		const services = createGatewayServices({ service });
 		initGateway(gatewayApp, services);
@@ -345,20 +301,16 @@ describe("gateway runtime", () => {
 		});
 
 		const services = createGatewayServices({
-			service1: createGatewayService(
-				{ SHAPE: { heartbeat: { CONTRACT: true } } },
-				heartbeatServiceContracts,
-				heartbeatServiceMiddlewares,
-				"public",
-				startServer(service1App),
-			),
-			service2: createGatewayService(
-				{ SHAPE: { heartbeat: { CONTRACT: true } } },
-				heartbeatServiceContracts,
-				heartbeatServiceMiddlewares,
-				"public",
-				startServer(service2App),
-			),
+			service1: createGatewayService({
+				api: heartbeatServiceApi,
+				mask: { SHAPE: { heartbeat: { CONTRACT: true } } },
+				baseUrl: startServer(service1App),
+			}),
+			service2: createGatewayService({
+				api: heartbeatServiceApi,
+				mask: { SHAPE: { heartbeat: { CONTRACT: true } } },
+				baseUrl: startServer(service2App),
+			}),
 		});
 
 		const gatewayApp = new Hono();
@@ -383,46 +335,29 @@ describe("gateway runtime", () => {
 	});
 
 	test("rejects invalid service keys used as namespaces", () => {
+		const makeService = () =>
+			createGatewayService({
+				api: heartbeatServiceApi,
+				mask: { SHAPE: { heartbeat: { CONTRACT: true } } },
+				baseUrl: "http://localhost",
+			});
+
 		expect(() =>
 			createGatewayServices({
-				"": createGatewayService(
-					{ SHAPE: { heartbeat: { CONTRACT: true } } },
-					heartbeatServiceContracts,
-					heartbeatServiceMiddlewares,
-					"public",
-					"http://localhost",
-				),
+				"": makeService(),
 			}),
 		).toThrow("cannot be empty");
 
 		expect(() =>
 			createGatewayServices({
-				invalid: createGatewayService(
-					{ SHAPE: { heartbeat: { CONTRACT: true } } },
-					heartbeatServiceContracts,
-					heartbeatServiceMiddlewares,
-					"public",
-					"http://localhost",
-				),
-				"bad/key": createGatewayService(
-					{ SHAPE: { heartbeat: { CONTRACT: true } } },
-					heartbeatServiceContracts,
-					heartbeatServiceMiddlewares,
-					"public",
-					"http://localhost",
-				),
+				invalid: makeService(),
+				"bad/key": makeService(),
 			}),
 		).toThrow("cannot contain '/'");
 
 		expect(() =>
 			createGatewayServices({
-				$bad: createGatewayService(
-					{ SHAPE: { heartbeat: { CONTRACT: true } } },
-					heartbeatServiceContracts,
-					heartbeatServiceMiddlewares,
-					"public",
-					"http://localhost",
-				),
+				$bad: makeService(),
 			}),
 		).toThrow("cannot start with '$'");
 	});
@@ -451,17 +386,15 @@ describe("gateway runtime", () => {
 		});
 
 		const services = createGatewayServices({
-			usersService: createGatewayService(
-				{
+			usersService: createGatewayService({
+				api: nestedUsersServiceApi,
+				mask: {
 					SHAPE: {
 						users: { CONTRACT: true },
 					},
 				},
-				nestedUsersServiceContracts,
-				nestedUsersServiceMiddlewares,
-				"public",
-				startServer(upstreamApp),
-			),
+				baseUrl: startServer(upstreamApp),
+			}),
 		});
 
 		const gatewayApp = new Hono();
@@ -496,16 +429,14 @@ describe("gateway runtime", () => {
 		});
 
 		const services = createGatewayServices({
-			usersService: createGatewayService(
-				{ SHAPE: { users: { CONTRACT: true }, plain: { CONTRACT: true } } },
-				serviceContracts,
-				serviceMiddlewares,
-				"public",
-				startServer(upstreamApp),
-			),
+			usersService: createGatewayService({
+				api: serviceApi,
+				mask: { SHAPE: { users: { CONTRACT: true }, plain: { CONTRACT: true } } },
+				baseUrl: startServer(upstreamApp),
+			}),
 		});
 
-		const gatewayMiddlewares = {
+		const gatewayApi = {
 			MIDDLEWARE: {
 				gatewayGuard: {
 					418: { type: "JSON", schema: z.object({ message: z.string() }) },
@@ -535,33 +466,33 @@ describe("gateway runtime", () => {
 		} as const satisfies GatewayMiddlewares<typeof services>;
 
 		const steps: Array<string> = [];
-		const boundGatewayMiddlewares = createHonoMiddlewareHandlers<
-			typeof gatewayMiddlewares,
-			{ requestId: string }
-		>(gatewayMiddlewares, {
-			MIDDLEWARE: {
-				gatewayGuard: async (_ctx, next, ourContext) => {
-					steps.push(`gateway:before:${ourContext.requestId}`);
-					await next();
-					steps.push("gateway:after");
-				},
-			},
-			SHAPE: {
-				usersService: {
-					MIDDLEWARE: {
-						serviceGuard: async (_ctx, next, ourContext) => {
-							steps.push(`service:before:${ourContext.requestId}`);
-							await next();
-							steps.push("service:after");
-						},
+		const gatewayHandlers = createGatewayHandlers(gatewayApi)({
+			createContext: () => ({ requestId: "ctx-1" }),
+			middlewares: {
+				MIDDLEWARE: {
+					gatewayGuard: async (_ctx, next, appContext) => {
+						steps.push(`gateway:before:${appContext.requestId}`);
+						await next();
+						steps.push("gateway:after");
 					},
-					SHAPE: {
-						users: {
-							MIDDLEWARE: {
-								auth: async (_ctx, next, ourContext) => {
-									steps.push(`auth:before:${ourContext.requestId}`);
-									await next();
-									steps.push("auth:after");
+				},
+				SHAPE: {
+					usersService: {
+						MIDDLEWARE: {
+							serviceGuard: async (_ctx, next, appContext) => {
+								steps.push(`service:before:${appContext.requestId}`);
+								await next();
+								steps.push("service:after");
+							},
+						},
+						SHAPE: {
+							users: {
+								MIDDLEWARE: {
+									auth: async (_ctx, next, appContext) => {
+										steps.push(`auth:before:${appContext.requestId}`);
+										await next();
+										steps.push("auth:after");
+									},
 								},
 							},
 						},
@@ -572,8 +503,7 @@ describe("gateway runtime", () => {
 
 		const gatewayApp = new Hono();
 		initGateway(gatewayApp, services, {
-			middlewares: boundGatewayMiddlewares,
-			createContext: () => ({ requestId: "ctx-1" }),
+			handlers: gatewayHandlers,
 		});
 
 		const response = await fetch(
@@ -617,16 +547,14 @@ describe("gateway runtime", () => {
 		});
 
 		const services = createGatewayServices({
-			usersService: createGatewayService(
-				{ SHAPE: { users: { CONTRACT: true }, plain: { CONTRACT: true } } },
-				serviceContracts,
-				serviceMiddlewares,
-				"public",
-				startServer(upstreamApp),
-			),
+			usersService: createGatewayService({
+				api: serviceApi,
+				mask: { SHAPE: { users: { CONTRACT: true }, plain: { CONTRACT: true } } },
+				baseUrl: startServer(upstreamApp),
+			}),
 		});
 
-		const gatewayMiddlewares = {
+		const gatewayApi = {
 			MIDDLEWARE: {
 				gatewayGuard: {
 					418: { type: "JSON", schema: z.object({ message: z.string() }) },
@@ -635,22 +563,21 @@ describe("gateway runtime", () => {
 		} as const satisfies GatewayMiddlewares<typeof services>;
 
 		const seenPaths: Array<string> = [];
-		const boundGatewayMiddlewares = createHonoMiddlewareHandlers<
-			typeof gatewayMiddlewares,
-			{ requestId: string }
-		>(gatewayMiddlewares, {
-			MIDDLEWARE: {
-				gatewayGuard: async (ctx, next) => {
-					seenPaths.push(new URL(ctx.req.url).pathname);
-					await next();
+		const gatewayHandlers = createGatewayHandlers(gatewayApi)({
+			createContext: () => ({ requestId: "ctx-2" }),
+			middlewares: {
+				MIDDLEWARE: {
+					gatewayGuard: async (ctx, next) => {
+						seenPaths.push(new URL(ctx.req.url).pathname);
+						await next();
+					},
 				},
 			},
 		});
 
 		const gatewayApp = new Hono();
 		initGateway(gatewayApp, services, {
-			middlewares: boundGatewayMiddlewares,
-			createContext: () => ({ requestId: "ctx-2" }),
+			handlers: gatewayHandlers,
 		});
 
 		const gatewayUrl = startServer(gatewayApp);
@@ -685,16 +612,14 @@ describe("gateway runtime", () => {
 		});
 
 		const services = createGatewayServices({
-			usersService: createGatewayService(
-				{ SHAPE: { users: { CONTRACT: true } } },
-				serviceContracts,
-				serviceMiddlewares,
-				"public",
-				startServer(upstreamApp),
-			),
+			usersService: createGatewayService({
+				api: serviceApi,
+				mask: { SHAPE: { users: { CONTRACT: true } } },
+				baseUrl: startServer(upstreamApp),
+			}),
 		});
 
-		const gatewayMiddlewares = {
+		const gatewayApi = {
 			MIDDLEWARE: {
 				gatewayGuard: {
 					401: { type: "JSON", schema: z.object({ message: z.string() }) },
@@ -719,32 +644,32 @@ describe("gateway runtime", () => {
 		} as const satisfies GatewayMiddlewares<typeof services>;
 
 		const steps: Array<string> = [];
-		const boundGatewayMiddlewares = createHonoMiddlewareHandlers<
-			typeof gatewayMiddlewares,
-			{ requestId: string }
-		>(gatewayMiddlewares, {
-			MIDDLEWARE: {
-				gatewayGuard: () => {
-					steps.push("gateway:block");
-					return {
-						status: 401,
-						type: "JSON",
-						data: { message: "Unauthorized" },
-					};
+		const gatewayHandlers = createGatewayHandlers(gatewayApi)({
+			createContext: () => ({ requestId: "ctx-3" }),
+			middlewares: {
+				MIDDLEWARE: {
+					gatewayGuard: () => {
+						steps.push("gateway:block");
+						return {
+							status: 401,
+							type: "JSON",
+							data: { message: "Unauthorized" },
+						};
+					},
 				},
-			},
-			SHAPE: {
-				usersService: {
-					SHAPE: {
-						users: {
-							MIDDLEWARE: {
-								auth: () => {
-									steps.push("auth:block");
-									return {
-										status: 403,
-										type: "JSON",
-										data: { message: "Forbidden" },
-									};
+				SHAPE: {
+					usersService: {
+						SHAPE: {
+							users: {
+								MIDDLEWARE: {
+									auth: () => {
+										steps.push("auth:block");
+										return {
+											status: 403,
+											type: "JSON",
+											data: { message: "Forbidden" },
+										};
+									},
 								},
 							},
 						},
@@ -755,8 +680,7 @@ describe("gateway runtime", () => {
 
 		const gatewayApp = new Hono();
 		initGateway(gatewayApp, services, {
-			middlewares: boundGatewayMiddlewares,
-			createContext: () => ({ requestId: "ctx-3" }),
+			handlers: gatewayHandlers,
 		});
 
 		const response = await fetch(
@@ -785,16 +709,14 @@ describe("gateway runtime", () => {
 		});
 
 		const services = createGatewayServices({
-			usersService: createGatewayService(
-				{ SHAPE: { users: { CONTRACT: true } } },
-				serviceContracts,
-				serviceMiddlewares,
-				"public",
-				startServer(upstreamApp),
-			),
+			usersService: createGatewayService({
+				api: serviceApi,
+				mask: { SHAPE: { users: { CONTRACT: true } } },
+				baseUrl: startServer(upstreamApp),
+			}),
 		});
 
-		const gatewayMiddlewares = {
+		const gatewayApi = {
 			MIDDLEWARE: {
 				gatewayGuard: {
 					401: { type: "JSON", schema: z.object({ message: z.string() }) },
@@ -802,22 +724,24 @@ describe("gateway runtime", () => {
 			},
 		} as const satisfies GatewayMiddlewares<typeof services>;
 
-		const boundGatewayMiddlewares = createHonoMiddlewareHandlers(gatewayMiddlewares, {
-			MIDDLEWARE: {
-				gatewayGuard: () =>
-					new Response("blocked", {
-						status: 401,
-						headers: {
-							"content-type": "text/plain",
-							"x-raw": "1",
-						},
-					}),
+		const gatewayHandlers = createGatewayHandlers(gatewayApi)({
+			middlewares: {
+				MIDDLEWARE: {
+					gatewayGuard: () =>
+						new Response("blocked", {
+							status: 401,
+							headers: {
+								"content-type": "text/plain",
+								"x-raw": "1",
+							},
+						}),
+				},
 			},
 		});
 
 		const gatewayApp = new Hono();
 		initGateway(gatewayApp, services, {
-			middlewares: boundGatewayMiddlewares,
+			handlers: gatewayHandlers,
 		});
 
 		const response = await fetch(
@@ -842,16 +766,14 @@ describe("gateway runtime", () => {
 		});
 
 		const services = createGatewayServices({
-			usersService: createGatewayService(
-				{ SHAPE: { users: { CONTRACT: true }, plain: { CONTRACT: true } } },
-				serviceContracts,
-				serviceMiddlewares,
-				"public",
-				startServer(upstreamApp),
-			),
+			usersService: createGatewayService({
+				api: serviceApi,
+				mask: { SHAPE: { users: { CONTRACT: true }, plain: { CONTRACT: true } } },
+				baseUrl: startServer(upstreamApp),
+			}),
 		});
 
-		const gatewayMiddlewares = {
+		const gatewayApi = {
 			MIDDLEWARE: {
 				auth: {
 					401: { type: "JSON", schema: z.object({ message: z.string() }) },
@@ -876,25 +798,27 @@ describe("gateway runtime", () => {
 		} as const satisfies GatewayMiddlewares<typeof services>;
 
 		const steps: Array<string> = [];
-		const boundGatewayMiddlewares = createHonoMiddlewareHandlers(gatewayMiddlewares, {
-			MIDDLEWARE: {
-				auth: async (_ctx, next) => {
-					steps.push("global");
-					await next();
+		const gatewayHandlers = createGatewayHandlers(gatewayApi)({
+			middlewares: {
+				MIDDLEWARE: {
+					auth: async (_ctx, next) => {
+						steps.push("global");
+						await next();
+					},
 				},
-			},
-			SHAPE: {
-				usersService: {
-					SHAPE: {
-						users: {
-							MIDDLEWARE: {
-								auth: () => {
-									steps.push("scoped");
-									return {
-										status: 403,
-										type: "JSON",
-										data: { message: "Scoped" },
-									};
+				SHAPE: {
+					usersService: {
+						SHAPE: {
+							users: {
+								MIDDLEWARE: {
+									auth: () => {
+										steps.push("scoped");
+										return {
+											status: 403,
+											type: "JSON",
+											data: { message: "Scoped" },
+										};
+									},
 								},
 							},
 						},
@@ -905,7 +829,7 @@ describe("gateway runtime", () => {
 
 		const gatewayApp = new Hono();
 		initGateway(gatewayApp, services, {
-			middlewares: boundGatewayMiddlewares,
+			handlers: gatewayHandlers,
 		});
 
 		const response = await fetch(
@@ -921,7 +845,7 @@ describe("gateway runtime", () => {
 });
 
 describe("gateway error handling", () => {
-	test("gateway-thrown errors respect public and private service error modes", async () => {
+	test("gateway-thrown errors respect opaque and detailed service error modes", async () => {
 		const upstreamApp = new Hono();
 		upstreamApp.get("/users", () => {
 			return createSerializedResponse({
@@ -931,18 +855,21 @@ describe("gateway error handling", () => {
 				data: { users: ["u1"] },
 			});
 		});
+		const upstreamUrl = startServer(upstreamApp);
 
-		const createGateway = (errorMode: "public" | "private") => {
-			const services = createGatewayServices({
-				usersService: createGatewayService(
-					{ SHAPE: { users: { CONTRACT: true } } },
-					serviceContracts,
-					serviceMiddlewares,
-					errorMode,
-					startServer(upstreamApp),
-				),
+		const createGateway = (errorMode: "opaque" | "detailed") => {
+			const api = defineApi({
+				contracts: serviceApi.contracts,
+				errorMode,
 			});
-			const gatewayMiddlewares = {
+			const services = createGatewayServices({
+				usersService: createGatewayService({
+					api,
+					mask: { SHAPE: { users: { CONTRACT: true } } },
+					baseUrl: upstreamUrl,
+				}),
+			});
+			const gatewayApi = {
 				MIDDLEWARE: {
 					gatewayGuard: {
 						401: { type: "JSON", schema: z.object({ message: z.string() }) },
@@ -952,10 +879,12 @@ describe("gateway error handling", () => {
 
 			const gatewayApp = new Hono();
 			initGateway(gatewayApp, services, {
-				middlewares: createHonoMiddlewareHandlers(gatewayMiddlewares, {
-					MIDDLEWARE: {
-						gatewayGuard: () => {
-							throw new Error(`explode-${errorMode}`);
+				handlers: createGatewayHandlers(gatewayApi)({
+					middlewares: {
+						MIDDLEWARE: {
+							gatewayGuard: () => {
+								throw new Error(`explode-${errorMode}`);
+							},
 						},
 					},
 				}),
@@ -963,102 +892,145 @@ describe("gateway error handling", () => {
 			return startServer(gatewayApp);
 		};
 
-		const publicParsed = await parseSerializedResponse(
-			await fetch(getGatewayServiceUrl(createGateway("public"), "usersService", "/users")),
+		const opaqueParsed = await parseSerializedResponse(
+			await fetch(getGatewayServiceUrl(createGateway("opaque"), "usersService", "/users")),
 		);
-		const privateParsed = await parseSerializedResponse(
-			await fetch(getGatewayServiceUrl(createGateway("private"), "usersService", "/users")),
+		const detailedParsed = await parseSerializedResponse(
+			await fetch(getGatewayServiceUrl(createGateway("detailed"), "usersService", "/users")),
 		);
 
-		expect(publicParsed.data).toEqual({ message: "explode-public" });
-		expect(privateParsed.data).toEqual({
-			message: "explode-private",
-			issues: {},
+		expect(opaqueParsed.data).toEqual({ message: "Internal server error" });
+		expect(detailedParsed.data).toEqual({
+			message: "explode-detailed",
 			stack: expect.any(String),
 		});
 	});
 
-	test("gateway client surfaces upstream middleware and public error responses", async () => {
-		const upstreamShape = {
-			SHAPE: {
-				users: { CONTRACT: true },
-				boom: { CONTRACT: true },
+	test("gateway onError observes failures without replacing the typed response", async () => {
+		const services = createGatewayServices({
+			usersService: createGatewayService({
+				api: serviceApi,
+				mask: { SHAPE: { users: { CONTRACT: true } } },
+				baseUrl: "http://localhost",
+			}),
+		});
+		const gatewayApi = {
+			MIDDLEWARE: {
+				gatewayGuard: {
+					401: { type: "JSON", schema: z.object({ message: z.string() }) },
+				},
 			},
-		} as const satisfies ApiShape;
+		} as const satisfies GatewayMiddlewares<typeof services>;
 
-		const upstreamContracts = {
-			SHAPE: {
-				users: {
-					CONTRACT: {
-						get: {
-							responses: {
-								200: {
-									type: "JSON",
-									schema: z.object({ users: z.array(z.string()) }),
+		const observed: Array<string> = [];
+		const gatewayApp = new Hono();
+		initGateway(gatewayApp, services, {
+			handlers: createGatewayHandlers(gatewayApi)({
+				middlewares: {
+					MIDDLEWARE: {
+						gatewayGuard: () => {
+							throw new Error("gateway exploded");
+						},
+					},
+				},
+			}),
+			onError: async (error) => {
+				await new Promise((resolve) => setTimeout(resolve, 5));
+				observed.push(error instanceof Error ? error.message : String(error));
+				throw new Error("observer failed");
+			},
+		});
+
+		const response = await fetch(
+			getGatewayServiceUrl(startServer(gatewayApp), "usersService", "/users"),
+		);
+
+		expect(response.status).toBe(500);
+		expect((await parseSerializedResponse(response)).data).toEqual({
+			message: "Internal server error",
+		});
+		expect(observed).toEqual(["gateway exploded"]);
+	});
+
+	test("gateway client surfaces upstream middleware and opaque error responses", async () => {
+		const upstreamApi = defineApi({
+			contracts: {
+				SHAPE: {
+					users: {
+						CONTRACT: {
+							get: {
+								responses: {
+									200: {
+										type: "JSON",
+										schema: z.object({ users: z.array(z.string()) }),
+									},
+								},
+							},
+						},
+					},
+					boom: {
+						CONTRACT: {
+							get: {
+								responses: {
+									200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
 								},
 							},
 						},
 					},
 				},
-				boom: {
-					CONTRACT: {
-						get: {
-							responses: {
-								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
-							},
-						},
-					},
-				},
 			},
-		} as const satisfies ContractTreeFor<typeof upstreamShape>;
-
-		const upstreamMiddlewares = {
-			MIDDLEWARE: {
-				rateLimit: {
-					429: { type: "JSON", schema: z.object({ retryAfter: z.number() }) },
-				},
-			},
-		} as const satisfies MiddlewareTreeFor<typeof upstreamShape>;
-
-		const upstreamApp = new Hono();
-		initHono<typeof upstreamShape, unknown, typeof upstreamMiddlewares>(upstreamApp, {
-			contracts: createHonoContractHandlers(upstreamContracts, {
-				SHAPE: {
-					users: {
-						HANDLER: {
-							get: () => ({ status: 200, type: "JSON", data: { users: ["u1"] } }),
-						},
-					},
-					boom: {
-						HANDLER: {
-							get: () => {
-								throw new Error("upstream-public");
-							},
-						},
-					},
-				},
-			}),
-			middlewares: createServerMiddlewareHandlers(upstreamMiddlewares, {
+			middlewares: {
 				MIDDLEWARE: {
-					rateLimit: (ctx, next) => {
-						if (new URL(ctx.req.url).pathname === "/users") {
-							return { status: 429, type: "JSON", data: { retryAfter: 1 } };
-						}
-						return next();
+					rateLimit: {
+						429: { type: "JSON", schema: z.object({ retryAfter: z.number() }) },
 					},
 				},
-			}),
-			errorMode: "public",
-			createContext: () => ({}),
+			},
 		});
 
-		const service = createGatewayService(
-			{ SHAPE: { users: { CONTRACT: true }, boom: { CONTRACT: true } } },
-			upstreamContracts,
-			upstreamMiddlewares,
-			"public",
-			startServer(upstreamApp),
+		const upstreamApp = new Hono();
+		initHono(
+			upstreamApp,
+			createApiHandlers(upstreamApi)({
+				createContext: () => ({}),
+				contracts: {
+					SHAPE: {
+						users: {
+							HANDLER: {
+								get: () => ({
+									status: 200,
+									type: "JSON",
+									data: { users: ["u1"] },
+								}),
+							},
+						},
+						boom: {
+							HANDLER: {
+								get: () => {
+									throw new Error("upstream-opaque");
+								},
+							},
+						},
+					},
+				},
+				middlewares: {
+					MIDDLEWARE: {
+						rateLimit: (ctx, next) => {
+							if (new URL(ctx.req.url).pathname === "/users") {
+								return { status: 429, type: "JSON", data: { retryAfter: 1 } };
+							}
+							return next();
+						},
+					},
+				},
+			}),
 		);
+
+		const service = createGatewayService({
+			api: upstreamApi,
+			mask: { SHAPE: { users: { CONTRACT: true }, boom: { CONTRACT: true } } },
+			baseUrl: startServer(upstreamApp),
+		});
 		const services = createGatewayServices({ upstream: service });
 		const gatewayApp = new Hono();
 		initGateway(gatewayApp, services);
@@ -1070,54 +1042,52 @@ describe("gateway error handling", () => {
 		expect(limited.status).toBe(429);
 		expect(limited.data).toEqual({ retryAfter: 1 });
 		expect(failed.status).toBe(500);
-		expect(failed.data).toEqual({ message: "upstream-public" });
+		// Opaque upstream errors never leak thrown messages through the gateway.
+		expect(failed.data).toEqual({ message: "Internal server error" });
 	});
 
-	test("gateway client surfaces upstream private error responses", async () => {
-		const upstreamShape = {
-			SHAPE: {
-				boom: { CONTRACT: true },
-			},
-		} as const satisfies ApiShape;
-
-		const upstreamContracts = {
-			SHAPE: {
-				boom: {
-					CONTRACT: {
-						get: {
-							responses: {
-								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+	test("gateway client surfaces upstream detailed error responses", async () => {
+		const upstreamApi = defineApi({
+			contracts: {
+				SHAPE: {
+					boom: {
+						CONTRACT: {
+							get: {
+								responses: {
+									200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+								},
 							},
 						},
 					},
 				},
 			},
-		} as const satisfies ContractTreeFor<typeof upstreamShape>;
+			errorMode: "detailed",
+		});
 
 		const upstreamApp = new Hono();
-		initHono<typeof upstreamShape, unknown>(upstreamApp, {
-			contracts: createHonoContractHandlers(upstreamContracts, {
-				SHAPE: {
-					boom: {
-						HANDLER: {
-							get: () => {
-								throw new Error("upstream-private");
+		initHono(
+			upstreamApp,
+			createApiHandlers(upstreamApi)({
+				createContext: () => ({}),
+				contracts: {
+					SHAPE: {
+						boom: {
+							HANDLER: {
+								get: () => {
+									throw new Error("upstream-detailed");
+								},
 							},
 						},
 					},
 				},
 			}),
-			errorMode: "private",
-			createContext: () => ({}),
-		});
-
-		const service = createGatewayService(
-			{ SHAPE: { boom: { CONTRACT: true } } },
-			upstreamContracts,
-			{ MIDDLEWARE: {} },
-			"private",
-			startServer(upstreamApp),
 		);
+
+		const service = createGatewayService({
+			api: upstreamApi,
+			mask: { SHAPE: { boom: { CONTRACT: true } } },
+			baseUrl: startServer(upstreamApp),
+		});
 		const services = createGatewayServices({ upstream: service });
 		const gatewayApp = new Hono();
 		initGateway(gatewayApp, services);
@@ -1127,8 +1097,7 @@ describe("gateway error handling", () => {
 
 		expect(failed.status).toBe(500);
 		expect(failed.data).toEqual({
-			message: "upstream-private",
-			issues: {},
+			message: "upstream-detailed",
 			stack: expect.any(String),
 		});
 	});
@@ -1149,13 +1118,11 @@ describe("gateway error handling", () => {
 			});
 		});
 
-		const service = createGatewayService(
-			{ SHAPE: { headered: { CONTRACT: true } } },
-			serviceContracts,
-			serviceMiddlewares,
-			"public",
-			startServer(upstreamApp),
-		);
+		const service = createGatewayService({
+			api: serviceApi,
+			mask: { SHAPE: { headered: { CONTRACT: true } } },
+			baseUrl: startServer(upstreamApp),
+		});
 		const services = createGatewayServices({ upstream: service });
 		const gatewayApp = new Hono();
 		initGateway(gatewayApp, services);
@@ -1170,65 +1137,64 @@ describe("gateway error handling", () => {
 	});
 
 	test("gateway client fetchConfig and parseResponse compose through vanilla fetch", async () => {
-		const upstreamShape = {
-			SHAPE: {
-				users: { CONTRACT: true },
-			},
-		} as const satisfies ApiShape;
-
-		const upstreamContracts = {
-			SHAPE: {
-				users: {
-					CONTRACT: {
-						get: {
-							responses: {
-								200: {
-									type: "JSON",
-									schema: z.object({ users: z.array(z.string()) }),
+		const upstreamApi = defineApi({
+			contracts: {
+				SHAPE: {
+					users: {
+						CONTRACT: {
+							get: {
+								responses: {
+									200: {
+										type: "JSON",
+										schema: z.object({ users: z.array(z.string()) }),
+									},
 								},
 							},
 						},
 					},
 				},
 			},
-		} as const satisfies ContractTreeFor<typeof upstreamShape>;
-
-		const upstreamMiddlewares = {
-			MIDDLEWARE: {
-				rateLimit: {
-					429: { type: "JSON", schema: z.object({ retryAfter: z.number() }) },
+			middlewares: {
+				MIDDLEWARE: {
+					rateLimit: {
+						429: { type: "JSON", schema: z.object({ retryAfter: z.number() }) },
+					},
 				},
 			},
-		} as const satisfies MiddlewareTreeFor<typeof upstreamShape>;
+		});
 
 		const upstreamApp = new Hono();
-		initHono<typeof upstreamShape, unknown, typeof upstreamMiddlewares>(upstreamApp, {
-			contracts: createHonoContractHandlers(upstreamContracts, {
-				SHAPE: {
-					users: {
-						HANDLER: {
-							get: () => ({ status: 200, type: "JSON", data: { users: ["u1"] } }),
+		initHono(
+			upstreamApp,
+			createApiHandlers(upstreamApi)({
+				createContext: () => ({}),
+				contracts: {
+					SHAPE: {
+						users: {
+							HANDLER: {
+								get: () => ({
+									status: 200,
+									type: "JSON",
+									data: { users: ["u1"] },
+								}),
+							},
 						},
 					},
 				},
-			}),
-			middlewares: createServerMiddlewareHandlers(upstreamMiddlewares, {
-				MIDDLEWARE: {
-					rateLimit: () => ({ status: 429, type: "JSON", data: { retryAfter: 1 } }),
+				middlewares: {
+					MIDDLEWARE: {
+						rateLimit: () => ({ status: 429, type: "JSON", data: { retryAfter: 1 } }),
+					},
 				},
 			}),
-			errorMode: "public",
-			createContext: () => ({}),
-		});
+		);
 
 		const services = createGatewayServices({
-			upstream: createGatewayService(
-				{ SHAPE: { users: { CONTRACT: true } } },
-				upstreamContracts,
-				upstreamMiddlewares,
-				"public",
-				startServer(upstreamApp),
-			),
+			upstream: createGatewayService({
+				api: upstreamApi,
+				mask: { SHAPE: { users: { CONTRACT: true } } },
+				baseUrl: startServer(upstreamApp),
+			}),
 		});
 		const gatewayApp = new Hono();
 		initGateway(gatewayApp, services);
@@ -1267,20 +1233,16 @@ describe("gateway error handling", () => {
 		});
 
 		const services = createGatewayServices({
-			service1: createGatewayService(
-				{ SHAPE: { heartbeat: { CONTRACT: true } } },
-				heartbeatServiceContracts,
-				heartbeatServiceMiddlewares,
-				"public",
-				startServer(service1App),
-			),
-			service2: createGatewayService(
-				{ SHAPE: { heartbeat: { CONTRACT: true } } },
-				heartbeatServiceContracts,
-				heartbeatServiceMiddlewares,
-				"public",
-				startServer(service2App),
-			),
+			service1: createGatewayService({
+				api: heartbeatServiceApi,
+				mask: { SHAPE: { heartbeat: { CONTRACT: true } } },
+				baseUrl: startServer(service1App),
+			}),
+			service2: createGatewayService({
+				api: heartbeatServiceApi,
+				mask: { SHAPE: { heartbeat: { CONTRACT: true } } },
+				baseUrl: startServer(service2App),
+			}),
 		});
 
 		const gatewayApp = new Hono();
@@ -1314,13 +1276,11 @@ describe("gateway error handling", () => {
 			});
 		});
 
-		const service = createGatewayService(
-			{ SHAPE: { echo: { CONTRACT: true } } },
-			serviceContracts,
-			serviceMiddlewares,
-			"public",
-			startServer(upstreamApp),
-		);
+		const service = createGatewayService({
+			api: serviceApi,
+			mask: { SHAPE: { echo: { CONTRACT: true } } },
+			baseUrl: startServer(upstreamApp),
+		});
 		const services = createGatewayServices({ service });
 		const gatewayApp = new Hono();
 		initGateway(gatewayApp, services);
@@ -1375,13 +1335,11 @@ describe("gateway proxy edge cases", () => {
 		});
 
 		const services = createGatewayServices({
-			headService: createGatewayService(
-				{ SHAPE: { headOnly: { CONTRACT: true } } },
-				serviceContracts,
-				serviceMiddlewares,
-				"public",
-				startServer(upstreamApp),
-			),
+			headService: createGatewayService({
+				api: serviceApi,
+				mask: { SHAPE: { headOnly: { CONTRACT: true } } },
+				baseUrl: startServer(upstreamApp),
+			}),
 		});
 
 		const gatewayApp = new Hono();
@@ -1406,15 +1364,25 @@ const gatewayMaskTyped = {
 		plain: { CONTRACT: true },
 		users: { CONTRACT: true },
 	},
-} as const satisfies GatewayServiceMask<typeof serviceShape>;
+} as const satisfies GatewayServiceMask<typeof serviceApi.contracts>;
 void gatewayMaskTyped;
 
 type ExtractStatus<T, TStatus extends number> = Extract<T, { status: TStatus }>;
 const typeOnly = (_cb: () => void): void => {};
 
 typeOnly(() => {
-	const service = createGatewayService(
-		{
+	// Gateway masks reject nonexistent contract paths.
+	const invalidMask = {
+		SHAPE: {
+			// @ts-expect-error unknown contract path is rejected by the mask
+			missing: { CONTRACT: true },
+		},
+	} as const satisfies GatewayServiceMask<typeof serviceApi.contracts>;
+	void invalidMask;
+
+	const service = createGatewayService({
+		api: serviceApi,
+		mask: {
 			SHAPE: {
 				echo: { CONTRACT: true },
 				headered: { CONTRACT: true },
@@ -1422,14 +1390,11 @@ typeOnly(() => {
 				users: { CONTRACT: true },
 			},
 		},
-		serviceContracts,
-		serviceMiddlewares,
-		"public",
-		"http://localhost",
-	);
+		baseUrl: "http://localhost",
+	});
 	const services = createGatewayServices({ usersService: service });
 
-	const gatewayMiddlewares = {
+	const gatewayApi = {
 		MIDDLEWARE: {
 			auth: {
 				401: { type: "JSON", schema: z.object({ scope: z.literal("global") }) },
@@ -1464,13 +1429,20 @@ typeOnly(() => {
 		},
 	} as const satisfies GatewayMiddlewares<typeof services>;
 
-	const client = createGatewayClient<typeof services, typeof gatewayMiddlewares>(
-		"http://localhost",
-	);
+	const client = createGatewayClient<typeof services, typeof gatewayApi>("http://localhost");
 
 	void client.usersService.fetch("/echo", "get");
 	void client.usersService.fetch("/headered", "get");
 	void client.usersService.fetchConfig("/echo", "get");
+
+	// Required request components make the gateway client argument required.
+	// @ts-expect-error the QUERY body is required
+	void client.usersService.fetch("/echo", "query");
+	// @ts-expect-error the QUERY body is required
+	void client.usersService.fetchConfig("/echo", "query");
+	void client.usersService.fetch("/echo", "query", {
+		body: { type: "JSON", data: { filter: "active" } },
+	});
 
 	const parsedUsersResponsePromise = client.usersService.parseResponse(
 		"/users",
@@ -1503,13 +1475,18 @@ typeOnly(() => {
 		service: "usersService",
 	};
 	const usersAuditData: ExtractStatus<UsersResponse, 418>["data"] = { traceId: "trace-1" };
+	// The service retains its API's (opaque) error mode in the client union.
 	const usersBadRequestData: ExtractStatus<UsersResponse, 400>["data"] = {
-		message: "bad",
-		issues: [],
+		message: "Invalid request",
 	};
-	const usersNotFoundData: ExtractStatus<UsersResponse, 404>["data"] = { message: "missing" };
+	const usersNotFoundData: ExtractStatus<UsersResponse, 404>["data"] = {
+		message: "Not Found",
+	};
+	const usersUnsupportedMediaTypeData: ExtractStatus<UsersResponse, 415>["data"] = {
+		message: "Unsupported media type",
+	};
 	const usersInternalErrorData: ExtractStatus<UsersResponse, 500>["data"] = {
-		message: "boom",
+		message: "Internal server error",
 	};
 	void usersAuthData;
 	void usersRateLimitData;
@@ -1517,6 +1494,7 @@ typeOnly(() => {
 	void usersAuditData;
 	void usersBadRequestData;
 	void usersNotFoundData;
+	void usersUnsupportedMediaTypeData;
 	void usersInternalErrorData;
 
 	const invalidUsersRateLimitData: ExtractStatus<UsersResponse, 429>["data"] = {
@@ -1580,17 +1558,48 @@ typeOnly(() => {
 	};
 	void plainUsersAuth;
 
-	const maskedNestedService = createGatewayService(
-		{
+	const detailedServiceApi = defineApi({
+		contracts: {
+			SHAPE: {
+				users: {
+					CONTRACT: {
+						get: {
+							responses: {
+								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+							},
+						},
+					},
+				},
+			},
+		},
+		errorMode: "detailed",
+	});
+	const detailedServices = createGatewayServices({
+		detailed: createGatewayService({
+			api: detailedServiceApi,
+			mask: { SHAPE: { users: { CONTRACT: true } } },
+			baseUrl: "http://localhost",
+		}),
+	});
+	const detailedClient = createGatewayClient<typeof detailedServices>("http://localhost");
+	const detailedResponsePromise = detailedClient.detailed.fetch("/users", "get");
+	type DetailedResponse = Awaited<typeof detailedResponsePromise>;
+	// Detailed error modes surface diagnostic fields in the client union.
+	const detailedInternalErrorData: ExtractStatus<DetailedResponse, 500>["data"] = {
+		message: "anything",
+		stack: "trace",
+	};
+	void detailedInternalErrorData;
+
+	const maskedNestedService = createGatewayService({
+		api: nestedUsersServiceApi,
+		mask: {
 			SHAPE: {
 				users: { CONTRACT: true },
 			},
 		},
-		nestedUsersServiceContracts,
-		nestedUsersServiceMiddlewares,
-		"public",
-		"http://localhost",
-	);
+		baseUrl: "http://localhost",
+	});
 	const maskedNestedServices = createGatewayServices({ usersService: maskedNestedService });
 
 	const maskedGatewayMiddlewares = {

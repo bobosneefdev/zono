@@ -1,260 +1,186 @@
 import type { Context, Hono } from "hono";
-import {
-	type ContractMethod,
-	type ContractMethods,
-	type ContractTree,
-	type ContractTreeFor,
-	compileContractRoutes,
-	getContractRequestParsers,
-	type HTTPMethod,
-	type InferContractResponseUnion,
-	type RequestData,
+import type {
+	AnyApiDefinition,
+	ContractMethod,
+	ContractMethods,
+	ContractTree,
+	InferContractResponseUnion,
+	RequestData,
 } from "../contract/contract.js";
+import { compileContractRoutes, getContractRequestParsers } from "../contract/contract.js";
 import type {
 	InferAllMiddlewareResponseUnion,
 	InferMiddlewareResponseUnion,
 	MiddlewareLayer,
 	MiddlewareSpec,
 	MiddlewareTree,
-	MiddlewareTreeFor,
 } from "../middleware/middleware.js";
 import { collectMiddlewareLayers } from "../middleware/middleware.js";
+import type {
+	EmptyObject,
+	ErrorMode,
+	ErrorResponse,
+	HTTPMethod,
+	MaybePromise,
+	RuntimeResponseLike,
+} from "../shared/shared.js";
 import {
-	type ApiShape,
 	collectShapePathNodes,
-	type EmptyObject,
 	findExactShapePathNode,
 	isRecordObject,
+	makeErrorRuntimeResponse,
+	makeNotFoundRuntimeResponse,
+	mediaTypeSatisfies,
 	parseBodyInput,
 	parseHeadersInput,
 	parseQueryInput,
-	type RuntimeResponseLike,
+	RequestValidationError,
 	registerHonoRoute,
 	toHonoPath,
 	toSerializedRuntimeResponse,
+	UnsupportedMediaTypeError,
 	validateAndSerializeResponse,
 } from "../shared/shared.js";
 
 export type ContextFactory<T = unknown> = (ctx: Context) => Promise<T> | T;
-
-export type ServerErrorMode = "public" | "private";
-export type ClientErrorMode = ServerErrorMode | "N/A";
-
-export type Public500ErrorData = {
-	message: string;
-};
-
-export type Private500ErrorData = {
-	message: string;
-	issues?: unknown;
-	stack?: string;
-};
-
-export type Public400ErrorData = {
-	message: string;
-	issues: Array<unknown>;
-};
-
-export type Private400ErrorData = {
-	message: string;
-	issueCount: number;
-};
-
-export type NotFoundErrorData = {
-	message: string;
-};
-
-export type PublicErrorData = Public400ErrorData | NotFoundErrorData | Public500ErrorData;
-
-export type PrivateErrorData = Private400ErrorData | NotFoundErrorData | Private500ErrorData;
-
-export type ErrorResponse<TErrorMode extends ServerErrorMode> =
-	| {
-			status: 400;
-			type: "JSON";
-			data: TErrorMode extends "public" ? Public400ErrorData : Private400ErrorData;
-			headers?: undefined;
-	  }
-	| {
-			status: 404;
-			type: "JSON";
-			data: NotFoundErrorData;
-			headers?: undefined;
-	  }
-	| {
-			status: 500;
-			type: "JSON";
-			data: TErrorMode extends "public" ? Public500ErrorData : Private500ErrorData;
-			headers?: undefined;
-	  };
 
 export type RuntimeHandlerResponse = RuntimeResponseLike;
 
 export type ContractHandler<TMethod extends ContractMethod, TContext> = (
 	data: RequestData<TMethod>,
 	ctx: Context,
-	ourContext: TContext,
+	appContext: TContext,
 ) => Promise<InferContractResponseUnion<TMethod>> | InferContractResponseUnion<TMethod>;
 
+// NOTE: The handler tree types below deliberately avoid two things that break
+// inferring TContext from `createContext` within the same object literal:
+// conditional types in value positions that branch on tree-node types (they
+// defer the contextual type of nested handler functions), and homomorphic key
+// remapping via `as` (contextual typing cannot reverse non-identity renames).
+// Branching on a precomputed key union and using `Extract`-style conditionals
+// only inside type arguments preserves that inference.
 export type ContractHandlerMap<TContract extends ContractMethods, TContext> = {
-	[TMethod in keyof TContract & HTTPMethod]: NonNullable<
-		TContract[TMethod]
-	> extends ContractMethod
-		? ContractHandler<NonNullable<TContract[TMethod]>, TContext>
-		: never;
+	[TMethod in keyof TContract & HTTPMethod]: ContractHandler<
+		Extract<TContract[TMethod], ContractMethod>,
+		TContext
+	>;
 };
 
-type ContractHandlerShape<TShapeNode, TContext> =
-	TShapeNode extends Record<string, unknown>
-		? {
-				[K in keyof TShapeNode]: ContractHandlerTree<TShapeNode[K], TContext>;
-			}
-		: never;
+type ContractHandlerShape<TShapeNode, TContext> = {
+	[K in keyof TShapeNode]: ContractHandlerTree<TShapeNode[K], TContext>;
+};
 
-export type ContractHandlerTree<TContractsNode, TContext> = TContractsNode extends {
-	CONTRACT: infer TContract;
-	SHAPE: infer TShapeNode;
+type ContractHandlerTreeKey<TContractsNode> =
+	| ("CONTRACT" extends keyof TContractsNode ? "HANDLER" : never)
+	| ("SHAPE" extends keyof TContractsNode ? "SHAPE" : never);
+
+type ContractAtNode<TContractsNode> = TContractsNode extends {
+	CONTRACT: infer TContract extends ContractMethods;
 }
-	? {
-			HANDLER: TContract extends ContractMethods
-				? ContractHandlerMap<TContract, TContext>
-				: never;
-			SHAPE: ContractHandlerShape<TShapeNode, TContext>;
-		}
-	: TContractsNode extends { CONTRACT: infer TContract }
-		? {
-				HANDLER: TContract extends ContractMethods
-					? ContractHandlerMap<TContract, TContext>
-					: never;
-			}
-		: TContractsNode extends { SHAPE: infer TShapeNode }
-			? {
-					SHAPE: ContractHandlerShape<TShapeNode, TContext>;
-				}
-			: never;
+	? TContract
+	: never;
+
+type ShapeAtNode<TContractsNode> = TContractsNode extends {
+	SHAPE: infer TShapeNode extends Record<string, unknown>;
+}
+	? TShapeNode
+	: never;
+
+export type ContractHandlerTree<TContractsNode, TContext> = {
+	[K in ContractHandlerTreeKey<TContractsNode>]: K extends "HANDLER"
+		? ContractHandlerMap<ContractAtNode<TContractsNode>, TContext>
+		: ContractHandlerShape<ShapeAtNode<TContractsNode>, TContext>;
+};
 
 export type MiddlewareHandler<TDefinition extends MiddlewareSpec, TContext = unknown> = (
 	ctx: Context,
 	next: () => Promise<void>,
-	ourContext: TContext,
+	appContext: TContext,
 ) =>
 	| Promise<void | Response | InferMiddlewareResponseUnion<TDefinition>>
 	| void
 	| Response
 	| InferMiddlewareResponseUnion<TDefinition>;
 
-type HasKey<T, TKey extends PropertyKey> = TKey extends keyof T ? true : false;
-
-type IsRequiredKey<T, TKey extends keyof T> = EmptyObject extends Pick<T, TKey> ? false : true;
-
-type MiddlewareMapAtNode<TNode> = TNode extends { MIDDLEWARE?: infer TMiddlewareMap }
-	? TMiddlewareMap extends Record<string, MiddlewareSpec>
-		? TMiddlewareMap
-		: EmptyObject
-	: EmptyObject;
-
-type MiddlewareShapeAtNode<TNode> = TNode extends { SHAPE?: infer TShapeNode }
-	? TShapeNode extends Record<string, unknown>
-		? TShapeNode
-		: EmptyObject
-	: EmptyObject;
-
-type MiddlewareHandlerShape<TShapeNode, TContext> =
-	TShapeNode extends Record<string, unknown>
-		? {
-				[K in keyof TShapeNode]: MiddlewareHandlerTree<
-					NonNullable<TShapeNode[K]>,
-					TContext
-				>;
-			}
-		: never;
+type MiddlewareHandlerShape<TShapeNode, TContext> = {
+	[K in keyof TShapeNode]: MiddlewareHandlerTree<
+		Extract<TShapeNode[K], MiddlewareTree>,
+		TContext
+	>;
+};
 
 type MiddlewareHandlerMap<TMiddlewareMap extends Record<string, MiddlewareSpec>, TContext> = {
 	[TName in keyof TMiddlewareMap]: MiddlewareHandler<TMiddlewareMap[TName], TContext>;
 };
 
-type MiddlewareHandlerTreeFromNode<TMiddlewaresNode, TContext> = (HasKey<
-	TMiddlewaresNode,
-	"MIDDLEWARE"
-> extends true
-	? "MIDDLEWARE" extends keyof TMiddlewaresNode
-		? IsRequiredKey<TMiddlewaresNode, "MIDDLEWARE"> extends true
-			? {
-					MIDDLEWARE: MiddlewareHandlerMap<
-						MiddlewareMapAtNode<TMiddlewaresNode>,
-						TContext
-					>;
-				}
-			: {
-					MIDDLEWARE?: MiddlewareHandlerMap<
-						MiddlewareMapAtNode<TMiddlewaresNode>,
-						TContext
-					>;
-				}
-		: never
-	: EmptyObject) &
-	(HasKey<TMiddlewaresNode, "SHAPE"> extends true
-		? "SHAPE" extends keyof TMiddlewaresNode
-			? IsRequiredKey<TMiddlewaresNode, "SHAPE"> extends true
-				? {
-						SHAPE: MiddlewareHandlerShape<
-							MiddlewareShapeAtNode<TMiddlewaresNode>,
-							TContext
-						>;
-					}
-				: {
-						SHAPE?: MiddlewareHandlerShape<
-							MiddlewareShapeAtNode<TMiddlewaresNode>,
-							TContext
-						>;
-					}
-			: never
-		: EmptyObject);
+// Homomorphic mapping keeps the MIDDLEWARE/SHAPE optionality of the source
+// tree; see the inference note above ContractHandlerMap.
+export type MiddlewareHandlerTree<TMiddlewares extends MiddlewareTree, TContext> = {
+	[K in keyof TMiddlewares]: K extends "MIDDLEWARE"
+		? MiddlewareHandlerMap<Extract<TMiddlewares[K], Record<string, MiddlewareSpec>>, TContext>
+		: K extends "SHAPE"
+			? MiddlewareHandlerShape<Extract<TMiddlewares[K], Record<string, unknown>>, TContext>
+			: never;
+};
 
-export type MiddlewareHandlerTree<
+type MiddlewareHandlersField<
 	TMiddlewares extends MiddlewareTree,
 	TContext,
-> = MiddlewareHandlerTreeFromNode<TMiddlewares, TContext>;
+> = EmptyObject extends TMiddlewares
+	? { middlewares?: MiddlewareHandlerTree<TMiddlewares, TContext> }
+	: { middlewares: MiddlewareHandlerTree<TMiddlewares, TContext> };
 
-export type ContractBindings<TContracts extends ContractTree, TContext> = {
-	contracts: TContracts;
-	handlers: ContractHandlerTree<TContracts, TContext>;
-};
-
-export type MiddlewareBindings<TMiddlewares extends MiddlewareTree, TContext> = {
-	middlewares: TMiddlewares;
-	handlers: MiddlewareHandlerTree<TMiddlewares, TContext>;
-};
-
-export type ServerOptions<
-	TShape extends ApiShape,
-	TContext = unknown,
-	TMiddlewares extends MiddlewareTreeFor<TShape> = MiddlewareTreeFor<TShape>,
-> = {
-	contracts: ContractBindings<ContractTreeFor<TShape>, TContext>;
-	middlewares?: MiddlewareBindings<TMiddlewares, TContext>;
-	errorMode: ServerErrorMode;
+export type ApiHandlers<TApi extends AnyApiDefinition, TContext> = {
 	createContext: ContextFactory<TContext>;
+	contracts: ContractHandlerTree<TApi["contracts"], NoInfer<TContext>>;
+} & MiddlewareHandlersField<TApi["middlewares"], NoInfer<TContext>>;
+
+export type ApiBinding<TApi extends AnyApiDefinition, TContext> = {
+	api: TApi;
+	createContext: ContextFactory<TContext>;
+	contracts: ContractHandlerTree<TApi["contracts"], TContext>;
+	middlewares: MiddlewareHandlerTree<TApi["middlewares"], TContext> | undefined;
+};
+
+/**
+ * Creates the unified server binding for an API definition.
+ *
+ * Curried on purpose: fixing TApi in the first call lets TypeScript infer the
+ * application context from `createContext` while still contextually typing
+ * every handler's inputs and response literals. A single call would leave TApi
+ * inference in flight, which defers the handler trees' contextual types and
+ * widens response literals.
+ */
+export const createApiHandlers = <TApi extends AnyApiDefinition>(api: TApi) => {
+	return <TContext>(handlers: ApiHandlers<TApi, TContext>): ApiBinding<TApi, TContext> => {
+		return {
+			api,
+			createContext: handlers.createContext,
+			contracts: handlers.contracts,
+			middlewares: handlers.middlewares,
+		};
+	};
+};
+
+export type OnError = (error: unknown, ctx: Context) => MaybePromise<void>;
+
+export type HonoOptions = {
+	/**
+	 * Observational hook invoked with the original failure. Its return value
+	 * cannot replace the typed HTTP response, and its own failures are never
+	 * exposed to clients.
+	 */
+	onError?: OnError;
 };
 
 export type ClientResponse<
 	TMethod extends ContractMethod,
 	TMiddlewares extends { MIDDLEWARE: Record<string, MiddlewareSpec> },
-	TErrorMode extends ServerErrorMode,
+	TErrorMode extends ErrorMode,
 > =
 	| InferContractResponseUnion<TMethod>
 	| InferAllMiddlewareResponseUnion<TMiddlewares>
 	| ErrorResponse<TErrorMode>;
-
-class RequestValidationError extends Error {
-	readonly issues: Array<unknown>;
-
-	constructor(message: string, issues: Array<unknown>) {
-		super(message);
-		this.name = "RequestValidationError";
-		this.issues = issues;
-	}
-}
 
 const createRequestValidationError = (
 	segment: "Path params" | "Query" | "Headers" | "Body",
@@ -270,56 +196,19 @@ const createParseFailureIssue = (error: unknown): unknown => {
 	return { message: "Failed to parse request input" };
 };
 
-const makeNotFoundResponse = (): RuntimeHandlerResponse => {
-	return {
-		status: 404,
-		type: "JSON",
-		data: {
-			message: "Not Found",
-		},
-	};
-};
-
-const makeErrorResponse = (error: unknown, errorMode: ServerErrorMode): RuntimeHandlerResponse => {
-	if (error instanceof RequestValidationError) {
-		if (errorMode === "public") {
-			return {
-				status: 400,
-				type: "JSON",
-				data: {
-					message: error.message,
-					issues: error.issues,
-				},
-			};
-		}
-		return {
-			status: 400,
-			type: "JSON",
-			data: {
-				message: error.message,
-				issueCount: error.issues.length,
-			},
-		};
+export const invokeOnError = async (
+	onError: OnError | undefined,
+	error: unknown,
+	ctx: Context,
+): Promise<void> => {
+	if (!onError) {
+		return;
 	}
-
-	if (errorMode === "public") {
-		return {
-			status: 500,
-			type: "JSON",
-			data: {
-				message: error instanceof Error ? error.message : "Internal server error",
-			},
-		};
+	try {
+		await onError(error, ctx);
+	} catch {
+		// Observation failures must never replace the original error response.
 	}
-	return {
-		status: 500,
-		type: "JSON",
-		data: {
-			message: error instanceof Error ? error.message : "Internal server error",
-			issues: error,
-			stack: error instanceof Error ? error.stack : undefined,
-		},
-	};
 };
 
 const getHandlerNodeAtPath = (
@@ -358,20 +247,24 @@ const getPreparedHandler = (
 	return handler as (...args: Array<unknown>) => unknown;
 };
 
-export const createHonoContractHandlers = <
-	const TContracts extends ContractTree,
-	TContext = unknown,
->(
-	contracts: TContracts,
-	handlers: ContractHandlerTree<TContracts, TContext>,
-): ContractBindings<TContracts, TContext> => {
-	return {
-		contracts,
-		handlers,
-	};
-};
-
 const EMPTY_REQUEST_DATA: Record<string, never> = {};
+
+const assertRequestMediaType = (declaredContentType: string | undefined, ctx: Context): void => {
+	if (declaredContentType === undefined) {
+		return;
+	}
+	const incomingContentType = ctx.req.header("content-type");
+	if (incomingContentType === undefined) {
+		throw new UnsupportedMediaTypeError(
+			`Missing content-type header; expected '${declaredContentType}'`,
+		);
+	}
+	if (!mediaTypeSatisfies(declaredContentType, incomingContentType)) {
+		throw new UnsupportedMediaTypeError(
+			`Content type '${incomingContentType}' does not satisfy declared '${declaredContentType}'`,
+		);
+	}
+};
 
 const parseRequestData = async (
 	ctx: Context,
@@ -425,6 +318,7 @@ const parseRequestData = async (
 	}
 
 	if (requestParsers.body) {
+		assertRequestMediaType(requestParsers.body.contentType, ctx);
 		let bodyInput: unknown;
 		try {
 			bodyInput = await parseBodyInput(requestParsers.body, ctx.req.raw);
@@ -501,44 +395,56 @@ const getUniquePathTemplates = (routes: Array<{ pathTemplate: string }>): Array<
 	return Array.from(new Set(routes.map((route) => route.pathTemplate)));
 };
 
-export const initHono = <
-	TShape extends ApiShape,
-	TContext = unknown,
-	TMiddlewares extends MiddlewareTreeFor<TShape> = MiddlewareTreeFor<TShape>,
->(
+const hasAnyMiddleware = (middlewares: MiddlewareTree): boolean => {
+	if (middlewares.MIDDLEWARE && Object.keys(middlewares.MIDDLEWARE).length > 0) {
+		return true;
+	}
+	if (!middlewares.SHAPE) {
+		return false;
+	}
+	return Object.values(middlewares.SHAPE).some(hasAnyMiddleware);
+};
+
+export const initHono = <TApi extends AnyApiDefinition, TContext>(
 	app: Hono,
-	options: ServerOptions<TShape, TContext, TMiddlewares>,
+	binding: ApiBinding<TApi, TContext>,
+	options?: HonoOptions,
 ): void => {
+	const errorMode: ErrorMode = binding.api.errorMode;
+
 	app.use("*", async (ctx, next) => {
-		setContextValue(ctx, ZONO_CONTEXT_KEY, await options.createContext(ctx));
+		setContextValue(ctx, ZONO_CONTEXT_KEY, await binding.createContext(ctx));
 		await next();
 	});
 
-	app.onError((error) => {
-		return toSerializedRuntimeResponse(makeErrorResponse(error, options.errorMode), "error");
+	app.onError(async (error, ctx) => {
+		await invokeOnError(options?.onError, error, ctx);
+		return toSerializedRuntimeResponse(makeErrorRuntimeResponse(error, errorMode), "error");
 	});
 
 	app.notFound(() => {
-		return toSerializedRuntimeResponse(makeNotFoundResponse(), "error");
+		return toSerializedRuntimeResponse(makeNotFoundRuntimeResponse(), "error");
 	});
 
-	const preparedRoutes: Array<PreparedContractRoute> = compileContractRoutes(
-		options.contracts.contracts,
-	).map((route) => {
-		return {
-			pathTemplate: route.pathTemplate,
-			method: route.method,
-			methodDefinition: route.methodDefinition,
-			handlerNode: getHandlerNodeAtPath(options.contracts.handlers, route.pathTemplate),
-			requestParsers: getContractRequestParsers(route.methodDefinition),
-		};
-	});
+	const contracts: ContractTree = binding.api.contracts;
+	const preparedRoutes: Array<PreparedContractRoute> = compileContractRoutes(contracts).map(
+		(route) => {
+			return {
+				pathTemplate: route.pathTemplate,
+				method: route.method,
+				methodDefinition: route.methodDefinition,
+				handlerNode: getHandlerNodeAtPath(binding.contracts, route.pathTemplate),
+				requestParsers: getContractRequestParsers(route.methodDefinition),
+			};
+		},
+	);
 
-	if (options.middlewares) {
+	const middlewares: MiddlewareTree = binding.api.middlewares;
+	if (hasAnyMiddleware(middlewares)) {
 		for (const pathTemplate of getUniquePathTemplates(preparedRoutes)) {
 			const layers = collectMiddlewareLayers<TContext>(
-				collectShapePathNodes(options.middlewares.middlewares, pathTemplate),
-				collectShapePathNodes(options.middlewares.handlers, pathTemplate),
+				collectShapePathNodes(middlewares, pathTemplate),
+				collectShapePathNodes(binding.middlewares, pathTemplate),
 			);
 			for (const layer of layers) {
 				registerMiddlewareLayer(app, pathTemplate, layer);
@@ -566,5 +472,3 @@ export const initHono = <
 		});
 	}
 };
-
-export { createHonoMiddlewareHandlers } from "../middleware/middleware.js";

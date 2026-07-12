@@ -1,17 +1,9 @@
 import type { ResponseSpec } from "../contract/contract.js";
-import type {
-	MiddlewareBindings,
-	MiddlewareHandler,
-	MiddlewareHandlerTree,
-} from "../server/server.js";
-import type {
-	ApiShape,
-	EmptyObject,
-	Expand,
-	InferSchemaData,
-	StatusMapToResponseUnion,
-} from "../shared/shared.js";
+import type { MiddlewareHandler } from "../server/server.js";
+import type { EmptyObject, InferSchemaData, StatusMapToResponseUnion } from "../shared/shared.js";
 import { isRecordObject } from "../shared/shared.js";
+
+export type { MiddlewareTreeForContracts } from "../contract/contract.js";
 
 export type MiddlewareResponseSchema = ResponseSpec;
 
@@ -21,18 +13,6 @@ export type MiddlewareTree = {
 	MIDDLEWARE?: Record<string, MiddlewareSpec>;
 	SHAPE?: Record<string, MiddlewareTree>;
 };
-
-type MiddlewareTreeFromShape<TShape extends ApiShape> = {
-	MIDDLEWARE?: Record<string, MiddlewareSpec>;
-} & (TShape extends { SHAPE: infer TChildShape extends Record<string, ApiShape> }
-	? {
-			SHAPE?: {
-				[TKey in keyof TChildShape]?: MiddlewareTreeFromShape<TChildShape[TKey]>;
-			};
-		}
-	: EmptyObject);
-
-export type MiddlewareTreeFor<TShape extends ApiShape> = Expand<MiddlewareTreeFromShape<TShape>>;
 
 type SplitPath<TPath extends string> = TPath extends ""
 	? []
@@ -88,8 +68,10 @@ export type MiddlewareSchemaAtStatus<
 export type InferMiddlewareResponseData<TSchema extends MiddlewareResponseSchema> =
 	InferSchemaData<TSchema>;
 
+// Deliberately not a conditional type: a top-level conditional here defers
+// contextual typing of middleware return literals during context inference.
 export type InferMiddlewareResponseUnion<TDefinition extends MiddlewareSpec> =
-	TDefinition extends MiddlewareSpec ? StatusMapToResponseUnion<TDefinition> : never;
+	StatusMapToResponseUnion<TDefinition>;
 
 export type InferAllMiddlewareResponseUnion<
 	TMiddlewares extends { MIDDLEWARE: Record<string, MiddlewareSpec> },
@@ -108,19 +90,6 @@ export type InferMiddlewareResponseUnionAtPath<
 		? InferMiddlewareResponseUnion<TDefinition>
 		: never
 	: never;
-
-export const createHonoMiddlewareHandlers = <
-	const TMiddlewares extends MiddlewareTree,
-	TContext = unknown,
->(
-	middlewares: TMiddlewares,
-	handlers: MiddlewareHandlerTree<TMiddlewares, TContext>,
-): MiddlewareBindings<TMiddlewares, TContext> => {
-	return {
-		middlewares,
-		handlers,
-	};
-};
 
 export type MiddlewareLayer<TContext> = {
 	name: string;

@@ -1,9 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import z from "zod";
-import type { ApiShape } from "../shared/shared.js";
-import type { ContractTreeFor } from "./contract.js";
 import {
 	compileContractRoutes,
+	defineApi,
 	getContractRequestParsers,
 	getContractResponseSchema,
 	isContractLike,
@@ -12,40 +11,34 @@ import {
 
 describe("contract route compilation", () => {
 	test("compiles nested routes with dynamic segments", () => {
-		const shape = {
-			SHAPE: {
-				users: {
-					CONTRACT: true,
-					SHAPE: {
-						$userId: { CONTRACT: true },
-					},
-				},
-			},
-		} as const satisfies ApiShape;
-
-		const contracts = {
-			SHAPE: {
-				users: {
-					CONTRACT: {
-						get: {
-							responses: {
-								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+		const api = defineApi({
+			contracts: {
+				SHAPE: {
+					users: {
+						CONTRACT: {
+							get: {
+								responses: {
+									200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+								},
+							},
+							query: {
+								body: { type: "JSON", schema: z.object({ filter: z.string() }) },
+								responses: {
+									200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+								},
 							},
 						},
-						query: {
-							body: { type: "JSON", schema: z.object({ filter: z.string() }) },
-							responses: {
-								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
-							},
-						},
-					},
-					SHAPE: {
-						$userId: {
-							CONTRACT: {
-								get: {
-									pathParams: z.object({ userId: z.uuid() }),
-									responses: {
-										200: { type: "JSON", schema: z.object({ id: z.string() }) },
+						SHAPE: {
+							$userId: {
+								CONTRACT: {
+									get: {
+										pathParams: z.object({ userId: z.uuid() }),
+										responses: {
+											200: {
+												type: "JSON",
+												schema: z.object({ id: z.string() }),
+											},
+										},
 									},
 								},
 							},
@@ -53,9 +46,9 @@ describe("contract route compilation", () => {
 					},
 				},
 			},
-		} as const satisfies ContractTreeFor<typeof shape>;
+		});
 
-		const routes = compileContractRoutes(contracts).map((route) => ({
+		const routes = compileContractRoutes(api.contracts).map((route) => ({
 			pathTemplate: route.pathTemplate,
 			honoPath: route.honoPath,
 			method: route.method,
@@ -66,6 +59,60 @@ describe("contract route compilation", () => {
 			{ pathTemplate: "/users", honoPath: "/users", method: "query" },
 			{ pathTemplate: "/users/$userId", honoPath: "/users/:userId", method: "get" },
 		]);
+	});
+});
+
+describe("defineApi", () => {
+	test("defaults middlewares to an empty tree and errorMode to opaque", () => {
+		const api = defineApi({
+			contracts: {
+				SHAPE: {
+					health: {
+						CONTRACT: {
+							get: {
+								responses: {
+									200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+								},
+							},
+						},
+					},
+				},
+			},
+		});
+
+		expect(api.middlewares).toEqual({});
+		expect(api.errorMode).toBe("opaque");
+	});
+
+	test("preserves the provided middlewares and errorMode", () => {
+		const middlewares = {
+			MIDDLEWARE: {
+				rateLimit: {
+					429: { type: "JSON", schema: z.object({ retryAfter: z.number() }) },
+				},
+			},
+		} as const;
+
+		const api = defineApi({
+			contracts: {
+				SHAPE: {
+					health: {
+						CONTRACT: {
+							get: {
+								responses: {
+									200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+								},
+							},
+						},
+					},
+				},
+			},
+			middlewares,
+			errorMode: "detailed",
+		});
+
+		expect(api.middlewares).toBe(middlewares);
+		expect(api.errorMode).toBe("detailed");
 	});
 });
 
@@ -138,26 +185,19 @@ describe("contract helpers", () => {
 const typeOnly = (_cb: () => void): void => {};
 
 typeOnly(() => {
-	const shape = {
-		SHAPE: {
-			users: {
-				SHAPE: {
-					$userId: { CONTRACT: true },
-				},
-			},
-		},
-	} as const satisfies ApiShape;
-
-	const contracts = {
-		SHAPE: {
-			users: {
-				SHAPE: {
-					$userId: {
-						CONTRACT: {
-							get: {
-								pathParams: z.object({ userId: z.string() }),
-								responses: {
-									200: { type: "JSON", schema: z.object({ id: z.string() }) },
+	// Literal contract, middleware, and error-mode types are preserved.
+	const api = defineApi({
+		contracts: {
+			SHAPE: {
+				users: {
+					SHAPE: {
+						$userId: {
+							CONTRACT: {
+								get: {
+									pathParams: z.object({ userId: z.string() }),
+									responses: {
+										200: { type: "JSON", schema: z.object({ id: z.string() }) },
+									},
 								},
 							},
 						},
@@ -165,19 +205,78 @@ typeOnly(() => {
 				},
 			},
 		},
-	} as const satisfies ContractTreeFor<typeof shape>;
-	void contracts;
+		middlewares: {
+			MIDDLEWARE: {
+				auth: { 401: { type: "JSON", schema: z.object({ message: z.string() }) } },
+			},
+		},
+		errorMode: "detailed",
+	});
+	const errorMode: "detailed" = api.errorMode;
+	void errorMode;
+	const responseType: "JSON" =
+		api.contracts.SHAPE.users.SHAPE.$userId.CONTRACT.get.responses[200].type;
+	void responseType;
+	const middlewareResponseType: "JSON" = api.middlewares.MIDDLEWARE.auth[401].type;
+	void middlewareResponseType;
 
-	const invalidContracts = {
-		SHAPE: {
-			users: {
-				SHAPE: {
-					$userId: {
-						CONTRACT: {
-							// @ts-expect-error dynamic segment contracts require pathParams schema
-							get: {
-								responses: {
-									200: { type: "JSON", schema: z.object({ id: z.string() }) },
+	// QUERY is accepted by contract compilation.
+	const queryApi = defineApi({
+		contracts: {
+			SHAPE: {
+				search: {
+					CONTRACT: {
+						query: {
+							body: { type: "JSON", schema: z.object({ filter: z.string() }) },
+							responses: {
+								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+							},
+						},
+					},
+				},
+			},
+		},
+	});
+	void queryApi;
+
+	// Custom body content types preserve their literal type.
+	const contentTypeApi = defineApi({
+		contracts: {
+			SHAPE: {
+				search: {
+					CONTRACT: {
+						query: {
+							body: {
+								type: "JSON",
+								contentType: "application/query+json",
+								schema: z.object({ filter: z.string() }),
+							},
+							responses: {
+								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+							},
+						},
+					},
+				},
+			},
+		},
+	});
+	const bodyContentType: "application/query+json" =
+		contentTypeApi.contracts.SHAPE.search.CONTRACT.query.body.contentType;
+	void bodyContentType;
+
+	// Dynamic segment contracts require a pathParams schema.
+	defineApi({
+		contracts: {
+			SHAPE: {
+				users: {
+					SHAPE: {
+						$userId: {
+							CONTRACT: {
+								// @ts-expect-error dynamic segment contracts require pathParams schema
+								get: {
+									responses: {
+										200: { type: "JSON", schema: z.object({ id: z.string() }) },
+									},
 								},
 							},
 						},
@@ -185,93 +284,67 @@ typeOnly(() => {
 				},
 			},
 		},
-	} as const satisfies ContractTreeFor<typeof shape>;
-	void invalidContracts;
+	});
 
-	const invalidResponseSpec = {
-		SHAPE: {
-			users: {
-				SHAPE: {
-					$userId: {
-						CONTRACT: {
-							get: {
-								pathParams: z.object({ userId: z.string() }),
-								responses: {
-									// @ts-expect-error response specs must use schema, not body
-									200: { type: "JSON", body: z.object({ id: z.string() }) },
-								},
+	// Unknown contract tree keys are rejected.
+	defineApi({
+		contracts: {
+			SHAPE: {
+				users: {
+					// @ts-expect-error unknown contract tree keys are rejected
+					CONTRACTS: {},
+				},
+			},
+		},
+	});
+
+	// Middleware trees reject paths absent from the contracts.
+	defineApi({
+		contracts: {
+			SHAPE: {
+				users: {
+					CONTRACT: {
+						get: {
+							responses: {
+								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
 							},
 						},
 					},
 				},
 			},
 		},
-	} as const satisfies ContractTreeFor<typeof shape>;
-	void invalidResponseSpec;
+		middlewares: {
+			SHAPE: {
+				// @ts-expect-error middleware paths must exist in the contracts
+				posts: {
+					MIDDLEWARE: {
+						auth: { 401: { type: "JSON", schema: z.object({ message: z.string() }) } },
+					},
+				},
+			},
+		},
+	});
 
-	const invalidQuerySpec = {
-		SHAPE: {
-			users: {
-				SHAPE: {
-					$userId: {
-						CONTRACT: {
-							get: {
-								pathParams: z.object({ userId: z.string() }),
-								// @ts-expect-error request query specs must use schema, not query
-								query: { type: "JSON", query: z.object({ id: z.string() }) },
-								responses: {
-									200: { type: "JSON", schema: z.object({ id: z.string() }) },
-								},
+	// FormData bodies cannot declare a custom content type.
+	defineApi({
+		contracts: {
+			SHAPE: {
+				upload: {
+					CONTRACT: {
+						post: {
+							body: {
+								type: "FormData",
+								// @ts-expect-error FormData bodies do not accept a custom contentType
+								contentType: "multipart/form-data; boundary=x",
+								schema: z.instanceof(FormData),
+							},
+							responses: {
+								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
 							},
 						},
 					},
 				},
 			},
 		},
-	} as const satisfies ContractTreeFor<typeof shape>;
-	void invalidQuerySpec;
-
-	const invalidHeadersSpec = {
-		SHAPE: {
-			users: {
-				SHAPE: {
-					$userId: {
-						CONTRACT: {
-							get: {
-								pathParams: z.object({ userId: z.string() }),
-								// @ts-expect-error request header specs must use schema, not headers
-								headers: { type: "JSON", headers: z.object({ id: z.string() }) },
-								responses: {
-									200: { type: "JSON", schema: z.object({ id: z.string() }) },
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	} as const satisfies ContractTreeFor<typeof shape>;
-	void invalidHeadersSpec;
-
-	const invalidBodySpec = {
-		SHAPE: {
-			users: {
-				SHAPE: {
-					$userId: {
-						CONTRACT: {
-							get: {
-								pathParams: z.object({ userId: z.string() }),
-								// @ts-expect-error request body specs must use schema, not body
-								body: { type: "JSON", body: z.object({ id: z.string() }) },
-								responses: {
-									200: { type: "JSON", schema: z.object({ id: z.string() }) },
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	} as const satisfies ContractTreeFor<typeof shape>;
-	void invalidBodySpec;
+	});
 });

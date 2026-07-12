@@ -1,15 +1,21 @@
 import z from "zod";
+import type { MiddlewareSpec, MiddlewareTree } from "../middleware/middleware.js";
 import {
-	type ApiShape,
+	type EmptyObject,
+	type ErrorMode,
 	type Expand,
 	ensurePath,
 	type FetchRoute,
+	type HTTPMethod,
 	type InferSchemaData,
+	isHTTPMethod,
 	isRecordObject,
 	joinPath,
 	type StatusMapToResponseUnion,
 	toHonoPath,
 } from "../shared/shared.js";
+
+export type { ErrorMode, HTTPMethod } from "../shared/shared.js";
 
 export type CompiledContractRoute = {
 	pathTemplate: string;
@@ -34,8 +40,6 @@ export type SuperJSONValue =
 
 export type ContractMethods = Partial<Record<HTTPMethod, ContractMethod>>;
 
-export type HTTPMethod = "get" | "post" | "put" | "delete" | "patch" | "options" | "head" | "query";
-
 export type ContractMethod = {
 	responses: Record<number, ResponseSpec>;
 	query?: QuerySpec;
@@ -53,6 +57,12 @@ type SchemaCarrier<TType extends string, TOutput, TInput = TOutput> = {
 	type: TType;
 	schema: z.ZodType<TOutput, TInput>;
 };
+
+/** Transports where Zono can safely control the media-type header. */
+type WithCustomContentType = { contentType?: string };
+
+/** Transports whose media type the runtime must generate (or omit) itself. */
+type WithoutCustomContentType = { contentType?: undefined };
 
 export type HeadersSpec = StandardHeadersSpec | JSONHeadersSpec | SuperJSONHeadersSpec;
 
@@ -76,22 +86,24 @@ export type ResponseSchema = {
 
 export type ResponseSpec = ResponseSchema;
 
-export type JSONResponseSpec = SchemaCarrier<"JSON", JSONValue, unknown>;
+export type JSONResponseSpec = SchemaCarrier<"JSON", JSONValue, unknown> & WithCustomContentType;
 
-export type SuperJSONResponseSpec = SchemaCarrier<"SuperJSON", SuperJSONValue, unknown>;
+export type SuperJSONResponseSpec = SchemaCarrier<"SuperJSON", SuperJSONValue, unknown> &
+	WithCustomContentType;
 
-export type TextResponseSpec = SchemaCarrier<"Text", string, unknown>;
+export type TextResponseSpec = SchemaCarrier<"Text", string, unknown> & WithCustomContentType;
 
 export type ContentlessResponseSpec = {
 	type: "Contentless";
 	schema?: undefined;
-};
+} & WithoutCustomContentType;
 
-export type FormDataResponseSpec = SchemaCarrier<"FormData", FormData, unknown>;
+export type FormDataResponseSpec = SchemaCarrier<"FormData", FormData, unknown> &
+	WithoutCustomContentType;
 
-export type BlobResponseSpec = SchemaCarrier<"Blob", Blob, unknown>;
+export type BlobResponseSpec = SchemaCarrier<"Blob", Blob, unknown> & WithCustomContentType;
 
-export type BytesResponseSpec = SchemaCarrier<"Bytes", Uint8Array, unknown>;
+export type BytesResponseSpec = SchemaCarrier<"Bytes", Uint8Array, unknown> & WithCustomContentType;
 
 export type QuerySpec = StandardQuerySpec | JSONQuerySpec | SuperJSONQuerySpec;
 
@@ -109,58 +121,132 @@ export type BodySpec =
 	| TextBodySpec
 	| BlobBodySpec;
 
-export type JSONBodySpec = SchemaCarrier<"JSON", JSONValue>;
+export type JSONBodySpec = SchemaCarrier<"JSON", JSONValue> & WithCustomContentType;
 
-export type SuperJSONBodySpec = SchemaCarrier<"SuperJSON", SuperJSONValue>;
+export type SuperJSONBodySpec = SchemaCarrier<"SuperJSON", SuperJSONValue> & WithCustomContentType;
 
-export type FormDataBodySpec = SchemaCarrier<"FormData", FormData>;
+export type FormDataBodySpec = SchemaCarrier<"FormData", FormData> & WithoutCustomContentType;
 
-export type URLSearchParamsBodySpec = SchemaCarrier<"URLSearchParams", URLSearchParams>;
+export type URLSearchParamsBodySpec = SchemaCarrier<"URLSearchParams", URLSearchParams> &
+	WithCustomContentType;
 
-export type TextBodySpec = SchemaCarrier<"Text", string>;
+export type TextBodySpec = SchemaCarrier<"Text", string> & WithCustomContentType;
 
-export type BlobBodySpec = SchemaCarrier<"Blob", Blob>;
+export type BlobBodySpec = SchemaCarrier<"Blob", Blob> & WithCustomContentType;
 
 type ExtractPathParamName<TKey extends string> = TKey extends `$${infer TPathParamName}`
 	? TPathParamName
 	: never;
 
-type ContractMethodWithPathParams<TPathParams extends string> = Omit<ContractMethod, "pathParams"> &
-	([TPathParams] extends [never]
-		? { pathParams?: undefined }
-		: { pathParams: PathParamsFor<TPathParams> });
-
-type ContractMethodsForPath<TPathParams extends string> = Partial<
-	Record<HTTPMethod, ContractMethodWithPathParams<TPathParams>>
->;
-
-type ContractTreeFromShape<TShape extends ApiShape, TPathParams extends string = never> = {
-	[K in keyof TShape]: K extends "CONTRACT"
-		? TShape[K] extends true
-			? ContractMethodsForPath<TPathParams>
-			: never
-		: K extends "SHAPE"
-			? TShape[K] extends Record<string, ApiShape>
-				? {
-						[ChildKey in keyof TShape[K]]: TShape[K][ChildKey] extends ApiShape
-							? ContractTreeFromShape<
-									TShape[K][ChildKey],
-									| TPathParams
-									| (ChildKey extends string
-											? ExtractPathParamName<ChildKey>
-											: never)
-								>
-							: never;
-					}
-				: never
-			: never;
-};
-
-export type ContractTreeFor<TShape extends ApiShape> = ContractTreeFromShape<TShape>;
+type PathParamsRequirement<TPathParams extends string> = [TPathParams] extends [never]
+	? { pathParams?: undefined }
+	: { pathParams: PathParamsFor<TPathParams> };
 
 export type ContractTree = {
 	CONTRACT?: ContractMethods;
 	SHAPE?: Record<string, ContractTree>;
+};
+
+/**
+ * Structural validation of a literal contract tree, covering only what the
+ * `ContractTree` constraint cannot: unknown keys are rejected, and dynamic
+ * segments must declare matching path-parameter schemas.
+ */
+type ValidateContractTree<TTree, TPathParams extends string = never> = {
+	[K in keyof TTree]: K extends "CONTRACT"
+		? {
+				[TMethod in keyof TTree[K]]: TMethod extends HTTPMethod
+					? PathParamsRequirement<TPathParams>
+					: never;
+			}
+		: K extends "SHAPE"
+			? {
+					[TChildKey in keyof TTree[K]]: ValidateContractTree<
+						TTree[K][TChildKey],
+						| TPathParams
+						| (TChildKey extends string ? ExtractPathParamName<TChildKey> : never)
+					>;
+				}
+			: never;
+};
+
+/** Route-shape structure derived from a contract tree. */
+export type ApiShapeFromContracts<TContracts extends ContractTree> = {} & (TContracts extends {
+	CONTRACT: infer TContract;
+}
+	? TContract extends ContractMethods
+		? { CONTRACT: true }
+		: EmptyObject
+	: EmptyObject) &
+	(TContracts extends { SHAPE: infer TShape extends Record<string, ContractTree> }
+		? {
+				SHAPE: {
+					[TKey in keyof TShape]: ApiShapeFromContracts<TShape[TKey]>;
+				};
+			}
+		: EmptyObject);
+
+type ContractChildShape<TContracts extends ContractTree> = TContracts extends {
+	SHAPE: infer TShape extends Record<string, ContractTree>;
+}
+	? TShape
+	: EmptyObject;
+
+/**
+ * Structural validation of a literal middleware tree against a contract tree.
+ * Middleware may only be attached along paths that exist in the contracts.
+ */
+type ValidateMiddlewareTree<TMiddlewares, TContracts extends ContractTree> = {
+	[K in keyof TMiddlewares]: K extends "MIDDLEWARE"
+		? Record<string, MiddlewareSpec>
+		: K extends "SHAPE"
+			? {
+					[TChildKey in keyof TMiddlewares[K]]: TChildKey extends keyof ContractChildShape<TContracts>
+						? ContractChildShape<TContracts>[TChildKey] extends infer TChildContracts extends
+								ContractTree
+							? ValidateMiddlewareTree<TMiddlewares[K][TChildKey], TChildContracts>
+							: never
+						: never;
+				}
+			: never;
+};
+
+export type MiddlewareTreeForContracts<TContracts extends ContractTree> = {
+	MIDDLEWARE?: Record<string, MiddlewareSpec>;
+} & (TContracts extends { SHAPE: infer TShape extends Record<string, ContractTree> }
+	? {
+			SHAPE?: {
+				[TKey in keyof TShape]?: MiddlewareTreeForContracts<TShape[TKey]>;
+			};
+		}
+	: EmptyObject);
+
+export type ApiDefinition<
+	TContracts extends ContractTree,
+	TMiddlewares extends MiddlewareTree,
+	TErrorMode extends ErrorMode,
+> = {
+	contracts: TContracts & NoInfer<ValidateContractTree<TContracts>>;
+	middlewares: TMiddlewares;
+	errorMode: TErrorMode;
+};
+
+export type AnyApiDefinition = ApiDefinition<ContractTree, MiddlewareTree, ErrorMode>;
+
+export const defineApi = <
+	const TContracts extends ContractTree,
+	const TMiddlewares extends MiddlewareTree = EmptyObject,
+	const TErrorMode extends ErrorMode = "opaque",
+>(definition: {
+	contracts: TContracts & NoInfer<ValidateContractTree<TContracts>>;
+	middlewares?: TMiddlewares & NoInfer<ValidateMiddlewareTree<TMiddlewares, TContracts>>;
+	errorMode?: TErrorMode;
+}): ApiDefinition<TContracts, TMiddlewares, TErrorMode> => {
+	return {
+		contracts: definition.contracts,
+		middlewares: definition.middlewares ?? ({} as TMiddlewares),
+		errorMode: definition.errorMode ?? ("opaque" as TErrorMode),
+	};
 };
 
 export type InferRuntimeResponseData<TResponseSpec extends ResponseSpec> =
@@ -202,7 +288,17 @@ type HeadersClientInput<THeadersSpec extends HeadersSpec> = THeadersSpec extends
 			? { type: "SuperJSON"; data: InferSchemaData<THeadersSpec> }
 			: never;
 
-type BodyClientInput<TBodySpec extends BodySpec> = TBodySpec extends JSONBodySpec
+/**
+ * When a contract declares a custom body media type, the (type-only) client
+ * must receive the same literal at runtime to generate the request header.
+ */
+type BodyContentTypeInput<TBodySpec> = TBodySpec extends {
+	contentType: infer TContentType extends string;
+}
+	? { contentType: TContentType }
+	: { contentType?: undefined };
+
+type BodyClientInput<TBodySpec extends BodySpec> = (TBodySpec extends JSONBodySpec
 	? { type: "JSON"; data: InferSchemaData<TBodySpec> }
 	: TBodySpec extends SuperJSONBodySpec
 		? { type: "SuperJSON"; data: InferSchemaData<TBodySpec> }
@@ -214,7 +310,8 @@ type BodyClientInput<TBodySpec extends BodySpec> = TBodySpec extends JSONBodySpe
 					? { type: "Text"; data: InferSchemaData<TBodySpec> }
 					: TBodySpec extends BlobBodySpec
 						? { type: "Blob"; data: InferSchemaData<TBodySpec> }
-						: never;
+						: never) &
+	BodyContentTypeInput<TBodySpec>;
 
 type ClientRequestPartOutputs<TMethod extends ContractMethod> = {
 	pathParams: TMethod extends { pathParams: z.ZodType<infer TData, unknown> } ? TData : never;
@@ -314,13 +411,11 @@ export type ContractMethodAtPath<
 	TMethod extends keyof ContractAtPath<TContracts, TPath> & HTTPMethod,
 > = NonNullable<ContractAtPath<TContracts, TPath>[TMethod]>;
 
-export type InferContractResponseUnion<TMethod extends ContractMethod> = TMethod extends {
-	responses: infer TResponses;
-}
-	? TResponses extends Record<number, ResponseSpec>
-		? StatusMapToResponseUnion<TResponses>
-		: never
-	: never;
+// Deliberately not a conditional type: a top-level conditional here defers
+// contextual typing of handler return literals during context inference.
+export type InferContractResponseUnion<TMethod extends ContractMethod> = StatusMapToResponseUnion<
+	TMethod["responses"]
+>;
 
 type ContractCallsFromRouteEntry<TRouteEntry> = TRouteEntry extends {
 	path: infer TPath extends string;
@@ -345,19 +440,6 @@ export type ContractCallRoute = FetchRoute;
 export type ContractCallRoutes<TContracts extends ContractTree> = ContractCallsFromRouteEntry<
 	ContractRouteEntries<TContracts>
 >;
-
-const isHTTPMethod = (value: string): value is HTTPMethod => {
-	return (
-		value === "get" ||
-		value === "post" ||
-		value === "put" ||
-		value === "delete" ||
-		value === "patch" ||
-		value === "options" ||
-		value === "head" ||
-		value === "query"
-	);
-};
 
 export const compileContractRoutes = <TContracts extends ContractTree>(
 	contracts: TContracts,

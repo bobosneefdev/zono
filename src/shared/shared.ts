@@ -8,9 +8,354 @@ export const ZONO_QUERY_DATA_KEY = "_zono";
 export const ZONO_HEADER_DATA_HEADER = "x-zono-data";
 export const ZONO_HEADER_DATA_TYPE_HEADER = "x-zono-data-type";
 
-export type ApiShape = {
-	CONTRACT?: true;
-	SHAPE?: Record<string, ApiShape>;
+export const HTTP_METHODS = [
+	"get",
+	"post",
+	"put",
+	"delete",
+	"patch",
+	"options",
+	"head",
+	"query",
+] as const;
+
+export type HTTPMethod = (typeof HTTP_METHODS)[number];
+
+const HTTP_METHOD_SET: ReadonlySet<string> = new Set(HTTP_METHODS);
+
+export const isHTTPMethod = (value: string): value is HTTPMethod => {
+	return HTTP_METHOD_SET.has(value);
+};
+
+export const METHODS_WITHOUT_FETCH_BODY: ReadonlySet<HTTPMethod> = new Set(["get", "head"]);
+
+export type ErrorMode = "opaque" | "detailed";
+
+export type ClientErrorMode = ErrorMode | "none";
+
+export type OpaqueValidationErrorData = {
+	message: "Invalid request";
+};
+
+export type OpaqueUnsupportedMediaTypeData = {
+	message: "Unsupported media type";
+};
+
+export type OpaqueNotFoundErrorData = {
+	message: "Not Found";
+};
+
+export type OpaqueInternalErrorData = {
+	message: "Internal server error";
+};
+
+export type DetailedErrorData = {
+	message: string;
+	issues?: Array<unknown>;
+	stack?: string;
+};
+
+export type ErrorResponse<TErrorMode extends ErrorMode> =
+	| {
+			status: 400;
+			type: "JSON";
+			data: TErrorMode extends "opaque" ? OpaqueValidationErrorData : DetailedErrorData;
+			headers?: undefined;
+	  }
+	| {
+			status: 404;
+			type: "JSON";
+			data: TErrorMode extends "opaque" ? OpaqueNotFoundErrorData : DetailedErrorData;
+			headers?: undefined;
+	  }
+	| {
+			status: 415;
+			type: "JSON";
+			data: TErrorMode extends "opaque" ? OpaqueUnsupportedMediaTypeData : DetailedErrorData;
+			headers?: undefined;
+	  }
+	| {
+			status: 500;
+			type: "JSON";
+			data: TErrorMode extends "opaque" ? OpaqueInternalErrorData : DetailedErrorData;
+			headers?: undefined;
+	  };
+
+export class RequestValidationError extends Error {
+	readonly issues: Array<unknown>;
+
+	constructor(message: string, issues: Array<unknown>) {
+		super(message);
+		this.name = "RequestValidationError";
+		this.issues = issues;
+	}
+}
+
+export class UnsupportedMediaTypeError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "UnsupportedMediaTypeError";
+	}
+}
+
+export type RequestArguments<TRequest> = EmptyObject extends TRequest
+	? [data?: TRequest]
+	: [data: TRequest];
+
+const getDetailedErrorData = (error: unknown, fallbackMessage: string): DetailedErrorData => {
+	if (error instanceof RequestValidationError) {
+		return {
+			message: error.message,
+			issues: error.issues,
+			stack: error.stack,
+		};
+	}
+	if (error instanceof Error) {
+		return {
+			message: error.message,
+			stack: error.stack,
+		};
+	}
+	return {
+		message: fallbackMessage,
+		issues: [error],
+	};
+};
+
+export const makeErrorRuntimeResponse = (
+	error: unknown,
+	errorMode: ErrorMode,
+): RuntimeResponseLike => {
+	if (error instanceof RequestValidationError) {
+		return {
+			status: 400,
+			type: "JSON",
+			data:
+				errorMode === "opaque"
+					? { message: "Invalid request" }
+					: getDetailedErrorData(error, "Invalid request"),
+		};
+	}
+	if (error instanceof UnsupportedMediaTypeError) {
+		return {
+			status: 415,
+			type: "JSON",
+			data:
+				errorMode === "opaque"
+					? { message: "Unsupported media type" }
+					: getDetailedErrorData(error, "Unsupported media type"),
+		};
+	}
+	return {
+		status: 500,
+		type: "JSON",
+		data:
+			errorMode === "opaque"
+				? { message: "Internal server error" }
+				: getDetailedErrorData(error, "Internal server error"),
+	};
+};
+
+export const makeNotFoundRuntimeResponse = (): RuntimeResponseLike => {
+	return {
+		status: 404,
+		type: "JSON",
+		data: { message: "Not Found" },
+	};
+};
+
+export type ParsedMediaType = {
+	type: string;
+	subtype: string;
+	parameters: Record<string, string>;
+};
+
+export const parseMediaType = (value: string): ParsedMediaType | undefined => {
+	const [essence, ...rawParameters] = value.split(";");
+	const trimmedEssence = (essence ?? "").trim().toLowerCase();
+	const slashIndex = trimmedEssence.indexOf("/");
+	if (slashIndex <= 0 || slashIndex === trimmedEssence.length - 1) {
+		return undefined;
+	}
+
+	const parameters: Record<string, string> = {};
+	for (const rawParameter of rawParameters) {
+		const equalsIndex = rawParameter.indexOf("=");
+		if (equalsIndex <= 0) {
+			continue;
+		}
+		const parameterName = rawParameter.slice(0, equalsIndex).trim().toLowerCase();
+		const parameterValue = rawParameter
+			.slice(equalsIndex + 1)
+			.trim()
+			.replace(/^"(.*)"$/, "$1");
+		if (parameterName.length > 0) {
+			parameters[parameterName] = parameterValue;
+		}
+	}
+
+	return {
+		type: trimmedEssence.slice(0, slashIndex),
+		subtype: trimmedEssence.slice(slashIndex + 1),
+		parameters,
+	};
+};
+
+/**
+ * Checks whether an incoming media type satisfies a declared media type.
+ * Type/subtype comparison is case-insensitive; every parameter explicitly
+ * declared must be present on the incoming value with a matching value.
+ */
+export const mediaTypeSatisfies = (declared: string, incoming: string): boolean => {
+	const declaredParsed = parseMediaType(declared);
+	const incomingParsed = parseMediaType(incoming);
+	if (!declaredParsed || !incomingParsed) {
+		return false;
+	}
+	if (
+		declaredParsed.type !== incomingParsed.type ||
+		declaredParsed.subtype !== incomingParsed.subtype
+	) {
+		return false;
+	}
+	for (const [parameterName, parameterValue] of Object.entries(declaredParsed.parameters)) {
+		const incomingValue = incomingParsed.parameters[parameterName];
+		if (incomingValue === undefined) {
+			return false;
+		}
+		if (incomingValue.toLowerCase() !== parameterValue.toLowerCase()) {
+			return false;
+		}
+	}
+	return true;
+};
+
+export const mediaTypesEquivalent = (left: string, right: string): boolean => {
+	return mediaTypeSatisfies(left, right) && mediaTypeSatisfies(right, left);
+};
+
+export type BodyTransportType =
+	| "JSON"
+	| "SuperJSON"
+	| "Text"
+	| "Blob"
+	| "URLSearchParams"
+	| "FormData";
+
+type TransportContentTypePolicy = {
+	/** Whether the contract may declare a custom `contentType` for this transport. */
+	supportsCustomContentType: boolean;
+	/** Default media type, or undefined when the runtime must not set the header itself. */
+	defaultContentType: (data: unknown) => string | undefined;
+	/** Whether a custom media type is compatible with this transport's serializer. */
+	isCompatibleContentType: (mediaType: ParsedMediaType) => boolean;
+};
+
+const blobDefaultContentType = (data: unknown): string => {
+	return data instanceof Blob && data.type.length > 0 ? data.type : "application/octet-stream";
+};
+
+const isJsonCompatible = (mediaType: ParsedMediaType): boolean => {
+	return (
+		(mediaType.type === "application" && mediaType.subtype === "json") ||
+		mediaType.subtype.endsWith("+json")
+	);
+};
+
+const JSON_CONTENT_TYPE_POLICY: TransportContentTypePolicy = {
+	supportsCustomContentType: true,
+	defaultContentType: () => "application/json",
+	isCompatibleContentType: isJsonCompatible,
+};
+
+const TEXT_CONTENT_TYPE_POLICY: TransportContentTypePolicy = {
+	supportsCustomContentType: true,
+	defaultContentType: () => "text/plain; charset=utf-8",
+	isCompatibleContentType: (mediaType) => mediaType.type === "text",
+};
+
+const BINARY_CONTENT_TYPE_POLICY: TransportContentTypePolicy = {
+	supportsCustomContentType: true,
+	defaultContentType: blobDefaultContentType,
+	isCompatibleContentType: () => true,
+};
+
+const FORM_DATA_CONTENT_TYPE_POLICY: TransportContentTypePolicy = {
+	supportsCustomContentType: false,
+	// The runtime must generate the multipart boundary itself.
+	defaultContentType: () => undefined,
+	isCompatibleContentType: () => false,
+};
+
+export const REQUEST_CONTENT_TYPE_POLICIES: Record<BodyTransportType, TransportContentTypePolicy> =
+	{
+		JSON: JSON_CONTENT_TYPE_POLICY,
+		SuperJSON: JSON_CONTENT_TYPE_POLICY,
+		Text: TEXT_CONTENT_TYPE_POLICY,
+		Blob: BINARY_CONTENT_TYPE_POLICY,
+		URLSearchParams: {
+			supportsCustomContentType: true,
+			defaultContentType: () => "application/x-www-form-urlencoded;charset=UTF-8",
+			isCompatibleContentType: () => true,
+		},
+		FormData: FORM_DATA_CONTENT_TYPE_POLICY,
+	};
+
+export const RESPONSE_CONTENT_TYPE_POLICIES: Record<
+	SerializedResponseType,
+	TransportContentTypePolicy
+> = {
+	JSON: JSON_CONTENT_TYPE_POLICY,
+	SuperJSON: JSON_CONTENT_TYPE_POLICY,
+	Text: TEXT_CONTENT_TYPE_POLICY,
+	Blob: BINARY_CONTENT_TYPE_POLICY,
+	Bytes: {
+		supportsCustomContentType: true,
+		defaultContentType: () => "application/octet-stream",
+		isCompatibleContentType: () => true,
+	},
+	FormData: FORM_DATA_CONTENT_TYPE_POLICY,
+	Contentless: {
+		supportsCustomContentType: false,
+		defaultContentType: () => undefined,
+		isCompatibleContentType: () => false,
+	},
+};
+
+export const resolveResponseContentType = (
+	responseType: SerializedResponseType,
+	customContentType: string | undefined,
+	data: unknown,
+): string | undefined => {
+	const policy = RESPONSE_CONTENT_TYPE_POLICIES[responseType];
+	if (customContentType === undefined) {
+		return policy.defaultContentType(data);
+	}
+	if (!policy.supportsCustomContentType) {
+		throw new Error(`${responseType} responses do not support a custom content type`);
+	}
+	const parsed = parseMediaType(customContentType);
+	if (!parsed || !policy.isCompatibleContentType(parsed)) {
+		throw new Error(
+			`Content type '${customContentType}' is not compatible with ${responseType} responses`,
+		);
+	}
+	return customContentType;
+};
+
+export const resolveRequestContentType = (
+	bodyType: BodyTransportType,
+	customContentType: string | undefined,
+	data: unknown,
+): string | undefined => {
+	const policy = REQUEST_CONTENT_TYPE_POLICIES[bodyType];
+	if (customContentType === undefined) {
+		return policy.defaultContentType(data);
+	}
+	if (!policy.supportsCustomContentType) {
+		throw new Error(`${bodyType} bodies do not support a custom content type`);
+	}
+	return customContentType;
 };
 
 export type SerializedResponseType =
@@ -95,7 +440,7 @@ export type TypedFetch<TRoute extends FetchRoute> = <
 >(
 	path: TPath,
 	method: TMethod,
-	data?: FetchRouteAtPathAndMethod<TRoute, TPath, TMethod>["request"],
+	...request: RequestArguments<FetchRouteAtPathAndMethod<TRoute, TPath, TMethod>["request"]>
 ) => Promise<FetchRouteAtPathAndMethod<TRoute, TPath, TMethod>["response"]>;
 
 export type TypedFetchConfig<TRoute extends FetchRoute> = <
@@ -104,7 +449,7 @@ export type TypedFetchConfig<TRoute extends FetchRoute> = <
 >(
 	path: TPath,
 	method: TMethod,
-	data?: FetchRouteAtPathAndMethod<TRoute, TPath, TMethod>["request"],
+	...request: RequestArguments<FetchRouteAtPathAndMethod<TRoute, TPath, TMethod>["request"]>
 ) => MaybePromise<FetchConfig>;
 
 export type TypedParseResponse<TRoute extends FetchRoute> = <
@@ -133,6 +478,7 @@ export type RuntimeResponseLike = {
 type ResponseSpecLike = {
 	type: SerializedResponseType;
 	schema?: ZodTypeAny;
+	contentType?: string;
 	headers?: {
 		type: "Standard" | "JSON" | "SuperJSON";
 		schema: ZodTypeAny;
@@ -201,7 +547,11 @@ export const createFetchConfig = (
 	};
 
 	if (requestParts?.body !== undefined) {
-		const body = requestParts.body as { type: string; data: unknown };
+		const body = requestParts.body as {
+			type: BodyTransportType;
+			data: unknown;
+			contentType?: string;
+		};
 		switch (body.type) {
 			case "FormData":
 			case "Blob":
@@ -209,17 +559,41 @@ export const createFetchConfig = (
 				init.body = body.data as FormData | Blob | string;
 				break;
 			case "URLSearchParams":
-				headers.set("content-type", "application/x-www-form-urlencoded;charset=UTF-8");
 				init.body = (body.data as URLSearchParams).toString();
 				break;
 			case "SuperJSON":
-				headers.set("content-type", "application/json");
 				init.body = superjson.stringify(body.data);
 				break;
 			case "JSON":
-				headers.set("content-type", "application/json");
 				init.body = JSON.stringify(body.data);
 				break;
+		}
+
+		const userContentType = headers.get("content-type");
+		if (body.type === "FormData") {
+			// The fetch runtime must generate the multipart boundary itself.
+			if (userContentType !== null) {
+				throw new Error(
+					"FormData bodies generate their own content-type header and cannot accept one from request headers",
+				);
+			}
+		} else {
+			const effectiveContentType = resolveRequestContentType(
+				body.type,
+				body.contentType,
+				body.data,
+			);
+			if (effectiveContentType !== undefined) {
+				if (
+					userContentType !== null &&
+					!mediaTypesEquivalent(userContentType, effectiveContentType)
+				) {
+					throw new Error(
+						`Request header content-type '${userContentType}' conflicts with the contract's effective media type '${effectiveContentType}'`,
+					);
+				}
+				headers.set("content-type", effectiveContentType);
+			}
 		}
 	}
 
@@ -341,26 +715,29 @@ export const createSerializedResponse = (args: {
 	data: unknown;
 	source: SerializedResponseSource;
 	headers?: HeadersInit;
+	contentType?: string;
 }): Response => {
 	const headers = new Headers(args.headers);
 	headers.set(ZONO_RESPONSE_TYPE_HEADER, args.type);
 	headers.set(ZONO_RESPONSE_SOURCE_HEADER, args.source);
 
+	const contentType = resolveResponseContentType(args.type, args.contentType, args.data);
+	if (contentType !== undefined) {
+		headers.set("content-type", contentType);
+	}
+
 	switch (args.type) {
 		case "JSON": {
-			headers.set("content-type", "application/json");
 			return new Response(JSON.stringify(args.data ?? null), {
 				status: args.status,
 				headers,
 			});
 		}
 		case "SuperJSON": {
-			headers.set("content-type", "application/json");
 			headers.set(ZONO_SUPERJSON_HEADER, "1");
 			return new Response(superjson.stringify(args.data), { status: args.status, headers });
 		}
 		case "Text": {
-			headers.set("content-type", "text/plain; charset=utf-8");
 			return new Response(String(args.data ?? ""), { status: args.status, headers });
 		}
 		case "Contentless": {
@@ -370,6 +747,7 @@ export const createSerializedResponse = (args: {
 			if (!(args.data instanceof FormData)) {
 				throw new Error("FormData response type requires FormData instance");
 			}
+			// The Response constructor generates the multipart boundary header.
 			return new Response(args.data, { status: args.status, headers });
 		}
 		case "Blob": {
@@ -379,7 +757,6 @@ export const createSerializedResponse = (args: {
 			return new Response(args.data, { status: args.status, headers });
 		}
 		case "Bytes": {
-			headers.set("content-type", "application/octet-stream");
 			if (!(args.data instanceof Uint8Array)) {
 				throw new Error("Bytes response type requires Uint8Array instance");
 			}
@@ -780,6 +1157,7 @@ export const validateAndSerializeResponse = (
 			statusMap[response.status]?.headers,
 			response.headers,
 		),
+		contentType: statusMap[response.status]?.contentType,
 		source,
 	});
 };

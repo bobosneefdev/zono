@@ -1,1 +1,20 @@
-export type { ApiShape } from "./shared.js";
+export type {
+	ClientErrorMode,
+	DetailedErrorData,
+	EmptyObject,
+	ErrorMode,
+	ErrorResponse,
+	FetchConfig,
+	FetchResponse,
+	HTTPMethod,
+	MaybePromise,
+	OpaqueInternalErrorData,
+	OpaqueNotFoundErrorData,
+	OpaqueUnsupportedMediaTypeData,
+	OpaqueValidationErrorData,
+	RequestArguments,
+	SerializedResponseType,
+	TypedFetch,
+	TypedFetchConfig,
+	TypedParseResponse,
+} from "./shared.js";

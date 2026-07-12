@@ -8,13 +8,24 @@ import {
 	findExactShapePathNode,
 	getRequestHeadersObject,
 	getRequestQueryObject,
+	HTTP_METHODS,
 	interpolatePathTemplate,
+	isHTTPMethod,
+	METHODS_WITHOUT_FETCH_BODY,
+	makeErrorRuntimeResponse,
+	makeNotFoundRuntimeResponse,
+	mediaTypeSatisfies,
 	normalizeHeaderValues,
 	parseBodyInput,
 	parseHeadersInput,
+	parseMediaType,
 	parseQueryInput,
 	parseSerializedResponse,
+	RequestValidationError,
+	resolveRequestContentType,
+	resolveResponseContentType,
 	toHonoPath,
+	UnsupportedMediaTypeError,
 	validateResponseAgainstStatusMap,
 	ZONO_HEADER_DATA_HEADER,
 	ZONO_HEADER_DATA_TYPE_HEADER,
@@ -501,6 +512,233 @@ describe("shared internal response validation", () => {
 				"Handler",
 			),
 		).toThrow("Handler response headers validation failed");
+	});
+});
+
+describe("shared media type helpers", () => {
+	test("parses media types with normalized type/subtype and parameters", () => {
+		expect(parseMediaType("Application/JSON")).toEqual({
+			type: "application",
+			subtype: "json",
+			parameters: {},
+		});
+		expect(parseMediaType("text/plain; Charset=UTF-8")).toEqual({
+			type: "text",
+			subtype: "plain",
+			parameters: { charset: "UTF-8" },
+		});
+		expect(parseMediaType('multipart/form-data; boundary="abc"')).toEqual({
+			type: "multipart",
+			subtype: "form-data",
+			parameters: { boundary: "abc" },
+		});
+		expect(parseMediaType("not-a-media-type")).toBeUndefined();
+		expect(parseMediaType("")).toBeUndefined();
+	});
+
+	test("mediaTypeSatisfies compares case-insensitively and requires declared parameters", () => {
+		expect(mediaTypeSatisfies("application/json", "Application/JSON")).toBe(true);
+		expect(mediaTypeSatisfies("text/plain; charset=utf-8", "text/plain;charset=UTF-8")).toBe(
+			true,
+		);
+		// Parameter ordering and whitespace are insignificant.
+		expect(
+			mediaTypeSatisfies(
+				"text/plain; charset=utf-8; format=flowed",
+				"text/plain;  format=flowed ;charset=utf-8",
+			),
+		).toBe(true);
+		// Incoming values may carry extra parameters.
+		expect(mediaTypeSatisfies("application/json", "application/json; charset=utf-8")).toBe(
+			true,
+		);
+		// Declared parameters must be present and match.
+		expect(mediaTypeSatisfies("text/plain; charset=utf-8", "text/plain")).toBe(false);
+		expect(mediaTypeSatisfies("text/plain; charset=utf-8", "text/plain; charset=ascii")).toBe(
+			false,
+		);
+		expect(mediaTypeSatisfies("application/json", "text/plain")).toBe(false);
+	});
+
+	test("resolveRequestContentType applies defaults and overrides", () => {
+		expect(resolveRequestContentType("JSON", undefined, {})).toBe("application/json");
+		expect(resolveRequestContentType("SuperJSON", undefined, {})).toBe("application/json");
+		expect(resolveRequestContentType("Text", undefined, "x")).toBe("text/plain; charset=utf-8");
+		expect(resolveRequestContentType("URLSearchParams", undefined, new URLSearchParams())).toBe(
+			"application/x-www-form-urlencoded;charset=UTF-8",
+		);
+		expect(
+			resolveRequestContentType("Blob", undefined, new Blob(["x"], { type: "image/png" })),
+		).toBe("image/png");
+		expect(resolveRequestContentType("Blob", undefined, new Blob(["x"]))).toBe(
+			"application/octet-stream",
+		);
+		expect(resolveRequestContentType("JSON", "application/query+json", {})).toBe(
+			"application/query+json",
+		);
+		expect(resolveRequestContentType("FormData", undefined, new FormData())).toBeUndefined();
+		expect(() =>
+			resolveRequestContentType("FormData", "multipart/form-data", new FormData()),
+		).toThrow("FormData bodies do not support a custom content type");
+	});
+
+	test("resolveResponseContentType applies defaults and validates compatibility", () => {
+		expect(resolveResponseContentType("JSON", undefined, {})).toBe("application/json");
+		expect(resolveResponseContentType("Bytes", undefined, new Uint8Array())).toBe(
+			"application/octet-stream",
+		);
+		expect(resolveResponseContentType("Contentless", undefined, undefined)).toBeUndefined();
+		expect(resolveResponseContentType("FormData", undefined, new FormData())).toBeUndefined();
+		expect(
+			resolveResponseContentType("Blob", undefined, new Blob(["x"], { type: "image/png" })),
+		).toBe("image/png");
+
+		// JSON and SuperJSON require application/json or a +json subtype.
+		expect(resolveResponseContentType("JSON", "application/problem+json", {})).toBe(
+			"application/problem+json",
+		);
+		expect(resolveResponseContentType("SuperJSON", "application/vnd.api+json", {})).toBe(
+			"application/vnd.api+json",
+		);
+		expect(() => resolveResponseContentType("JSON", "text/plain", {})).toThrow(
+			"not compatible with JSON responses",
+		);
+		// Text allows any text/*.
+		expect(resolveResponseContentType("Text", "text/csv", "x")).toBe("text/csv");
+		expect(() => resolveResponseContentType("Text", "application/json", "x")).toThrow(
+			"not compatible with Text responses",
+		);
+		// Blob and Bytes allow arbitrary valid media types.
+		expect(resolveResponseContentType("Bytes", "image/png", new Uint8Array())).toBe(
+			"image/png",
+		);
+		expect(() => resolveResponseContentType("Bytes", "garbage", new Uint8Array())).toThrow(
+			"not compatible with Bytes responses",
+		);
+	});
+
+	test("createSerializedResponse applies custom and default content types", async () => {
+		const custom = createSerializedResponse({
+			status: 200,
+			type: "JSON",
+			data: { ok: true },
+			source: "contract",
+			contentType: "application/problem+json",
+		});
+		expect(custom.headers.get("content-type")).toBe("application/problem+json");
+		expect(await parseSerializedResponse(custom)).toMatchObject({ data: { ok: true } });
+
+		const blob = createSerializedResponse({
+			status: 200,
+			type: "Blob",
+			data: new Blob(["x"], { type: "image/png" }),
+			source: "contract",
+		});
+		expect(blob.headers.get("content-type")).toBe("image/png");
+
+		const text = createSerializedResponse({
+			status: 200,
+			type: "Text",
+			data: "hi",
+			source: "contract",
+		});
+		expect(text.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+
+		const form = createSerializedResponse({
+			status: 200,
+			type: "FormData",
+			data: new FormData(),
+			source: "contract",
+		});
+		// The runtime generates the multipart boundary itself.
+		expect(form.headers.get("content-type") ?? "").toContain("boundary");
+
+		expect(() =>
+			createSerializedResponse({
+				status: 200,
+				type: "JSON",
+				data: { ok: true },
+				source: "contract",
+				contentType: "text/plain",
+			}),
+		).toThrow("not compatible with JSON responses");
+	});
+});
+
+describe("shared method recognition", () => {
+	test("recognizes all HTTP methods including QUERY", () => {
+		for (const method of HTTP_METHODS) {
+			expect(isHTTPMethod(method)).toBe(true);
+		}
+		expect(isHTTPMethod("QUERY")).toBe(false);
+		expect(isHTTPMethod("trace")).toBe(false);
+		expect(METHODS_WITHOUT_FETCH_BODY.has("get")).toBe(true);
+		expect(METHODS_WITHOUT_FETCH_BODY.has("head")).toBe(true);
+		expect(METHODS_WITHOUT_FETCH_BODY.has("query")).toBe(false);
+	});
+});
+
+describe("shared error responses", () => {
+	test("opaque errors never expose messages, issues, or stacks", () => {
+		const validation = makeErrorRuntimeResponse(
+			new RequestValidationError("Body validation failed", [{ path: ["secret"] }]),
+			"opaque",
+		);
+		expect(validation).toEqual({
+			status: 400,
+			type: "JSON",
+			data: { message: "Invalid request" },
+		});
+
+		const media = makeErrorRuntimeResponse(
+			new UnsupportedMediaTypeError("Content type 'x' does not satisfy declared 'y'"),
+			"opaque",
+		);
+		expect(media).toEqual({
+			status: 415,
+			type: "JSON",
+			data: { message: "Unsupported media type" },
+		});
+
+		const internal = makeErrorRuntimeResponse(new Error("secret detail"), "opaque");
+		expect(internal).toEqual({
+			status: 500,
+			type: "JSON",
+			data: { message: "Internal server error" },
+		});
+	});
+
+	test("detailed errors include diagnostics", () => {
+		const issues = [{ path: ["filter"] }];
+		const validation = makeErrorRuntimeResponse(
+			new RequestValidationError("Body validation failed", issues),
+			"detailed",
+		);
+		expect(validation.status).toBe(400);
+		expect(validation.data).toMatchObject({
+			message: "Body validation failed",
+			issues,
+		});
+
+		const internal = makeErrorRuntimeResponse(new Error("boom"), "detailed");
+		expect(internal.status).toBe(500);
+		expect(internal.data).toMatchObject({ message: "boom" });
+		expect((internal.data as { stack?: string }).stack).toBeDefined();
+
+		const nonError = makeErrorRuntimeResponse("weird", "detailed");
+		expect(nonError.status).toBe(500);
+		expect(nonError.data).toEqual({
+			message: "Internal server error",
+			issues: ["weird"],
+		});
+	});
+
+	test("not found responses are stable", () => {
+		expect(makeNotFoundRuntimeResponse()).toEqual({
+			status: 404,
+			type: "JSON",
+			data: { message: "Not Found" },
+		});
 	});
 });
 

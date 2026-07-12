@@ -1,18 +1,18 @@
 import type {
+	AnyApiDefinition,
 	ContractCallRoutes,
 	ContractTree,
-	ContractTreeFor,
 	HTTPMethod,
 } from "../contract/contract.js";
 import type {
 	InferMiddlewareResponseUnionAtPath,
 	MiddlewareTree,
-	MiddlewareTreeFor,
 } from "../middleware/middleware.js";
-import type { ClientErrorMode, ErrorResponse, ServerErrorMode } from "../server/server.js";
 import {
-	type ApiShape,
+	type ClientErrorMode,
 	createFetchConfig,
+	type ErrorMode,
+	type ErrorResponse,
 	type FetchConfig,
 	type MapFetchRouteResponse,
 	type MaybePromise,
@@ -27,8 +27,9 @@ export type ClientOptions = {
 	postRequest?: (response: Response) => MaybePromise<Response>;
 };
 
-type ClientInferredErrorResponse<TErrorMode extends ClientErrorMode> =
-	TErrorMode extends ServerErrorMode ? ErrorResponse<TErrorMode> : never;
+type ClientInferredErrorResponse<TErrorMode extends ClientErrorMode> = TErrorMode extends ErrorMode
+	? ErrorResponse<TErrorMode>
+	: never;
 
 type ClientFetchRoutes<
 	TContracts extends ContractTree,
@@ -77,21 +78,28 @@ export type Client<
 	parseResponse: ClientParseResponseMethod<TContracts, TMiddlewares, TErrorMode>;
 };
 
+/**
+ * Creates a typed client from an API definition supplied as a type-only
+ * generic (`createClient<typeof api>(baseUrl)`); no runtime schemas are
+ * required in client bundles. Pass `"none"` as the second generic to exclude
+ * Zono-generated error responses from the inferred union.
+ */
 export const createClient = <
-	TShape extends ApiShape,
-	TContracts extends ContractTreeFor<TShape> & ContractTree,
-	TMiddlewares extends MiddlewareTreeFor<TShape>,
-	TErrorMode extends ClientErrorMode,
+	TApi extends AnyApiDefinition = AnyApiDefinition,
+	TErrorMode extends ClientErrorMode = TApi["errorMode"],
 >(
 	baseUrl: string,
 	options?: ClientOptions,
-): Client<TContracts, TMiddlewares, TErrorMode> => {
+): Client<TApi["contracts"], TApi["middlewares"], TErrorMode> => {
+	type TContracts = TApi["contracts"];
+	type TMiddlewares = TApi["middlewares"];
+
 	const fetchConfigMethod: ClientFetchConfigMethod<TContracts, TMiddlewares, TErrorMode> = (
 		path,
 		method,
-		data,
+		...request
 	) => {
-		const [url, init] = createFetchConfig(baseUrl, path, method, data);
+		const [url, init] = createFetchConfig(baseUrl, path, method, request[0]);
 		return options?.preRequest ? options.preRequest(url, init) : [url, init];
 	};
 
@@ -106,9 +114,9 @@ export const createClient = <
 	const fetchMethod: ClientFetchMethod<TContracts, TMiddlewares, TErrorMode> = async (
 		path,
 		method,
-		data,
+		...request
 	) => {
-		const [url, init] = await fetchConfigMethod(path, method, data);
+		const [url, init] = await fetchConfigMethod(path, method, ...request);
 		const rawResponse = await fetch(url, init);
 		const response = options?.postRequest
 			? await options.postRequest(rawResponse)
