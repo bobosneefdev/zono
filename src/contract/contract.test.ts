@@ -32,6 +32,12 @@ describe("contract route compilation", () => {
 								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
 							},
 						},
+						query: {
+							body: { type: "JSON", schema: z.object({ filter: z.string() }) },
+							responses: {
+								200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+							},
+						},
 					},
 					SHAPE: {
 						$userId: {
@@ -57,6 +63,7 @@ describe("contract route compilation", () => {
 
 		expect(routes).toEqual([
 			{ pathTemplate: "/users", honoPath: "/users", method: "get" },
+			{ pathTemplate: "/users", honoPath: "/users", method: "query" },
 			{ pathTemplate: "/users/$userId", honoPath: "/users/:userId", method: "get" },
 		]);
 	});
@@ -115,6 +122,11 @@ describe("contract helpers", () => {
 					},
 				},
 				post: undefined,
+				query: {
+					responses: {
+						200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
+					},
+				},
 			}),
 		).toBe(true);
 		expect(isContractLike(null)).toBe(false);

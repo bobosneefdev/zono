@@ -144,6 +144,15 @@ const contracts = {
 		},
 		search: {
 			CONTRACT: {
+				query: {
+					body: { type: "JSON", schema: z.object({ filter: z.string() }) },
+					responses: {
+						200: {
+							type: "JSON",
+							schema: z.object({ method: z.string(), filter: z.string() }),
+						},
+					},
+				},
 				post: {
 					body: {
 						type: "URLSearchParams",
@@ -310,6 +319,33 @@ const middlewares = {
 } as const satisfies MiddlewareTreeFor<typeof shape>;
 
 describe("createClient runtime", () => {
+	test("sends typed QUERY requests with serialized bodies", async () => {
+		const app = new Hono();
+		app.on("QUERY", "/search", async (ctx) => {
+			const body = (await ctx.req.json()) as { filter: string };
+			return createSerializedResponse({
+				status: 200,
+				type: "JSON",
+				source: "contract",
+				data: { method: ctx.req.method, filter: body.filter },
+			});
+		});
+		const client = createClient<typeof shape, typeof contracts, typeof middlewares, "public">(
+			startServer(app),
+		);
+
+		const [url, init] = await client.fetchConfig("/search", "query", {
+			body: { type: "JSON", data: { filter: "active" } },
+		});
+		const response = await client.fetch("/search", "query", {
+			body: { type: "JSON", data: { filter: "active" } },
+		});
+
+		expect(init.method).toBe("QUERY");
+		expect(new Request(url, init).headers.get("content-type")).toBe("application/json");
+		expect(response.data).toEqual({ method: "QUERY", filter: "active" });
+	});
+
 	test("encodes structured path/query/headers/body from the request envelope", async () => {
 		const app = new Hono();
 		app.post("/users/:userId", async (ctx) => {

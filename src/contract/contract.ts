@@ -34,7 +34,7 @@ export type SuperJSONValue =
 
 export type ContractMethods = Partial<Record<HTTPMethod, ContractMethod>>;
 
-export type HTTPMethod = "get" | "post" | "put" | "delete" | "patch" | "options" | "head";
+export type HTTPMethod = "get" | "post" | "put" | "delete" | "patch" | "options" | "head" | "query";
 
 export type ContractMethod = {
 	responses: Record<number, ResponseSpec>;
@@ -354,7 +354,8 @@ const isHTTPMethod = (value: string): value is HTTPMethod => {
 		value === "delete" ||
 		value === "patch" ||
 		value === "options" ||
-		value === "head"
+		value === "head" ||
+		value === "query"
 	);
 };
 

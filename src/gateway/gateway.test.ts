@@ -74,6 +74,12 @@ const serviceContracts = {
 						201: { type: "Text", schema: z.string() },
 					},
 				},
+				query: {
+					body: { type: "JSON", schema: z.object({ filter: z.string() }) },
+					responses: {
+						200: { type: "Text", schema: z.string() },
+					},
+				},
 			},
 		},
 		headered: {
@@ -280,6 +286,41 @@ describe("gateway runtime", () => {
 		expect(post.status).toBe(201);
 		expect(parsedPost.type).toBe("Text");
 		expect(parsedPost.data).toBe("body:hello");
+	});
+
+	test("forwards QUERY bodies through the typed gateway client", async () => {
+		const upstreamApp = new Hono();
+		upstreamApp.on("QUERY", "/echo", async (ctx) => {
+			const body = (await ctx.req.json()) as { filter: string };
+			return createSerializedResponse({
+				status: 200,
+				type: "Text",
+				source: "contract",
+				data: `${ctx.req.method}:${ctx.req.header("content-type")}:${body.filter}`,
+			});
+		});
+		const service = createGatewayService(
+			{ SHAPE: { echo: { CONTRACT: true } } },
+			serviceContracts,
+			serviceMiddlewares,
+			"public",
+			startServer(upstreamApp),
+		);
+		const gatewayApp = new Hono();
+		const services = createGatewayServices({ service });
+		initGateway(gatewayApp, services);
+		const client = createGatewayClient<typeof services>(startServer(gatewayApp));
+
+		const [url, init] = await client.service.fetchConfig("/echo", "query", {
+			body: { type: "JSON", data: { filter: "active" } },
+		});
+		const response = await client.service.fetch("/echo", "query", {
+			body: { type: "JSON", data: { filter: "active" } },
+		});
+
+		expect(init.method).toBe("QUERY");
+		expect(new Request(url, init).headers.get("content-type")).toBe("application/json");
+		expect(response.data).toBe("QUERY:application/json:active");
 	});
 
 	test("namespaces same-path routes by service key and drops legacy unprefixed routes", async () => {

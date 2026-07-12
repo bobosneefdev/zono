@@ -28,6 +28,59 @@ afterEach(() => {
 });
 
 describe("server runtime", () => {
+	test("registers QUERY handlers and parses request bodies", async () => {
+		const shape = {
+			SHAPE: { search: { CONTRACT: true } },
+		} as const satisfies ApiShape;
+		const contracts = {
+			SHAPE: {
+				search: {
+					CONTRACT: {
+						query: {
+							body: { type: "JSON", schema: z.object({ filter: z.string() }) },
+							responses: {
+								200: {
+									type: "JSON",
+									schema: z.object({ method: z.string(), filter: z.string() }),
+								},
+							},
+						},
+					},
+				},
+			},
+		} as const satisfies ContractTreeFor<typeof shape>;
+		const app = new Hono();
+		initHono<typeof shape, unknown>(app, {
+			contracts: createHonoContractHandlers(contracts, {
+				SHAPE: {
+					search: {
+						HANDLER: {
+							query: (data, ctx) => ({
+								status: 200,
+								type: "JSON",
+								data: { method: ctx.req.method, filter: data.body.filter },
+							}),
+						},
+					},
+				},
+			}),
+			errorMode: "public",
+			createContext: () => ({}),
+		});
+
+		const response = await fetch(`${startServer(app)}/search`, {
+			method: "QUERY",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ filter: "active" }),
+		});
+
+		expect(response.status).toBe(200);
+		expect((await parseSerializedResponse(response)).data).toEqual({
+			method: "QUERY",
+			filter: "active",
+		});
+	});
+
 	test("parses path params, standard query, and standard headers into handler data", async () => {
 		const shape = {
 			SHAPE: {
