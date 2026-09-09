@@ -184,7 +184,7 @@ export type ClientResponse<
 
 const createRequestValidationError = (
 	segment: "Path params" | "Query" | "Headers" | "Body",
-	issues: Array<unknown>,
+	issues: ReadonlyArray<unknown>,
 ): RequestValidationError => {
 	return new RequestValidationError(`${segment} validation failed`, issues);
 };
@@ -282,11 +282,13 @@ const parseRequestData = async (
 	const inputData: Record<string, unknown> = {};
 
 	if (requestParsers.pathParams) {
-		const pathParseResult = await requestParsers.pathParams.safeParseAsync(ctx.req.param());
-		if (!pathParseResult.success) {
-			throw createRequestValidationError("Path params", pathParseResult.error.issues);
+		const pathParseResult = await requestParsers.pathParams["~standard"].validate(
+			ctx.req.param(),
+		);
+		if (pathParseResult.issues) {
+			throw createRequestValidationError("Path params", pathParseResult.issues);
 		}
-		inputData.pathParams = pathParseResult.data;
+		inputData.pathParams = pathParseResult.value;
 	}
 
 	if (requestParsers.query) {
@@ -296,11 +298,12 @@ const parseRequestData = async (
 		} catch (error) {
 			throw createRequestValidationError("Query", [createParseFailureIssue(error)]);
 		}
-		const queryParseResult = await requestParsers.query.schema.safeParseAsync(queryInput);
-		if (!queryParseResult.success) {
-			throw createRequestValidationError("Query", queryParseResult.error.issues);
+		const queryParseResult =
+			await requestParsers.query.schema["~standard"].validate(queryInput);
+		if (queryParseResult.issues) {
+			throw createRequestValidationError("Query", queryParseResult.issues);
 		}
-		inputData.query = queryParseResult.data;
+		inputData.query = queryParseResult.value;
 	}
 
 	if (requestParsers.headers) {
@@ -310,11 +313,12 @@ const parseRequestData = async (
 		} catch (error) {
 			throw createRequestValidationError("Headers", [createParseFailureIssue(error)]);
 		}
-		const headersParseResult = await requestParsers.headers.schema.safeParseAsync(headersInput);
-		if (!headersParseResult.success) {
-			throw createRequestValidationError("Headers", headersParseResult.error.issues);
+		const headersParseResult =
+			await requestParsers.headers.schema["~standard"].validate(headersInput);
+		if (headersParseResult.issues) {
+			throw createRequestValidationError("Headers", headersParseResult.issues);
 		}
-		inputData.headers = headersParseResult.data;
+		inputData.headers = headersParseResult.value;
 	}
 
 	if (requestParsers.body) {
@@ -325,11 +329,11 @@ const parseRequestData = async (
 		} catch (error) {
 			throw createRequestValidationError("Body", [createParseFailureIssue(error)]);
 		}
-		const bodyParseResult = await requestParsers.body.schema.safeParseAsync(bodyInput);
-		if (!bodyParseResult.success) {
-			throw createRequestValidationError("Body", bodyParseResult.error.issues);
+		const bodyParseResult = await requestParsers.body.schema["~standard"].validate(bodyInput);
+		if (bodyParseResult.issues) {
+			throw createRequestValidationError("Body", bodyParseResult.issues);
 		}
-		inputData.body = bodyParseResult.data;
+		inputData.body = bodyParseResult.value;
 	}
 
 	return inputData;

@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import type { StandardSchemaV1 } from "@standard-schema/spec";
+import { Schema } from "effect";
 import superjson from "superjson";
 import z from "zod";
 import {
@@ -418,9 +420,9 @@ describe("shared internal request helpers", () => {
 	});
 });
 
-describe("shared internal response validation", () => {
-	test("accepts responses that match the declared status map", () => {
-		expect(() =>
+describe("shared internal response validation", async () => {
+	test("accepts responses that match the declared status map", async () => {
+		await expect(
 			validateResponseAgainstStatusMap(
 				{
 					200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
@@ -428,11 +430,11 @@ describe("shared internal response validation", () => {
 				{ status: 200, type: "JSON", data: { ok: true } },
 				"Handler",
 			),
-		).not.toThrow();
+		).resolves.toBeUndefined();
 	});
 
-	test("validates declared response headers", () => {
-		expect(() =>
+	test("validates declared response headers", async () => {
+		await expect(
 			validateResponseAgainstStatusMap(
 				{
 					200: {
@@ -452,11 +454,11 @@ describe("shared internal response validation", () => {
 				},
 				"Handler",
 			),
-		).not.toThrow();
+		).resolves.toBeUndefined();
 	});
 
-	test("rejects undeclared statuses, mismatched types, invalid data, and invalid headers", () => {
-		expect(() =>
+	test("rejects undeclared statuses, mismatched types, invalid data, and invalid headers", async () => {
+		await expect(
 			validateResponseAgainstStatusMap(
 				{
 					200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
@@ -464,9 +466,9 @@ describe("shared internal response validation", () => {
 				{ status: 201, type: "JSON", data: { ok: true } },
 				"Handler",
 			),
-		).toThrow("Handler returned undeclared status: 201");
+		).rejects.toThrow("Handler returned undeclared status: 201");
 
-		expect(() =>
+		await expect(
 			validateResponseAgainstStatusMap(
 				{
 					200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
@@ -474,9 +476,11 @@ describe("shared internal response validation", () => {
 				{ status: 200, type: "Text", data: "nope" },
 				"Handler",
 			),
-		).toThrow("Handler returned mismatched response type. Expected JSON, received Text");
+		).rejects.toThrow(
+			"Handler returned mismatched response type. Expected JSON, received Text",
+		);
 
-		expect(() =>
+		await expect(
 			validateResponseAgainstStatusMap(
 				{
 					200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
@@ -484,9 +488,9 @@ describe("shared internal response validation", () => {
 				{ status: 200, type: "JSON", data: { ok: "nope" } },
 				"Handler",
 			),
-		).toThrow("Handler response data validation failed");
+		).rejects.toThrow("Handler response data validation failed");
 
-		expect(() =>
+		await expect(
 			validateResponseAgainstStatusMap(
 				{
 					200: { type: "JSON", schema: z.object({ ok: z.boolean() }) },
@@ -494,9 +498,9 @@ describe("shared internal response validation", () => {
 				{ status: 200, type: "JSON", data: { ok: true }, headers: { "x-test": "1" } },
 				"Handler",
 			),
-		).toThrow("Handler returned undeclared response headers");
+		).rejects.toThrow("Handler returned undeclared response headers");
 
-		expect(() =>
+		await expect(
 			validateResponseAgainstStatusMap(
 				{
 					200: {
@@ -511,7 +515,7 @@ describe("shared internal response validation", () => {
 				{ status: 200, type: "JSON", data: { ok: true }, headers: { "x-trace": 1 } },
 				"Handler",
 			),
-		).toThrow("Handler response headers validation failed");
+		).rejects.toThrow("Handler response headers validation failed");
 	});
 });
 
@@ -744,3 +748,36 @@ describe("shared error responses", () => {
 
 // @ts-expect-error interpolatePathTemplate path params values must be strings
 interpolatePathTemplate("/users/$userId", { userId: 123 });
+
+test("validates standard-only async schemas and Effect failures", async () => {
+	const schema: StandardSchemaV1<string> = {
+		"~standard": {
+			version: 1,
+			vendor: "test",
+			validate: async (value) => (typeof value === "string" ? { value } : { issues: [] }),
+		},
+	};
+	for (const validator of [schema, Schema.toStandardSchemaV1(Schema.String)]) {
+		await expect(
+			validateResponseAgainstStatusMap(
+				{ 200: { type: "Text", schema: validator } },
+				{ status: 200, type: "Text", data: "ok" },
+				"Handler",
+			),
+		).resolves.toBeUndefined();
+		await expect(
+			validateResponseAgainstStatusMap(
+				{ 200: { type: "Text", schema: validator } },
+				{ status: 200, type: "Text", data: 42 },
+				"Handler",
+			),
+		).rejects.toThrow("Handler response data validation failed");
+		await expect(
+			validateResponseAgainstStatusMap(
+				{ 200: { type: "Contentless", headers: { type: "JSON", schema: validator } } },
+				{ status: 200, type: "Contentless", data: undefined, headers: 42 },
+				"Middleware",
+			),
+		).rejects.toThrow("Middleware response headers validation failed");
+	}
+});

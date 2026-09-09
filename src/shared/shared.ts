@@ -1,5 +1,5 @@
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import superjson from "superjson";
-import type { ZodType, ZodTypeAny } from "zod";
 
 export const ZONO_RESPONSE_TYPE_HEADER = "x-zono-response-type";
 export const ZONO_RESPONSE_SOURCE_HEADER = "x-zono-response-source";
@@ -82,9 +82,9 @@ export type ErrorResponse<TErrorMode extends ErrorMode> =
 	  };
 
 export class RequestValidationError extends Error {
-	readonly issues: Array<unknown>;
+	readonly issues: ReadonlyArray<unknown>;
 
-	constructor(message: string, issues: Array<unknown>) {
+	constructor(message: string, issues: ReadonlyArray<unknown>) {
 		super(message);
 		this.name = "RequestValidationError";
 		this.issues = issues;
@@ -106,7 +106,7 @@ const getDetailedErrorData = (error: unknown, fallbackMessage: string): Detailed
 	if (error instanceof RequestValidationError) {
 		return {
 			message: error.message,
-			issues: error.issues,
+			issues: [...error.issues],
 			stack: error.stack,
 		};
 	}
@@ -385,8 +385,16 @@ export type Expand<T> = Prettify<T>;
 
 export type ExpandUnion<T> = T extends unknown ? Expand<T> : never;
 
-export type InferSchemaData<TSpec> = TSpec extends { schema: ZodType<infer TOutput, unknown> }
+export type InferSchemaData<TSpec> = TSpec extends {
+	schema: StandardSchemaV1<unknown, infer TOutput>;
+}
 	? TOutput
+	: undefined;
+
+export type InferSchemaInput<TSpec> = TSpec extends {
+	schema: StandardSchemaV1<infer TInput, unknown>;
+}
+	? TInput
 	: undefined;
 
 export type InferResponseHeadersData<TSpec> = TSpec extends { headers: infer THeadersSpec }
@@ -477,11 +485,11 @@ export type RuntimeResponseLike = {
 
 type ResponseSpecLike = {
 	type: SerializedResponseType;
-	schema?: ZodTypeAny;
+	schema?: StandardSchemaV1;
 	contentType?: string;
 	headers?: {
 		type: "Standard" | "JSON" | "SuperJSON";
-		schema: ZodTypeAny;
+		schema: StandardSchemaV1;
 	};
 };
 
@@ -912,15 +920,17 @@ export const collectShapePathNodes = (root: unknown, pathTemplate: string): Arra
 	return nodes;
 };
 
-export const getResponseSpecParser = (responseSpec: ResponseSpecLike): ZodTypeAny | undefined => {
+export const getResponseSpecParser = (
+	responseSpec: ResponseSpecLike,
+): StandardSchemaV1 | undefined => {
 	return responseSpec.schema;
 };
 
-export const validateResponseAgainstStatusMap = (
+export const validateResponseAgainstStatusMap = async (
 	statusMap: Record<number, ResponseSpecLike>,
 	response: RuntimeResponseLike,
 	label: string,
-): void => {
+): Promise<void> => {
 	const responseSpec = statusMap[response.status];
 	if (!responseSpec) {
 		throw new Error(`${label} returned undeclared status: ${response.status}`);
@@ -935,8 +945,10 @@ export const validateResponseAgainstStatusMap = (
 			throw new Error(`${label} returned undeclared response headers`);
 		}
 	} else {
-		const headersParseResult = responseSpec.headers.schema.safeParse(response.headers);
-		if (!headersParseResult.success) {
+		const headersParseResult = await responseSpec.headers.schema["~standard"].validate(
+			response.headers,
+		);
+		if (headersParseResult.issues) {
 			throw new Error(`${label} response headers validation failed`);
 		}
 	}
@@ -946,8 +958,8 @@ export const validateResponseAgainstStatusMap = (
 		return;
 	}
 
-	const parseResult = parser.safeParse(response.data);
-	if (!parseResult.success) {
+	const parseResult = await parser["~standard"].validate(response.data);
+	if (parseResult.issues) {
 		throw new Error(`${label} response data validation failed`);
 	}
 };
@@ -1142,13 +1154,13 @@ const getSerializedResponseHeaders = (
 	return headers;
 };
 
-export const validateAndSerializeResponse = (
+export const validateAndSerializeResponse = async (
 	statusMap: Record<number, ResponseSpecLike>,
 	response: RuntimeResponseLike,
 	label: string,
 	source: SerializedResponseSource,
-): Response => {
-	validateResponseAgainstStatusMap(statusMap, response, label);
+): Promise<Response> => {
+	await validateResponseAgainstStatusMap(statusMap, response, label);
 	return createSerializedResponse({
 		status: response.status,
 		type: response.type,

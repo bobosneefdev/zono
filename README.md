@@ -1,6 +1,6 @@
 # Zono
 
-Contract-first, type-safe HTTP clients, servers, and gateways built on [Zod](https://zod.dev) and [Hono](https://hono.dev).
+Contract-first, type-safe HTTP clients, servers, and gateways built on [Standard Schema](https://standardschema.dev/schema) and [Hono](https://hono.dev).
 
 You declare your API once: routes, request and response schemas, middleware, error mode. Servers, clients, and gateways all derive their types from that one definition. There is no codegen step, and clients import the definition as a type only, so schemas stay out of client bundles.
 
@@ -11,6 +11,21 @@ bun add hono
 ```
 
 ## The API definition
+
+Any Standard Schema v1 validator works in `schema` and `pathParams`, including async validators. The examples below use Zod; install your preferred validator alongside Zono.
+
+For Effect v4 RC, install `effect@rc` instead of Zod and use its Standard Schema adapter:
+
+```ts
+import { Schema } from "effect";
+
+const userSchema = Schema.toStandardSchemaV1(
+    Schema.Struct({ id: Schema.String, name: Schema.String }),
+);
+// Use userSchema anywhere a contract accepts a schema.
+```
+
+Client requests infer schema input types; handlers receive validated output types, including request transforms. Response types infer schema outputs. Response validation checks handler/middleware data and headers without applying the parsed output to the serialized response, so return values already matching the declared output. Transport constraints still apply (for example, text responses must be strings and path parameters must be string records).
 
 ```ts
 // api.ts
@@ -205,7 +220,7 @@ const client = createClient<typeof api>(baseUrl, {
 
 The API definition sets one of two server error modes:
 
-- `"opaque"` (default) returns fixed payloads that never expose exception messages, Zod issues, or stacks:
+- `"opaque"` (default) returns fixed payloads that never expose exception messages, validation issues, or stacks:
   - `400` `{ message: "Invalid request" }` for request parsing/validation failures
   - `404` `{ message: "Not Found" }` for unmatched routes
   - `415` `{ message: "Unsupported media type" }` for declared media-type mismatches
@@ -333,7 +348,7 @@ Masked-out routes are not registered on the gateway and do not appear on the cli
 | `@bobosneefdev/zono/gateway` | gateway services, handlers, client |
 | `@bobosneefdev/zono/shared` | shared user-facing types (`ErrorMode`, `TypedFetch`, etc.) |
 
-ESM-only. `zod` is a required peer dependency; `hono` is optional and only needed for servers and gateways.
+ESM-only. No schema library is a required peer dependency. `hono` is optional and only needed for servers and gateways. `@standard-schema/spec` provides the shared types; Zod and Effect are development dependencies for tests.
 
 ## License
 

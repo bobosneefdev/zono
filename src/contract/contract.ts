@@ -1,4 +1,4 @@
-import z from "zod";
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { MiddlewareSpec, MiddlewareTree } from "../middleware/middleware.js";
 import {
 	type EmptyObject,
@@ -8,6 +8,7 @@ import {
 	type FetchRoute,
 	type HTTPMethod,
 	type InferSchemaData,
+	type InferSchemaInput,
 	isHTTPMethod,
 	isRecordObject,
 	joinPath,
@@ -45,17 +46,17 @@ export type ContractMethod = {
 	query?: QuerySpec;
 	body?: BodySpec;
 	headers?: HeadersSpec;
-	pathParams?: z.ZodType<Record<string, string>, Record<string, string>>;
+	pathParams?: StandardSchemaV1<Record<string, string>, Record<string, string>>;
 };
 
-export type PathParamsFor<TDynamicPaths extends string> = z.ZodType<
+export type PathParamsFor<TDynamicPaths extends string> = StandardSchemaV1<
 	Record<TDynamicPaths, string>,
 	Record<TDynamicPaths, string>
 >;
 
 type SchemaCarrier<TType extends string, TOutput, TInput = TOutput> = {
 	type: TType;
-	schema: z.ZodType<TOutput, TInput>;
+	schema: StandardSchemaV1<TInput, TOutput>;
 };
 
 /** Transports where Zono can safely control the media-type header. */
@@ -256,10 +257,16 @@ export type InferContractResponseData<TResponseSpec extends ResponseSpec> =
 	InferRuntimeResponseData<TResponseSpec>;
 
 type RequestPartOutputs<TMethod extends ContractMethod> = {
-	pathParams: TMethod extends { pathParams: z.ZodType<infer TData, unknown> } ? TData : never;
-	query: TMethod extends { query: { schema: z.ZodType<infer TData, unknown> } } ? TData : never;
-	body: TMethod extends { body: { schema: z.ZodType<infer TData, unknown> } } ? TData : never;
-	headers: TMethod extends { headers: { schema: z.ZodType<infer TData, unknown> } }
+	pathParams: TMethod extends { pathParams: StandardSchemaV1<unknown, infer TData> }
+		? TData
+		: never;
+	query: TMethod extends { query: { schema: StandardSchemaV1<unknown, infer TData> } }
+		? TData
+		: never;
+	body: TMethod extends { body: { schema: StandardSchemaV1<unknown, infer TData> } }
+		? TData
+		: never;
+	headers: TMethod extends { headers: { schema: StandardSchemaV1<unknown, infer TData> } }
 		? TData
 		: never;
 };
@@ -273,19 +280,19 @@ export type RequestData<TMethod extends ContractMethod> = Expand<{
 }>;
 
 type QueryClientInput<TQuerySpec extends QuerySpec> = TQuerySpec extends StandardQuerySpec
-	? { type: "Standard"; data: InferSchemaData<TQuerySpec> }
+	? { type: "Standard"; data: InferSchemaInput<TQuerySpec> }
 	: TQuerySpec extends JSONQuerySpec
-		? { type: "JSON"; data: InferSchemaData<TQuerySpec> }
+		? { type: "JSON"; data: InferSchemaInput<TQuerySpec> }
 		: TQuerySpec extends SuperJSONQuerySpec
-			? { type: "SuperJSON"; data: InferSchemaData<TQuerySpec> }
+			? { type: "SuperJSON"; data: InferSchemaInput<TQuerySpec> }
 			: never;
 
 type HeadersClientInput<THeadersSpec extends HeadersSpec> = THeadersSpec extends StandardHeadersSpec
-	? { type: "Standard"; data: InferSchemaData<THeadersSpec> }
+	? { type: "Standard"; data: InferSchemaInput<THeadersSpec> }
 	: THeadersSpec extends JSONHeadersSpec
-		? { type: "JSON"; data: InferSchemaData<THeadersSpec> }
+		? { type: "JSON"; data: InferSchemaInput<THeadersSpec> }
 		: THeadersSpec extends SuperJSONHeadersSpec
-			? { type: "SuperJSON"; data: InferSchemaData<THeadersSpec> }
+			? { type: "SuperJSON"; data: InferSchemaInput<THeadersSpec> }
 			: never;
 
 /**
@@ -299,22 +306,24 @@ type BodyContentTypeInput<TBodySpec> = TBodySpec extends {
 	: { contentType?: undefined };
 
 type BodyClientInput<TBodySpec extends BodySpec> = (TBodySpec extends JSONBodySpec
-	? { type: "JSON"; data: InferSchemaData<TBodySpec> }
+	? { type: "JSON"; data: InferSchemaInput<TBodySpec> }
 	: TBodySpec extends SuperJSONBodySpec
-		? { type: "SuperJSON"; data: InferSchemaData<TBodySpec> }
+		? { type: "SuperJSON"; data: InferSchemaInput<TBodySpec> }
 		: TBodySpec extends FormDataBodySpec
-			? { type: "FormData"; data: InferSchemaData<TBodySpec> }
+			? { type: "FormData"; data: InferSchemaInput<TBodySpec> }
 			: TBodySpec extends URLSearchParamsBodySpec
-				? { type: "URLSearchParams"; data: InferSchemaData<TBodySpec> }
+				? { type: "URLSearchParams"; data: InferSchemaInput<TBodySpec> }
 				: TBodySpec extends TextBodySpec
-					? { type: "Text"; data: InferSchemaData<TBodySpec> }
+					? { type: "Text"; data: InferSchemaInput<TBodySpec> }
 					: TBodySpec extends BlobBodySpec
-						? { type: "Blob"; data: InferSchemaData<TBodySpec> }
+						? { type: "Blob"; data: InferSchemaInput<TBodySpec> }
 						: never) &
 	BodyContentTypeInput<TBodySpec>;
 
 type ClientRequestPartOutputs<TMethod extends ContractMethod> = {
-	pathParams: TMethod extends { pathParams: z.ZodType<infer TData, unknown> } ? TData : never;
+	pathParams: TMethod extends { pathParams: StandardSchemaV1<infer TData, unknown> }
+		? TData
+		: never;
 	query: TMethod extends { query: infer TQuerySpec extends QuerySpec }
 		? QueryClientInput<TQuerySpec>
 		: never;

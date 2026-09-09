@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { Schema } from "effect";
 import { Hono } from "hono";
 import superjson from "superjson";
 import z from "zod";
+import { createClient } from "../client/client.js";
 import type { ApiDefinition } from "../contract/contract.js";
 import { defineApi } from "../contract/contract.js";
 import type { EmptyObject, ErrorMode } from "../shared/shared.js";
@@ -1992,5 +1994,93 @@ typeOnly(() => {
 				extra: (_ctx: unknown, next: () => Promise<void>) => next(),
 			},
 		},
+	});
+});
+
+describe("Standard Schema interoperability", () => {
+	for (const [vendor, schema] of [
+		["Zod", z.string().transform(async (value) => value.trim())],
+		["Effect v4", Schema.toStandardSchemaV1(Schema.String)],
+	] as const) {
+		test(`${vendor} validates requests, responses and headers`, async () => {
+			const api = defineApi({
+				contracts: {
+					CONTRACT: {
+						post: {
+							body: { type: "Text", schema },
+							responses: {
+								200: {
+									type: "Text",
+									schema,
+									headers: {
+										type: "JSON",
+										schema,
+									},
+								},
+							},
+						},
+					},
+				},
+			});
+			const base = serve(
+				createApiHandlers(api)({
+					createContext: () => ({}),
+					contracts: {
+						HANDLER: {
+							post: (data) => {
+								const value: string = data.body;
+								return { status: 200, type: "Text", data: value, headers: value };
+							},
+						},
+					},
+				}),
+			);
+			const client = createClient<typeof api>(base);
+			const response = await client.fetch("/", "post", {
+				body: { type: "Text", data: "hello" },
+			});
+			expect(response.status).toBe(200);
+			expect(response.data).toBe("hello");
+			expect(response.headers).toBe("hello");
+		});
+	}
+	test("client accepts schema input and handlers receive transformed output", async () => {
+		const api = defineApi({
+			contracts: {
+				CONTRACT: {
+					post: {
+						body: {
+							type: "JSON",
+							schema: z.string().transform(async (value) => value.length),
+						},
+						responses: {
+							200: { type: "JSON", schema: Schema.toStandardSchemaV1(Schema.Number) },
+						},
+					},
+				},
+			},
+		});
+		const base = serve(
+			createApiHandlers(api)({
+				createContext: () => ({}),
+				contracts: {
+					HANDLER: {
+						post: (data) => {
+							const length: number = data.body;
+							return { status: 200, type: "JSON", data: length };
+						},
+					},
+				},
+			}),
+		);
+		const client = createClient<typeof api>(base);
+		const response = await client.fetch("/", "post", { body: { type: "JSON", data: "hello" } });
+		expect(response.data).toBe(5);
+		const invalid = await fetch(base, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: "42",
+		});
+		expect(invalid.status).toBe(400);
 	});
 });

@@ -1,9 +1,9 @@
 {
     "name": "@bobosneefdev/zono",
-    "version": "11.1.0",
+    "version": "12.0.0",
     "type": "module",
     "packageManager": "bun@1.3.5",
-    "description": "Easily create contract-first HTTP clients, servers, and gateways using Zod schemas.",
+    "description": "Easily create contract-first HTTP clients, servers, and gateways using Standard Schema.",
     "homepage": "https://github.com/bobosneefdev/zono#readme",
     "exports": {
         "./client": {
@@ -47,6 +47,7 @@
         "url": "git+https://github.com/bobosneefdev/zono.git"
     },
     "keywords": [
+        "standard-schema",
         "zod",
         "hono",
         "zono"
@@ -57,8 +58,7 @@
         "url": "https://github.com/bobosneefdev/zono/issues"
     },
     "peerDependencies": {
-        "hono": "^4.11.3",
-        "zod": "^4.3.5"
+        "hono": "^4.11.3"
     },
     "peerDependenciesMeta": {
         "hono": {
@@ -67,12 +67,13 @@
     },
     "devDependencies": {
         "@biomejs/biome": "^2.3.11",
-        "@types/bun": "^1.3.5",
+        "@types/bun": "^1.4.2",
         "@types/node": "^25.0.3",
+        "effect": "^4.0.0-rc.112",
         "hono": "^4.11.3",
         "tsdown": "^0.21.0-beta.2",
         "typescript": "^5.9.3",
-        "zod": "^4.3.5"
+        "zod": "^4.6.1"
     },
     "publishConfig": {
         "registry": "https://registry.npmjs.org"
@@ -82,6 +83,7 @@
         "LICENSE"
     ],
     "dependencies": {
+        "@standard-schema/spec": "^1.1.0",
         "superjson": "^2.2.6"
     }
 }
