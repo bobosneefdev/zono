@@ -47,6 +47,12 @@ export type ContractMethod = {
 	body?: BodySpec;
 	headers?: HeadersSpec;
 	pathParams?: StandardSchemaV1<Record<string, string>, Record<string, string>>;
+	openapi?: {
+		summary?: string;
+		description?: string;
+		tags?: Array<string>;
+		operationId?: string;
+	};
 };
 
 export type PathParamsFor<TDynamicPaths extends string> = StandardSchemaV1<
@@ -408,6 +414,15 @@ export type ContractRouteEntries<
 
 export type ContractPath<TContracts extends ContractTree> =
 	ContractRouteEntries<TContracts>["path"];
+
+export type ContractGetPath<TContracts extends ContractTree> =
+	ContractRouteEntries<TContracts> extends infer TRoute
+		? TRoute extends { path: infer TPath extends string; contract: infer TContract }
+			? "get" extends keyof TContract
+				? TPath
+				: never
+			: never
+		: never;
 
 export type ContractAtPath<
 	TContracts extends ContractTree,

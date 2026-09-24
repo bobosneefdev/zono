@@ -8,6 +8,7 @@ export default defineConfig({
 		contract: "src/contract/index.ts",
 		gateway: "src/gateway/index.ts",
 		middleware: "src/middleware/index.ts",
+		openapi: "src/openapi/index.ts",
 		server: "src/server/index.ts",
 		shared: "src/shared/index.ts",
 	},

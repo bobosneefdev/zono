@@ -1,6 +1,7 @@
 import type { Context, Hono } from "hono";
 import type {
 	AnyApiDefinition,
+	ContractGetPath,
 	ContractMethod,
 	ContractMethods,
 	ContractTree,
@@ -16,6 +17,11 @@ import type {
 	MiddlewareTree,
 } from "../middleware/middleware.js";
 import { collectMiddlewareLayers } from "../middleware/middleware.js";
+import {
+	generateServerOpenApiYaml,
+	type OpenApiEndpointConfig,
+	registerOpenApiRoutes,
+} from "../openapi/openapi.js";
 import type {
 	EmptyObject,
 	ErrorMode,
@@ -164,13 +170,18 @@ export const createApiHandlers = <TApi extends AnyApiDefinition>(api: TApi) => {
 
 export type OnError = (error: unknown, ctx: Context) => MaybePromise<void>;
 
-export type HonoOptions = {
+export type HonoOptions<
+	TGetPaths extends string = never,
+	TYamlPath extends string = string,
+	TUiPath extends string = string,
+> = {
 	/**
 	 * Observational hook invoked with the original failure. Its return value
 	 * cannot replace the typed HTTP response, and its own failures are never
 	 * exposed to clients.
 	 */
 	onError?: OnError;
+	openapi?: OpenApiEndpointConfig<TGetPaths, TYamlPath, TUiPath>;
 };
 
 export type ClientResponse<
@@ -409,10 +420,15 @@ const hasAnyMiddleware = (middlewares: MiddlewareTree): boolean => {
 	return Object.values(middlewares.SHAPE).some(hasAnyMiddleware);
 };
 
-export const initHono = <TApi extends AnyApiDefinition, TContext>(
+export const initHono = <
+	TApi extends AnyApiDefinition,
+	TContext,
+	const TYamlPath extends string = string,
+	const TUiPath extends string = string,
+>(
 	app: Hono,
 	binding: ApiBinding<TApi, TContext>,
-	options?: HonoOptions,
+	options?: HonoOptions<ContractGetPath<TApi["contracts"]>, TYamlPath, TUiPath>,
 ): void => {
 	const errorMode: ErrorMode = binding.api.errorMode;
 
@@ -429,6 +445,12 @@ export const initHono = <TApi extends AnyApiDefinition, TContext>(
 	app.notFound(() => {
 		return toSerializedRuntimeResponse(makeNotFoundRuntimeResponse(), "error");
 	});
+
+	if (options?.openapi) {
+		const { yamlPath, uiPath, title, version } = options.openapi;
+		const yaml = generateServerOpenApiYaml(binding.api, { title, version });
+		registerOpenApiRoutes(app, { yamlPath, uiPath }, yaml);
+	}
 
 	const contracts: ContractTree = binding.api.contracts;
 	const preparedRoutes: Array<PreparedContractRoute> = compileContractRoutes(contracts).map(

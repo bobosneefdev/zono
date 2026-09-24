@@ -1,6 +1,6 @@
 {
     "name": "@bobosneefdev/zono",
-    "version": "12.0.0",
+    "version": "12.1.0",
     "type": "module",
     "packageManager": "bun@1.3.5",
     "description": "Easily create contract-first HTTP clients, servers, and gateways using Standard Schema.",
@@ -21,6 +21,10 @@
         "./middleware": {
             "types": "./dist/middleware.d.mts",
             "import": "./dist/middleware.mjs"
+        },
+        "./openapi": {
+            "types": "./dist/openapi.d.mts",
+            "import": "./dist/openapi.mjs"
         },
         "./server": {
             "types": "./dist/server.d.mts",
@@ -84,6 +88,7 @@
     ],
     "dependencies": {
         "@standard-schema/spec": "^1.1.0",
-        "superjson": "^2.2.6"
+        "superjson": "^2.2.6",
+        "yaml": "^2.9.1"
     }
 }

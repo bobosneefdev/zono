@@ -337,6 +337,36 @@ const results = await gatewayClient.search.fetch("/search", "query", {
 
 Masked-out routes are not registered on the gateway and do not appear on the client. Each routed service keeps its own API's error mode and middleware response types in the inferred union. Method, body, and content type pass through to the upstream unchanged.
 
+## OpenAPI
+
+Add `openapi: { summary, description, tags, operationId }` to a contract method when it needs documentation. Generate OpenAPI 3.2.1 YAML directly:
+
+```ts
+import { generateServerOpenApiYaml, generateGatewayOpenApiYaml } from "@bobosneefdev/zono/openapi";
+
+const yaml = generateServerOpenApiYaml(api, { title: "Search API", version: "1.0.0" });
+const gatewayYaml = generateGatewayOpenApiYaml(
+    services,
+    { title: "Gateway", version: "1.0.0" },
+    gatewayApi,
+);
+```
+
+To serve it, pass `openapi` to `initHono` or `initGateway`:
+
+```ts
+initHono(app, binding, {
+    openapi: {
+        yamlPath: "/openapi.yaml",
+        uiPath: "/docs", // optional Swagger UI
+        title: "Search API",
+        version: "1.0.0",
+    },
+});
+```
+
+The paths must be string literals that do not match an exposed GET contract route; `uiPath` must also differ from `yamlPath`. This check uses contract types, so it does not cover routes added directly to Hono. Ordinary schemas need Standard JSON Schema conversion. SuperJSON uses its JSON envelope, with a broad payload when conversion cannot describe the serialized value. Swagger UI loads its assets from a CDN; YAML works without them.
+
 ## Package exports
 
 | Subpath | Contents |
@@ -346,6 +376,7 @@ Masked-out routes are not registered on the gateway and do not appear on the cli
 | `@bobosneefdev/zono/client` | `createClient`, client types |
 | `@bobosneefdev/zono/middleware` | middleware tree/spec types |
 | `@bobosneefdev/zono/gateway` | gateway services, handlers, client |
+| `@bobosneefdev/zono/openapi` | server and gateway OpenAPI YAML generation |
 | `@bobosneefdev/zono/shared` | shared user-facing types (`ErrorMode`, `TypedFetch`, etc.) |
 
 ESM-only. No schema library is a required peer dependency. `hono` is optional and only needed for servers and gateways. `@standard-schema/spec` provides the shared types; Zod and Effect are development dependencies for tests.

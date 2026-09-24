@@ -3,6 +3,7 @@ import { type ClientOptions, createClient } from "../client/client.js";
 import type {
 	AnyApiDefinition,
 	ContractCallRoutes,
+	ContractGetPath,
 	ContractMethods,
 	ContractTree,
 } from "../contract/contract.js";
@@ -16,6 +17,11 @@ import type {
 	MiddlewareTree,
 } from "../middleware/middleware.js";
 import { collectMiddlewareLayers } from "../middleware/middleware.js";
+import {
+	generateGatewayOpenApiYaml,
+	type OpenApiEndpointConfig,
+	registerOpenApiRoutes,
+} from "../openapi/openapi.js";
 import type { ContextFactory, MiddlewareHandlerTree, OnError } from "../server/server.js";
 import { invokeOnError } from "../server/server.js";
 import type {
@@ -38,6 +44,12 @@ import {
 	toSerializedRuntimeResponse,
 	validateAndSerializeResponse,
 } from "../shared/shared.js";
+import {
+	applyGatewayServiceMask,
+	assertValidGatewayServiceKey,
+	getGatewayServicePathPrefix,
+	namespaceGatewayPath,
+} from "./gateway_routes.js";
 
 export type GatewayServiceMask<TContracts extends ContractTree> = {} & (TContracts extends {
 	CONTRACT: ContractMethods;
@@ -99,6 +111,16 @@ type AnyGatewayService = {
 
 type MaskedGatewayServiceContracts<TService extends AnyGatewayService> =
 	ApplyGatewayServiceMaskToContractTree<TService["api"]["contracts"], TService["mask"]>;
+
+export type GatewayGetPath<TServices extends GatewayServices> = {
+	[TServiceName in keyof TServices & string]: ContractGetPath<
+		MaskedGatewayServiceContracts<TServices[TServiceName]>
+	> extends infer TPath extends string
+		? TPath extends "/"
+			? `/${TServiceName}`
+			: `/${TServiceName}${TPath}`
+		: never;
+}[keyof TServices & string];
 
 type GatewayMiddlewareTreeFromContracts<TContracts extends ContractTree> = {
 	MIDDLEWARE?: Record<string, MiddlewareSpec>;
@@ -204,8 +226,11 @@ export type GatewayOptions<
 	TServices extends GatewayServices,
 	TGatewayMiddlewares extends GatewayMiddlewares<TServices> & MiddlewareTree,
 	TContext,
+	TYamlPath extends string = string,
+	TUiPath extends string = string,
 > = {
 	handlers?: GatewayBinding<TGatewayMiddlewares, TContext>;
+	openapi?: OpenApiEndpointConfig<GatewayGetPath<TServices>, TYamlPath, TUiPath>;
 	/**
 	 * Observational hook invoked with the original failure. Its return value
 	 * cannot replace the typed HTTP response.
@@ -255,57 +280,6 @@ export const createGatewayHandlers = <const TGatewayMiddlewares extends Middlewa
 			handlers: handlers.middlewares,
 		};
 	};
-};
-
-const applyGatewayServiceMask = (mask: unknown, contracts: unknown): ContractTree => {
-	if (!isRecordObject(mask) || !isRecordObject(contracts)) {
-		return {};
-	}
-
-	const maskedContracts: ContractTree = {};
-
-	if (mask.CONTRACT === true && isRecordObject(contracts.CONTRACT)) {
-		maskedContracts.CONTRACT = contracts.CONTRACT;
-	}
-	if (mask.SHAPE === true && isRecordObject(contracts.SHAPE)) {
-		const maskedShape: Record<string, ContractTree> = {};
-		for (const [segment, childContracts] of Object.entries(contracts.SHAPE)) {
-			if (isRecordObject(childContracts)) {
-				maskedShape[segment] = applyGatewayServiceMask(
-					{ CONTRACT: true, SHAPE: true },
-					childContracts,
-				);
-			}
-		}
-		maskedContracts.SHAPE = maskedShape;
-		return maskedContracts;
-	}
-
-	if (!isRecordObject(mask.SHAPE) || !isRecordObject(contracts.SHAPE)) {
-		return maskedContracts;
-	}
-
-	const maskedShape: Record<string, ContractTree> = {};
-	for (const [segment, childMask] of Object.entries(mask.SHAPE)) {
-		const childContracts = contracts.SHAPE[segment];
-		if (!isRecordObject(childMask) || !isRecordObject(childContracts)) {
-			continue;
-		}
-
-		const maskedChildContracts = applyGatewayServiceMask(childMask, childContracts);
-		if (
-			maskedChildContracts.CONTRACT !== undefined ||
-			maskedChildContracts.SHAPE !== undefined
-		) {
-			maskedShape[segment] = maskedChildContracts;
-		}
-	}
-
-	if (Object.keys(maskedShape).length > 0) {
-		maskedContracts.SHAPE = maskedShape;
-	}
-
-	return maskedContracts;
 };
 
 type PreparedGatewayRoute = {
@@ -373,31 +347,6 @@ const getUniquePathTemplates = (routes: Array<{ pathTemplate: string }>): Array<
 	return Array.from(new Set(routes.map((route) => route.pathTemplate)));
 };
 
-const assertValidGatewayServiceKey = (serviceName: string): void => {
-	if (serviceName.length === 0) {
-		throw new Error("Gateway service key cannot be empty");
-	}
-	if (serviceName.includes("/")) {
-		throw new Error(`Gateway service key '${serviceName}' cannot contain '/'`);
-	}
-	if (serviceName.startsWith("$")) {
-		throw new Error(`Gateway service key '${serviceName}' cannot start with '$'`);
-	}
-};
-
-const getGatewayServicePathPrefix = (serviceName: string): string => {
-	assertValidGatewayServiceKey(serviceName);
-	return `/${serviceName}`;
-};
-
-const namespaceGatewayPath = (serviceName: string, pathTemplate: string): string => {
-	const servicePathPrefix = getGatewayServicePathPrefix(serviceName);
-	if (pathTemplate === "/") {
-		return servicePathPrefix;
-	}
-	return `${servicePathPrefix}${pathTemplate}`;
-};
-
 const stripGatewayServicePathPrefix = (servicePathPrefix: string, pathname: string): string => {
 	if (pathname === servicePathPrefix) {
 		return "/";
@@ -455,10 +404,12 @@ export const initGateway = <
 	TGatewayMiddlewares extends GatewayMiddlewares<TServices> &
 		MiddlewareTree = GatewayMiddlewares<TServices> & MiddlewareTree,
 	TContext = unknown,
+	const TYamlPath extends string = string,
+	const TUiPath extends string = string,
 >(
 	app: Hono,
 	services: TServices,
-	options?: GatewayOptions<TServices, TGatewayMiddlewares, TContext>,
+	options?: GatewayOptions<TServices, TGatewayMiddlewares, TContext, TYamlPath, TUiPath>,
 ): void => {
 	const createContext = options?.handlers?.createContext;
 	if (createContext) {
@@ -475,6 +426,16 @@ export const initGateway = <
 			"error",
 		);
 	});
+
+	if (options?.openapi) {
+		const { yamlPath, uiPath, title, version } = options.openapi;
+		const yaml = generateGatewayOpenApiYaml(
+			services,
+			{ title, version },
+			options.handlers?.middlewares,
+		);
+		registerOpenApiRoutes(app, { yamlPath, uiPath }, yaml);
+	}
 
 	for (const [serviceName, service] of Object.entries(services)) {
 		const servicePathPrefix = getGatewayServicePathPrefix(serviceName);
